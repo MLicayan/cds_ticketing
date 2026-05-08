@@ -1,0 +1,22 @@
+{% set selected_nav = access_user.nav_permission_keys() if access_user else default_nav_keys %}
+<div class="form-group">
+  <label>Navigation Access</label>
+  <div class="row">
+    {% for key, label in nav_access_options %}
+      <div class="col-md-4 col-sm-6">
+        <div class="custom-control custom-checkbox mb-2">
+          <input
+            type="checkbox"
+            class="custom-control-input"
+            id="nav_{{ key }}"
+            name="nav_permissions"
+            value="{{ key }}"
+            {% if key in selected_nav %}checked{% endif %}
+          >
+          <label class="custom-control-label" for="nav_{{ key }}">{{ label }}</label>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  <small class="text-muted">Unchecked items are hidden in the sidebar and blocked when opened directly.</small>
+</div>

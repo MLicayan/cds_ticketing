@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit PM Schedule' if schedule else 'New PM Schedule' }}{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
+</style>
+{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">{{ 'Edit' if schedule else 'New' }} PM Schedule</h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-body">
+      {% if schedule %}
+      <div class="form-group">
+        <label>Doc No</label>
+        <input class="form-control" value="{{ schedule.doc_no }}" readonly>
+      </div>
+      {% endif %}
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="client_id">Client</label>
+          <select name="client_id" id="client_id" class="form-control select2" required>
+            <option value="">-- select client --</option>
+            {% for c in clients %}
+            <option value="{{ c.id }}" {% if schedule and schedule.client_id == c.id %}selected{% endif %}>{{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group col-md-4">
+          <label for="instrument_id">Instrument</label>
+          <select name="instrument_id" id="instrument_id" class="form-control" required>
+            <option value="">-- select instrument --</option>
+            {% for ins in instruments %}
+            <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}" {% if schedule and schedule.instrument_id == ins.id %}selected{% endif %}>{{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group col-md-4">
+          <label for="date">Schedule Date</label>
+          <input type="date" name="date" id="date" class="form-control" required value="{{ schedule.date.strftime('%Y-%m-%d') if schedule and schedule.date else '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="task_duration">Task Duration (hrs)</label>
+          <input name="task_duration" id="task_duration" class="form-control" placeholder="e.g. 2 hours" value="{{ schedule.task_duration if schedule else '' }}">
+        </div>
+        <div class="form-group col-md-4">
+          <label for="assigned_engineer_id">Assigned Engineer</label>
+          <select name="assigned_engineer_id" id="assigned_engineer_id" class="form-control">
+            <option value="">-- not assigned --</option>
+            {% for eng in engineers %}
+            <option value="{{ eng.id }}" {% if schedule and schedule.assigned_engineer_id == eng.id %}selected{% endif %}>{{ eng.full_name or eng.username }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="description">Description / Tasks</label>
+        <textarea name="description" id="description" rows="4" class="form-control">{{ schedule.description if schedule else '' }}</textarea>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('pm_schedules.index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+(function() {
+  var clientSelect = document.getElementById('client_id');
+  var instrumentSelect = document.getElementById('instrument_id');
+  function filterInstruments() {
+    if (!clientSelect || !instrumentSelect) return;
+    var cid = clientSelect.value;
+    Array.from(instrumentSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !cid || opt.getAttribute('data-client-id') === cid;
+      opt.hidden = !match;
+    });
+    if (instrumentSelect.selectedOptions.length && instrumentSelect.selectedOptions[0].hidden) {
+      instrumentSelect.value = '';
+    }
+  }
+  if (clientSelect) {
+    var onClientChange = function() { filterInstruments(); };
+    clientSelect.addEventListener('change', onClientChange);
+    if (window.$) {
+      $('#client_id').select2({ width: '100%', placeholder: '-- select client --' }).on('change', onClientChange);
+    }
+    filterInstruments();
+  }
+})();
+</script>
+{% endblock %}

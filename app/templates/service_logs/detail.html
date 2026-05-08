@@ -1,0 +1,491 @@
+{% extends "base.html" %}
+{% block title %}Service Log #{{ log.id }} - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-tools text-primary mr-2"></i>Service Log #{{ log.id }}</h1>
+    <p class="text-muted mb-0">{{ log.instrument.display_label() }}</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+  var modal = document.getElementById('editLogModal');
+  if (!modal) return;
+  var monitorCheckbox = modal.querySelector('#is_monitor');
+  var daysInput = modal.querySelector('#monitored_days');
+  function syncMonitor() {
+    if (!monitorCheckbox || !daysInput) return;
+    if (monitorCheckbox.checked) {
+      daysInput.disabled = false;
+      if (!daysInput.value || daysInput.value === '0') {
+        daysInput.value = '1';
+      }
+    } else {
+      daysInput.value = '0';
+      daysInput.disabled = true;
+    }
+  }
+  if (monitorCheckbox) {
+    monitorCheckbox.addEventListener('change', syncMonitor);
+    syncMonitor();
+  }
+})();
+</script>
+{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<div class="modal fade" id="servicelogSignatureModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-pen mr-2"></i>Client Signature</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        
+        <div class="border rounded" style="height: 300px;">
+          <canvas id="service-signature-canvas" style="width: 100%; height: 100%;"></canvas>
+        </div>
+        <div class="form-row">
+          <div class="form-group col-md-6">
+            <label for="confirmed_by">Confirmed By (Client)</label>
+            <input type="text" name="confirmed_by" id="confirmed_by" class="form-control" value="{{ log.confirmed_by or '' }}">
+          </div>
+          <div class="form-group col-md-6">
+            <label for="confirmed_by_position">Position/Title</label>
+            <input type="text" name="confirmed_by_position" id="confirmed_by_position" class="form-control" value="{{ log.confirmed_by_position or '' }}">
+          </div>
+        </div>
+        <div class="mt-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="service-clear-signature">Clear</button>
+          <button type="button" class="btn btn-primary btn-sm" id="service-save-signature">Save Signature</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+.card-highlight { border-top: 3px solid #3c8dbc; }
+.metric-icon { font-size: 22px; margin-right: 6px; }
+.info-chip { display: inline-block; padding: 4px 10px; border-radius: 20px; background: #f4f6f9; margin-right: 6px; font-size: 12px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-md-8">
+    <div class="card card-outline card-info card-highlight">
+      <div class="card-header">
+        <div class="d-flex justify-content-between align-items-center">
+          <h3 class="card-title mb-0"><i class="fas fa-id-card metric-icon"></i>Summary</h3>
+          <div class="btn-group">
+            {% if current_user.role.value == 'admin' or (log.engineer and log.engineer.id == current_user.id) %}
+              <button class="btn btn-sm btn-primary mr-3" type="button" data-toggle="modal" data-target="#editLogModal">
+                <i class="fas fa-edit"></i> Edit Log
+              </button>
+            {% endif %}
+            <a href="{{ url_for('service_logs.pdf', log_id=log.id) }}" class="btn btn-sm btn-primary" target="_blank">
+              <i class="fas fa-file-pdf"></i> Generate PDF
+            </a>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <p><strong>Client:</strong><br>
+              <span class="ml-3">{{ log.client.name }}</span>
+            </p>
+            <p><strong>Engineer / IT:</strong><br>
+              <span class="ml-3">{{ log.engineer.full_name or log.engineer.username }}</span>
+            </p>
+            <p><strong>Service Type:</strong><br>
+              <span class="ml-3">{{ log.service_type|capitalize }}</span>
+            </p>
+            <p><strong>Service Report Date:</strong><br>
+              <span class="ml-3">{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</span>
+            </p>
+            <p><strong>Start Time:</strong><br>
+              <span class="ml-3">{{ log.start_time.strftime('%H:%M') if log.start_time else '-' }}</span>
+            </p>
+            <p><strong>End Time:</strong><br>
+              <span class="ml-3">{{ log.end_time.strftime('%H:%M') if log.end_time else '-' }}</span>
+            </p>
+          </div>
+          <div class="col-md-6">
+            <p><strong>Status after this service:</strong><br>
+              <span class="ml-3">{{ log.status_after|capitalize }}</span>
+            </p>
+            <p><strong>To be Monitored:</strong><br>
+              <span class="ml-3">{{log.monitored_days if log.is_monitor else 'None'}} {{ 'Days' if log.is_monitor else '' }} </span>
+            </p>
+
+            <p><strong>Created:</strong><br>
+              <span class="ml-3">{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </p>
+            <p><strong>Confirmed By:</strong><br>
+              <span class="ml-3">{{ log.confirmed_by or 'N/A' }}{% if log.confirmed_by_position %} ({{ log.confirmed_by_position }}){% endif %}</span>
+            </p>
+            {% if log.confirm_photo_name %}
+              <p><strong>Confirmation:</strong><br>
+                {% if log.confirm_photo_name %}
+                <a class="ml-3" href="{{ url_for('uploads.service_log_file', filename=log.confirm_photo_name) }}" target="_blank">
+                  Photo
+                  <img class="ml-3" src="{{ url_for('uploads.service_log_file', filename=log.confirm_photo_name) }}" alt="Confirmation Photo" style="max-width: 100px; max-height: 100px;">
+                </a>
+                
+                {% endif %}
+                {% if log.signature_attachment %}
+                <hr>
+                <a class="ml-3" href="{{ url_for('uploads.service_log_file', filename=log.signature_attachment.stored_filename) }}" target="_blank">
+                  Signature
+                  <img class="ml-3" src="{{ url_for('uploads.service_log_file', filename=log.signature_attachment.stored_filename) }}" alt="Signature" style="max-width: 200px; max-height: 100px;">
+                </a>
+                {% else %}
+                <div class="ml-3 d-flex align-items-center">
+
+                  <form method="post" action="{{ url_for('service_logs.update_signature', log_id=log.id) }}" class="d-inline" id="signature-form">
+                    <input type="hidden" name="signature_data" id="service_signature_data">
+                    <input type="hidden" name="confirmed_by_data" id="service_confirmed_by">
+                    <input type="hidden" name="confirmed_by_position_data" id="service_confirmed_by_position">
+                    <button type="submit" class="btn btn-sm btn-success" data-toggle="modal" data-target="#servicelogSignatureModal" style="width: 130px;">Add Signature</button><small class="text-muted p-2">No signature found</small>
+                  </form>
+                </div>
+                {% endif %}
+              </p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if current_user.role.value == 'admin' or (log.engineer and log.engineer.id == current_user.id) %}
+    <div class="modal fade" id="editLogModal" tabindex="-1" role="dialog" aria-hidden="true">
+      <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fas fa-pen mr-2"></i>Edit Service Log</h5>
+            <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+          <form method="post">
+            <input type="hidden" name="update_log" value="1">
+            <div class="modal-body">
+              <div class="form-row">
+                <div class="form-group col-md-6">
+                  <label for="service_type">Service Type</label>
+                  {% set st = log.service_type or '' %}
+                  <select name="service_type" id="service_type" class="form-control">
+                    {% set service_types = [
+                      ('corrective-remote', 'Corrective Remote Support'),
+                      ('corrective-onsite', 'Corrective On-Site'),
+                      ('calibration-remote', 'Calibration Remote Support'),
+                      ('calibration-onsite', 'Calibration On-Site'),
+                      ('install-onsite', 'Installation'),
+                      ('pullout-onsite', 'Pull-out'),
+                      ('demo-onsite', 'Demo'),
+                      ('pm-onsite', 'Preventive Maintenance')
+                    ] %}
+                    {% for val, label in service_types %}
+                      <option value="{{ val }}" {% if st == val %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="form-group col-md-6">
+                  <label for="visit_date">Service Report Date</label>
+                  <input type="date" name="visit_date" id="visit_date" class="form-control" value="{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}">
+                </div>
+                <div class="form-group col-md-6">
+                  <label for="start_time">Start Time</label>
+                  <input type="time" name="start_time" id="start_time" class="form-control" value="{{ log.start_time.strftime('%H:%M') if log.start_time else '' }}">
+                </div>
+                <div class="form-group col-md-6">
+                  <label for="end_time">End Time</label>
+                  <input type="time" name="end_time" id="end_time" class="form-control" value="{{ log.end_time.strftime('%H:%M') if log.end_time else '' }}">
+                </div>
+              </div>
+             
+              <div class="form-group">
+                <label for="problem_description">Customer Complaint</label>
+                <textarea name="problem_description" id="problem_description" rows="3" class="form-control">{{ log.problem_description or '' }}</textarea>
+              </div>
+              <div class="form-group">
+                <label for="root_cause">Cause of Problem</label>
+                <textarea name="root_cause" id="root_cause" rows="3" class="form-control">{{ log.root_cause or '' }}</textarea>
+              </div>
+              <div class="form-group">
+                <label for="action_taken">Action Taken</label>
+                <textarea name="action_taken" id="action_taken" rows="3" class="form-control">{{ log.action_taken or '' }}</textarea>
+              </div>
+              <div class="form-group">
+                <label for="recommendations">Remarks & Recommendations</label>
+                <textarea name="recommendations" id="recommendations" rows="2" class="form-control">{{ log.recommendations or '' }}</textarea>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group col-md-6">
+                  <label for="status_after">Status after this service</label>
+                  <select name="status_after" id="status_after" class="form-control">
+                    <option value="operational" {% if log.status_after == 'operational' %}selected{% endif %}>Operational</option>
+                    <option value="non-operational" {% if log.status_after == 'non-operational' %}selected{% endif %}>Non-Operational</option>
+                  </select>
+                </div>
+                <div class="form-group col-md-6 d-flex align-items-center">
+                  <div class="w-100">
+                    <label class="d-block" for="is_monitor">Monitoring</label>
+                    <div class="form-inline">
+                      <div class="form-check mr-3">
+                        <input type="checkbox" name="is_monitor" id="is_monitor" class="form-check-input" {% if log.is_monitor %}checked{% endif %}>
+                        <label class="form-check-label" for="is_monitor">To be Monitored</label>
+                      </div>
+                      <input type="number" name="monitored_days" id="monitored_days" class="form-control form-control-sm" value="{{ log.monitored_days or 0 }}" min="0" style="width:120px;" {% if not log.is_monitor %}disabled{% endif %}>
+                      <span class="ml-2">days</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="form-row">
+              <div class="form-group col-md-6">
+                <label for="confirmed_by">Confirmed By (Client)</label>
+                <input type="text" name="confirmed_by" id="confirmed_by" class="form-control" value="{{ log.confirmed_by or '' }}">
+              </div>
+              <div class="form-group col-md-6">
+                <label for="confirmed_by_position">Position/Title</label>
+                <input type="text" name="confirmed_by_position" id="confirmed_by_position" class="form-control" value="{{ log.confirmed_by_position or '' }}">
+              </div>
+            </div>
+            
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card card-outline card-secondary card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-clipboard-list metric-icon"></i>Details</h3>
+      </div>
+      <div class="card-body">
+        <h5><i class="fas fa-exclamation-circle text-danger mr-1"></i>Problem Description</h5>
+        <p class="ml-5">{{ log.problem_description or 'N/A' }}</p>
+
+        <h5 class="mt-4"><i class="fas fa-search text-warning mr-1"></i>Root Cause</h5>
+        <p class="ml-5">{{ log.root_cause or 'N/A' }}</p>
+
+        <h5 class="mt-4"><i class="fas fa-wrench text-info mr-1"></i>Action Taken</h5>
+        <p class="ml-5">{{ log.action_taken or 'N/A' }}</p>
+
+        <h5 class="mt-4"><i class="fas fa-cubes text-secondary mr-1"></i>Parts Used</h5>
+        {% if log.service_log_parts %}
+        <div class="table-responsive ml-2">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Part</th>
+                <th>Part No.</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+                <th>Warranty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for lp in log.service_log_parts %}
+              <tr>
+                <td>{{ lp.part.name if lp.part else 'N/A' }}</td>
+                <td>{{ lp.part_no or '-' }}</td>
+                <td>{{ lp.qty or '0' }}</td>
+                <td>{{ "{:,.2f}".format(lp.price) if lp.price is not none else '-' }}</td>
+                <td>{{ "{:,.2f}".format(lp.total) if lp.total is not none else '-' }}</td>
+                <td>
+                  {% if lp.under_warranty %}<span class="badge badge-success">Yes</span>
+                  {% else %}<span class="badge badge-secondary">No</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% elif log.parts_used %}
+          <p class="text-muted mb-0">{{ log.parts_used }}</p>
+        {% else %}
+          <p>N/A</p>
+        {% endif %}
+
+        <h5 class="mt-4"><i class="fas fa-lightbulb text-success mr-1"></i>Recommendations</h5>
+        <p class="ml-3">{{ log.recommendations or 'N/A' }}</p>
+      </div>
+    </div>
+
+    <div class="card card-outline card-primary card-highlight">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h3 class="card-title mb-0"><i class="fas fa-paperclip metric-icon"></i>Attachments</h3>
+        {% if current_user.role.value not in ['client', 'sales'] %}
+          <span class="text-muted info-chip">Add more below</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        {% if log.attachments %}
+        <ul class="list-unstyled">
+          {% for att in log.attachments %}
+          <li>
+            <i class="fas fa-paperclip mr-1"></i>
+            <a href="{{ url_for('uploads.service_log_file', filename=att.stored_filename) }}" target="_blank">
+              {{ att.original_filename }}
+            </a>
+            <small class="text-muted"> – {{ att.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</small>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted">No attachments.</p>
+        {% endif %}
+
+        {% if current_user.role.value not in ['client', 'sales'] %}
+          <form method="post" enctype="multipart/form-data" class="mt-3">
+            <div class="form-group">
+              <label for="attachment">Add Attachment</label>
+              <input type="file" name="attachment" id="attachment" class="form-control-file" required>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">
+              <i class="fas fa-upload"></i> Upload
+            </button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var signatureForm = document.getElementById('signature-form');
+    var signatureInput = document.getElementById('service_signature_data');
+    var confirmedByInput = document.getElementById('service_confirmed_by');
+    var confirmedByPositionInput = document.getElementById('service_confirmed_by_position');
+    var modalUpdateInfo = document.getElementById('updateInfoModal');
+    var modalEl = document.getElementById('servicelogSignatureModal');
+    var signatureCanvas = document.getElementById('service-signature-canvas');
+    var clearBtn = document.getElementById('service-clear-signature');
+    var saveBtn = document.getElementById('service-save-signature');
+    var ctx, drawing = false, lastPos = { x: 0, y: 0 };
+
+    function resizeCanvas() {
+      if (!signatureCanvas) return;
+      var ratio = window.devicePixelRatio || 1;
+      var width = signatureCanvas.clientWidth;
+      var height = signatureCanvas.clientHeight;
+      signatureCanvas.width = width * ratio;
+      signatureCanvas.height = height * ratio;
+      ctx = signatureCanvas.getContext('2d');
+      ctx.scale(ratio, ratio);
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#111';
+      ctx.clearRect(0, 0, width, height);
+    }
+
+    function getPosition(event) {
+      var rect = signatureCanvas.getBoundingClientRect();
+      var x, y;
+      if (event.touches && event.touches.length) {
+        x = event.touches[0].clientX - rect.left;
+        y = event.touches[0].clientY - rect.top;
+      } else {
+        x = event.clientX - rect.left;
+        y = event.clientY - rect.top;
+      }
+      return { x: x, y: y };
+    }
+
+    function startDrawing(event) {
+      drawing = true;
+      lastPos = getPosition(event);
+    }
+
+    function draw(event) {
+      if (!drawing) return;
+      event.preventDefault();
+      var pos = getPosition(event);
+      ctx.beginPath();
+      ctx.moveTo(lastPos.x, lastPos.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      lastPos = pos;
+    }
+
+    function stopDrawing() {
+      drawing = false;
+    }
+
+    function clearSignature() {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+      if (signatureInput) signatureInput.value = '';
+    }
+
+    function saveSignature() {
+      if (!signatureCanvas) return;
+      var dataUrl = signatureCanvas.toDataURL('image/png');
+      signatureInput.value = dataUrl;
+      if (window.jQuery && $('#servicelogSignatureModal').modal) {
+        $('#servicelogSignatureModal').modal('hide');
+      }
+      if (pendingSubmit) {
+        if (signatureForm) {
+          signatureForm.submit();
+        }
+        pendingSubmit = false;
+      }
+    }
+
+    if (signatureCanvas) {
+      if (modalEl) {
+        modalEl.addEventListener('shown.bs.modal', resizeCanvas);
+      }
+      if (window.jQuery && $('#servicelogSignatureModal').on) {
+        $('#servicelogSignatureModal').on('shown.bs.modal', resizeCanvas);
+      }
+      signatureCanvas.addEventListener('mousedown', startDrawing);
+      signatureCanvas.addEventListener('mousemove', draw);
+      signatureCanvas.addEventListener('mouseup', stopDrawing);
+      signatureCanvas.addEventListener('mouseleave', stopDrawing);
+      signatureCanvas.addEventListener('touchstart', startDrawing, { passive: false });
+      signatureCanvas.addEventListener('touchmove', draw, { passive: false });
+      signatureCanvas.addEventListener('touchend', stopDrawing);
+    }
+    if (clearBtn) clearBtn.addEventListener('click', clearSignature);
+    if (saveBtn) saveBtn.addEventListener('click', saveSignature);
+
+    if (signatureForm) {
+      signatureForm.addEventListener('submit', function(e) {
+        if (signatureInput && !signatureInput.value) {
+          e.preventDefault();
+          pendingSubmit = true;
+          if (window.jQuery && $('#servicelogSignatureModal').modal) {
+            $('#servicelogSignatureModal').modal('show');
+          }
+        }
+      });
+    }
+
+   
+  });
+</script>
+
+{% endblock %}

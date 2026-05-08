@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}CDS Application - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 page-title"><i class="fas fa-layer-group"></i> CDS Application</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.apps_create') }}" class="btn btn-primary"><i class="fas fa-plus mr-1"></i> New Application</a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Code</th>
+          <th>Name</th>
+          <th>Description</th>
+          <th class="text-right">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for app in apps %}
+        <tr>
+          <td>{{ app.id }}</td>
+          <td>{{ app.code }}</td>
+          <td>{{ app.name }}</td>
+          <td style="max-width:320px;">{{ app.description }}</td>
+          <td class="text-right">
+            <a href="{{ url_for('admin.apps_edit', app_id=app.id) }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-edit"></i></a>
+            <form method="post" action="{{ url_for('admin.apps_delete', app_id=app.id) }}" style="display:inline;" onsubmit="return confirm('Delete this application?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted">No applications found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

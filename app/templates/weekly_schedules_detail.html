@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Weekly Schedule #{{ schedule.id }}{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-calendar-week text-primary mr-2"></i>Weekly Schedule</h1>
+    <p class="text-muted mb-0">{{ schedule.title or ('Week of ' ~ schedule.week_start.strftime('%Y-%m-%d')) }}</p>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('weekly_schedules.index') }}" class="btn btn-secondary">Back</a>
+    <button class="btn btn-primary" data-toggle="modal" data-target="#addTaskModal">
+      <i class="fas fa-plus"></i> Add Weekly Task
+    </button>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+  <div class="card card-outline card-secondary card-highlight">
+  <div class="card-body">
+    <div class="row">
+      <div class="col-md-4">
+        <p><strong>Week:</strong><br>{{ schedule.week_start.strftime('%Y-%m-%d') }} — {{ schedule.week_end.strftime('%Y-%m-%d') }}<br><small class="text-muted">PM schedules should fall within this range.</small></p>
+      </div>
+      <div class="col-md-4">
+        <p><strong>Created By:</strong><br>{{ schedule.created_by.full_name or schedule.created_by.username }}</p>
+      </div>
+      <div class="col-md-4">
+        <p><strong>Created:</strong><br>{{ schedule.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card card-outline card-info">
+  <div class="card-header">
+    <h3 class="card-title mb-0"><i class="fas fa-tasks mr-2"></i>Tasks & Tickets</h3>
+  </div>
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Subject</th>
+          <th>Client</th>
+          <th>Instrument</th>
+          <th>Engineer</th>
+          <th>Service Type</th>
+          <th>PM Schedule</th>
+          <th>Priority</th>
+          <th>Ticket</th>
+          <th>Ticket Status</th>
+          <th>Service Logs</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ t.subject }}</td>
+          <td>{{ t.client.name if t.client else '' }}</td>
+          <td>{{ t.instrument.display_label() if t.instrument else '' }}</td>
+          <td>{{ t.engineer.full_name or t.engineer.username if t.engineer else 'Unassigned' }}</td>
+          <td>{{ t.service_type|replace('-', ' ')|title }}</td>
+          <td>
+            {% if t.pm_schedule %}
+              <a href="{{ url_for('pm_schedules.detail', schedule_id=t.pm_schedule.id) }}">{{ t.pm_schedule.doc_no }}</a>
+            {% else %}
+              <span class="text-muted">None</span>
+            {% endif %}
+          </td>
+          <td><span class="badge badge-{{ 'danger' if t.priority.value == 'critical' else 'warning' if t.priority.value == 'high' else 'info' if t.priority.value == 'medium' else 'secondary' }}">{{ t.priority.value|upper }}</span></td>
+          <td>
+            {% if t.ticket_id %}
+              <a href="{{ url_for('tickets.detail', ticket_id=t.ticket_id) }}">#{{ t.ticket.ticket_no if t.ticket else t.ticket_id }}</a>
+            {% else %}
+              <span class="text-muted">No ticket</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if t.ticket %}
+              {{ t.ticket.status.value.replace('_', ' ')|title }}
+            {% else %}
+              <span class="text-muted">N/A</span>
+            {% endif %}
+          </td>
+          <td>
+            {% set logs = logs_by_ticket.get(t.ticket_id, []) %}
+            {% if logs %}
+              {% for log in logs %}
+                <div><a href="{{ url_for('service_logs.detail', log_id=log.id) }}">Log #{{ log.id }}</a> ({{ log.status_after|capitalize }})</div>
+              {% endfor %}
+            {% else %}
+              <span class="text-muted">None</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="11" class="text-center text-muted">No tasks found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="modal fade" id="addTaskModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-plus mr-2"></i>Add Weekly Task</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <form method="post" action="{{ url_for('weekly_schedules.add_task', schedule_id=schedule.id) }}">
+        <div class="modal-body">
+          <div class="form-row">
+            <div class="form-group col-md-6">
+              <label for="new_task_subject">Subject</label>
+              <input type="text" class="form-control" name="subject" id="new_task_subject" required>
+            </div>
+            <div class="form-group col-md-6">
+              <label for="new_task_priority">Priority</label>
+              <select name="priority" id="new_task_priority" class="form-control">
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium" selected>Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group col-md-4">
+              <label for="new_task_client">Client</label>
+              <select name="client_id" id="new_task_client" class="form-control" required>
+                <option value="">-- select --</option>
+                {% for c in clients %}
+                  <option value="{{ c.id }}">{{ c.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group col-md-4">
+              <label for="new_task_instrument">Instrument</label>
+              <select name="instrument_id" id="new_task_instrument" class="form-control" required>
+                <option value="">-- select --</option>
+                {% for ins in instruments %}
+                  <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}">{{ ins.display_label() }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group col-md-4">
+              <label for="new_task_engineer">Engineer</label>
+              <select name="engineer_id" id="new_task_engineer" class="form-control">
+                <option value="">-- assign later --</option>
+                {% for eng in engineers %}
+                  <option value="{{ eng.id }}">{{ eng.full_name or eng.username }}</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group col-md-6">
+              <label for="new_task_service_type">Service Type</label>
+              <select name="service_type" id="new_task_service_type" class="form-control">
+                <option value="pm-onsite">PM On-site</option>
+                <option value="corrective-onsite">Corrective On-site</option>
+                <option value="corrective-remote">Corrective Remote</option>
+                <option value="calibration-onsite">Calibration On-site</option>
+                <option value="calibration-remote">Calibration Remote</option>
+                <option value="install-onsite">Installation</option>
+                <option value="pullout-onsite">Pull-out</option>
+                <option value="demo-onsite">Demo</option>
+              </select>
+            </div>
+            <div class="form-group col-md-6 d-none">
+              <label for="new_task_pm_schedule">PM Schedule (for PM On-site)</label>
+              <select name="pm_schedule_id" id="new_task_pm_schedule" class="form-control">
+                <option value="">-- select --</option>
+                {% for pm in pm_schedules %}
+                  <option value="{{ pm.id }}" data-client-id="{{ pm.client_id }}" data-instrument-id="{{ pm.instrument_id }}">{{ pm.doc_no }} ({{ pm.date.strftime('%Y-%m-%d') }})</option>
+                {% endfor %}
+              </select>
+              <small class="text-muted">If blank, a PM schedule will be auto-created for the week.</small>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="new_task_description">Notes</label>
+            <textarea name="description" id="new_task_description" rows="2" class="form-control"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add Task</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+  var modal = document.getElementById('addTaskModal');
+  if (!modal) return;
+  var clientSelect = modal.querySelector('#new_task_client');
+  var instrumentSelect = modal.querySelector('#new_task_instrument');
+  var serviceTypeSelect = modal.querySelector('#new_task_service_type');
+  var pmSelect = modal.querySelector('#new_task_pm_schedule');
+
+  function filterInstruments() {
+    if (!clientSelect || !instrumentSelect) return;
+    var cid = clientSelect.value;
+    Array.from(instrumentSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !cid || opt.getAttribute('data-client-id') === cid;
+      opt.hidden = !match;
+    });
+    if (instrumentSelect.selectedOptions.length && instrumentSelect.selectedOptions[0].hidden) {
+      instrumentSelect.value = '';
+    }
+  }
+
+  function syncPmSelect() {
+    if (!serviceTypeSelect || !pmSelect) return;
+    var isPm = serviceTypeSelect.value === 'pm-onsite';
+    pmSelect.disabled = !isPm;
+    pmSelect.parentElement.classList.toggle('text-muted', !isPm);
+    var cid = clientSelect ? clientSelect.value : '';
+    var insId = instrumentSelect ? instrumentSelect.value : '';
+    Array.from(pmSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var clientMatch = !cid || opt.getAttribute('data-client-id') === cid;
+      var instrumentMatch = !insId || opt.getAttribute('data-instrument-id') === insId;
+      opt.hidden = !(clientMatch && instrumentMatch);
+    });
+    if (pmSelect.selectedOptions.length && pmSelect.selectedOptions[0].hidden) {
+      pmSelect.value = '';
+    }
+  }
+
+  if (clientSelect) clientSelect.addEventListener('change', function() { filterInstruments(); syncPmSelect(); });
+  if (instrumentSelect) instrumentSelect.addEventListener('change', syncPmSelect);
+  if (serviceTypeSelect) serviceTypeSelect.addEventListener('change', syncPmSelect);
+
+  filterInstruments();
+  syncPmSelect();
+})();
+</script>
+{% endblock %}

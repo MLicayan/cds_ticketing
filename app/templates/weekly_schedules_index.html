@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Weekly Schedules{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-calendar-week text-primary mr-2"></i>Weekly Schedules</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('weekly_schedules.create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Weekly Schedule
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Title</th>
+          <th>Week</th>
+          <th>Tasks</th>
+          <th>Created By</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ws in schedules %}
+        <tr onclick="window.location='{{ url_for('weekly_schedules.detail', schedule_id=ws.id) }}'" style="cursor:pointer;">
+          <td>{{ loop.index }}</td>
+          <td>{{ ws.title or ('Week of ' ~ ws.week_start.strftime('%Y-%m-%d')) }}</td>
+          <td>{{ ws.week_start.strftime('%Y-%m-%d') }} — {{ ws.week_end.strftime('%Y-%m-%d') }}</td>
+          <td>{{ ws.tasks|length }}</td>
+          <td>{{ ws.created_by.full_name or ws.created_by.username }}</td>
+          <td>{{ ws.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-muted">No weekly schedules yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

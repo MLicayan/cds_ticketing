@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Service Logs - Instrument Monitoring{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
+</style>
+{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <!-- <h1 class="m-0 text-dark">Service Logs</h1> -->
+    <h1 class="m-0 text-dark"><i class="fas fa-tools text-primary mr-2"></i>Service Log </h1>
+  </div>
+  <div class="col-sm-6">
+    <div class="toolbar-stack">
+      <a href="{{ url_for('service_logs.export') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-file-export"></i> Export CSV
+      </a>
+      <a href="{{ url_for('service_logs.gantt') }}" class="btn btn-outline-primary">
+        <i class="fas fa-project-diagram"></i> Gantt
+      </a>
+      {% if current_user.role.value not in ['client', 'sales'] %}
+        <a href="{{ url_for('service_logs.create') }}" class="btn btn-primary">
+          <i class="fas fa-plus"></i> New Service Log
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+
+<div class="card  mb-3">
+  <div class="card-header d-flex ">
+    <button type="button" class="btn btn-tool left" data-card-widget="collapse" title="Toggle filters">
+      <i class="fas fa-minus"></i>
+    </button><h3 class="card-title mb-0 left">Filters</h3>
+  </div>
+  <div class="card-body">
+    <form method="get">
+      <div class="filter-grid">
+        <div class="form-group">
+          <label for="client_id">Client</label>
+          {% if current_user.role.value == 'client' %}
+            {% set my_client = clients[0] if clients else None %}
+            <input type="hidden" name="client_id" value="{{ my_client.id if my_client else '' }}">
+            <input class="form-control" value="{{ my_client.name if my_client else 'My Client' }}" readonly>
+          {% else %}
+            <select name="client_id" id="client_id" class="form-control select2">
+              <option value="">All</option>
+              {% for c in clients %}
+              <option value="{{ c.id }}" {% if selected_filters.client_id == c.id|string %}selected{% endif %}>
+              {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label for="instrument_id">Instrument</label>
+          <select name="instrument_id" id="instrument_id" class="form-control">
+            <option value="">All</option>
+            {% for ins in instruments %}
+            <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}" {% if selected_filters.instrument_id == ins.id|string %}selected{% endif %}>
+              {{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="engineer_id">Engineer / IT</label>
+          <select name="engineer_id" id="engineer_id" class="form-control">
+            <option value="">All</option>
+            {% for eng in engineers %}
+            <option value="{{ eng.id }}" {% if selected_filters.engineer_id == eng.id|string %}selected{% endif %}>
+              {{ eng.full_name or eng.username }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="service_type">Type</label>
+          <select name="service_type" id="service_type" class="form-control">
+            <option value="">All</option>
+            {% set types = ['corrective', 'pm', 'install', 'calibration', 'remote', 'onsite'] %}
+            {% for t in types %}
+            <option value="{{ t }}" {% if selected_filters.service_type == t %}selected{% endif %}>
+              {{ t|capitalize }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="filter-grid">
+        <div class="form-group">
+          <label>Date From</label>
+          <input type="date" name="date_from" class="form-control" value="{{ selected_filters.date_from or current_date }}">
+        </div>
+        <div class="form-group">
+          <label>Date To</label>
+          <input type="date" name="date_to" class="form-control" value="{{ selected_filters.date_to or current_date }}">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="fas fa-filter"></i> Apply
+      </button>
+      <a href="{{ url_for('service_logs.index') }}" class="btn btn-secondary btn-sm">
+        Reset
+      </a>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table id="service-logs-table" class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Instrument</th>
+          <th>Client</th>
+          <th>Engineer / IT</th>
+          <th>Type</th>
+          <th>Report Date</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr onclick="window.location='{{ url_for('service_logs.detail', log_id=log.id) }}'" style="cursor:pointer;">
+          <td>{{ loop.index }}</td>
+          <td>{{ log.instrument.display_label() }}</td>
+          <td>{{ log.client.name }}</td>
+          <td>{{ log.engineer.full_name or log.engineer.username }}</td>
+          <td>{{ log.service_type|capitalize }}</td>
+          <td>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</td>
+          <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td class="text-center text-muted">No service logs found.</td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(function() {
+  $('#service-logs-table').DataTable({
+    "pageLength": 10,
+    "order": [[5, "desc"]]
+  });
+});
+
+(function() {
+  function filterInstruments() {
+    var clientSelect = document.getElementById('client_id');
+    var insSelect = document.getElementById('instrument_id');
+    if (!clientSelect || !insSelect) return;
+    var cid = clientSelect.value;
+    Array.from(insSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !cid || opt.getAttribute('data-client-id') === cid;
+      opt.hidden = !match;
+    });
+    if (insSelect.selectedOptions.length && insSelect.selectedOptions[0].hidden) {
+      insSelect.value = '';
+    }
+  }
+  var clientSelect = document.getElementById('client_id');
+  if (clientSelect) {
+    clientSelect.addEventListener('change', filterInstruments);
+    filterInstruments();
+  }
+
+  if (window.$ && $('#client_id').length) {
+    $('#client_id').select2({ width: '100%', placeholder: 'All' }).on('change', filterInstruments);
+    filterInstruments();
+  }
+})();
+</script>
+{% endblock %}

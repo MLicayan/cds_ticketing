@@ -1,0 +1,1886 @@
+{% extends "base.html" %}
+{% block title %}Ticket {{ ticket.ticket_no }} - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2"> 
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-ticket-alt text-primary mr-2 ml-2"></i>Ticket {{ ticket.ticket_no }}</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    {% if current_user.role.value not in ['client', 'client_admin', 'sales'] %}
+      {% if current_user.role.value == 'admin' and not is_task_ticket and ticket.status not in [TicketStatus.RESOLVED, TicketStatus.CLOSED] %}
+        <button class="btn btn-outline-primary mr-2" type="button" data-toggle="modal" data-target="#createTaskModal">
+          <i class="fas fa-tasks"></i> Create Task
+        </button>
+      {% endif %}
+      {% if current_user.has_nav_access('service_logs') and ticket.status != TicketStatus.CLOSED %}
+        <a href="{{ url_for('service_logs.create', ticket_id=ticket.id) }}" class="btn btn-primary">
+          <i class="fas fa-tools"></i> New Service Log
+        </a>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<style>
+.card-highlight { border-top: 3px solid #3c8dbc; }
+.metric-icon { font-size: 20px; margin-right: 6px; }
+.info-chip { display: inline-block; padding: 4px 10px; border-radius: 20px; background: #f4f6f9; margin-right: 6px; font-size: 12px; }
+
+.timeline {
+  position: relative;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 173px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #e2e8f0;
+}
+
+.timeline-item {
+  display: flex;
+  gap: 18px;
+  position: relative;
+  padding-bottom: 28px;
+}
+
+.timeline-item:last-child {
+  padding-bottom: 0;
+}
+
+.timeline-date {
+    width: 125px;
+    text-align: center;
+    align-self: flex-start;
+    background: #b4130012;
+    border-radius: 999px;
+    padding: 6px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #b41300;
+}
+
+.timeline-marker {
+  position: relative;
+  width: 28px;
+  display: flex;
+  justify-content: center;
+}
+
+.timeline-marker::before {
+  content: "";
+  position: absolute;
+  top: 10px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #2563eb;
+  border: 3px solid #eff6ff;
+  box-shadow: 0 0 0 4px #bfdbfe;
+}
+
+.timeline-marker.timeline-created::before { background: #3c8dbc; }
+.timeline-marker.timeline-comment::before { background: #007bff; }
+.timeline-marker.timeline-update::before { background: #17a2b8; }
+.timeline-marker.timeline-attachment::before { background: #6f42c1; }
+.timeline-marker.timeline-log::before { background: #28a745; }
+.timeline-marker.timeline-resolved::before { background: #ffc107; }
+.timeline-marker.timeline-closed::before { background: #dc3545; }
+
+.timeline-content {
+  flex: 1;
+  padding-left: 6px;
+}
+
+.timeline-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.timeline-text {
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 0;
+}
+
+.timeline-toggle-card .card-header {
+  display: flex;
+  align-items: center;
+}
+
+.ticket-chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 560px;
+  overflow-y: auto;
+}
+
+.ticket-chat-row {
+  display: flex;
+}
+
+.ticket-chat-row.mine {
+  justify-content: flex-end;
+}
+
+.ticket-chat-row.theirs {
+  justify-content: flex-start;
+}
+
+.ticket-chat-item {
+  max-width: 78%;
+}
+
+.ticket-chat-meta {
+  font-size: 12px;
+  color: #6c757d;
+  margin-bottom: 4px;
+}
+
+.ticket-chat-row.mine .ticket-chat-meta {
+  text-align: right;
+}
+
+.ticket-chat-bubble {
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ticket-chat-row.mine .ticket-chat-bubble {
+  background: #d8ecff;
+  color: #16324f;
+}
+
+.ticket-chat-row.theirs .ticket-chat-bubble {
+  background: #f1f3f5;
+  color: #212529;
+}
+
+.ticket-chat-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+  position: relative;
+}
+
+.ticket-chat-row.mine .ticket-chat-actions {
+  justify-content: flex-end;
+}
+
+.ticket-chat-row.theirs .ticket-chat-actions {
+  justify-content: flex-start;
+}
+
+.reaction-trigger {
+  border: 0;
+  background: transparent;
+  color: #6c757d;
+  padding: 2px 4px;
+}
+
+.reaction-trigger:hover {
+  color: #007bff;
+}
+
+.acknowledge-button {
+  border: 1px solid #d0d7de;
+  background: #fff;
+  color: #495057;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.acknowledge-button:hover {
+  border-color: #007bff;
+  color: #007bff;
+}
+
+.acknowledge-button.active {
+  background: #e7f1ff;
+  border-color: #007bff;
+  color: #0056b3;
+}
+
+.reaction-picker {
+  display: none;
+  position: absolute;
+  top: 28px;
+  background: #fff;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  padding: 6px;
+  z-index: 5;
+  white-space: nowrap;
+}
+
+.ticket-chat-row.mine .reaction-picker {
+  right: 0;
+}
+
+.ticket-chat-row.theirs .reaction-picker {
+  left: 0;
+}
+
+.reaction-picker.show {
+  display: block;
+}
+
+.reaction-option {
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  padding: 4px 5px;
+}
+
+.reaction-option.active {
+  background: #e7f1ff;
+  border-radius: 6px;
+}
+
+.reaction-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.reaction-chip {
+  border: 1px solid #d0d7de;
+  border-radius: 999px;
+  background: #fff;
+  padding: 2px 8px;
+  font-size: 12px;
+  color: #495057;
+}
+
+.acknowledge-status {
+  border: 1px solid #cfe2ff;
+  border-radius: 999px;
+  background: #eef5ff;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0b5ed7;
+}
+
+.selected-files-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 8px 0 0;
+}
+
+.selected-files-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #dfe3e8;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: #f8f9fa;
+}
+
+.selected-files-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.comment-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.comment-attachment {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 180px;
+}
+
+.comment-attachment-thumb {
+  width: 100%;
+  max-width: 180px;
+  max-height: 140px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid #dfe3e8;
+  background: #f8f9fa;
+}
+
+.comment-attachment-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  word-break: break-word;
+}
+
+.attachment-preview-modal .modal-dialog {
+  max-width: 900px;
+}
+
+.attachment-preview-modal .modal-content {
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.attachment-preview-modal .modal-header {
+  background: #f8fafc;
+  border-bottom: 1px solid #e9eef5;
+}
+
+.attachment-preview-body {
+  min-height: 420px;
+  background: #f4f7fb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.attachment-preview-image {
+  max-width: 100%;
+  max-height: 72vh;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+}
+
+.attachment-preview-frame {
+  width: 100%;
+  height: 72vh;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ticket-edit-modal .modal-content {
+  border: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.18);
+}
+
+.ticket-edit-modal .modal-header {
+  border-bottom: 1px solid #edf2f7;
+  background: linear-gradient(135deg, #f8fbff 0%, #eef6ff 100%);
+  padding: 18px 22px;
+}
+
+.ticket-edit-modal .modal-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.ticket-edit-modal .modal-body {
+  padding: 22px;
+}
+
+.ticket-edit-panel {
+  border: 1px solid #e9ecef;
+  border-radius: 14px;
+  background: #fbfcfe;
+  padding: 18px;
+}
+
+.ticket-edit-modal .form-group label {
+  font-weight: 600;
+  color: #334155;
+}
+
+.ticket-edit-modal .form-control,
+.ticket-edit-modal .form-control-sm {
+  border-radius: 10px;
+}
+
+.ticket-edit-modal .modal-footer {
+  border-top: 1px solid #edf2f7;
+  padding: 16px 22px 20px;
+}
+
+@media (max-width: 640px) {
+  .timeline::before { left: 26px; }
+  .timeline-item { padding-left: 8px; }
+  .timeline-date { width: 90px; font-size: 10px; margin-left: -6px; }
+  .timeline-marker { width: 22px; }
+  .timeline-title { font-size: 16px; }
+  .ticket-chat-item { max-width: 92%; }
+}
+</style>
+{% endblock %}
+{% block content %}
+
+<div class="row">
+  <div class="col-md-7">
+    <div class="card" id="ticket-comments-card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-clipboard-list metric-icon"></i>Ticket Info</h3>
+        <div class="btn-group text-right float-right">
+            {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and ticket.status != TicketStatus.CLOSED %}
+              <button class="btn btn-sm btn-primary mr-3" type="button" data-toggle="modal" data-target="#updateInfoModal">
+                <i class="fas fa-edit"></i>Edit
+              </button>
+            {% endif %}
+            {% if current_user.role.value in ['client', 'client_admin'] and ticket.status != TicketStatus.CLOSED %}
+              <button class="btn btn-sm btn-primary mr-3" type="button" data-toggle="modal" data-target="#clientUpdateModal">
+                <i class="fas fa-edit"></i>Edit
+              </button>
+            {% endif %}
+          </div>
+      </div>
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+          <div>
+            <h4 class="mb-1">{{ ticket.subject }}</h4>
+            <p><strong><i class="fas fa-align-left text-secondary mr-1"></i>: </strong>
+            {{ (ticket.description or 'No description provided.')|replace('\n', '<br>')|safe }} </p>
+          </div>
+        </div>
+
+        {% if ticket.status == TicketStatus.RESOLVED and current_user.role.value in ['client', 'client_admin'] %}
+          <div class="mb-3 text-right">
+            <form method="post" action="{{ url_for('tickets.resolve_decision', ticket_id=ticket.id) }}" class="d-inline" id="accept-form">
+              <input type="hidden" name="resolution_action" value="accept">
+              <input type="hidden" name="signature_data" id="ticket_signature_data_accept">
+              <button type="submit" class="btn btn-sm btn-success">Accept</button>
+            </form>
+            <form method="post" action="{{ url_for('tickets.resolve_decision', ticket_id=ticket.id) }}" class="d-inline ml-1">
+              <input type="hidden" name="resolution_action" value="deny">
+              <button type="submit" class="btn btn-sm btn-danger">Denied</button>
+            </form>
+          </div>
+        {% endif %}
+        <hr>
+        <div class="row">
+          <div class="col-md-8">
+            <dl class="row mb-0">
+              <dt class="col-sm-4">Client</dt>
+              <dd class="col-sm-8">{{ ticket.client.name }}</dd>
+
+              <dt class="col-sm-4">Ticket For</dt>
+              <dd class="col-sm-8">
+                {% if is_task_ticket %}
+                  <span class="badge badge-secondary">Developer Task</span><br>
+                  {% if parent_ticket %}
+                    Parent Ticket: <a href="{{ url_for('tickets.detail', ticket_id=parent_ticket.id) }}">{{ parent_ticket.ticket_no }}</a><br>
+                  {% endif %}
+                {% endif %}
+                {% if ticket.ticket_for == 'app' %}
+                  <span class="badge badge-primary">CDS Application</span><br>
+                  {{ ticket.app.name if ticket.app else 'N/A' }}
+                {% else %}
+                  <span class="badge badge-info">Instrument</span><br>
+                  {{ ticket.instrument.display_label() if ticket.instrument else 'N/A' }}
+                {% endif %}
+              </dd>
+
+              {% if current_user.role.value not in ['client', 'client_admin'] %}
+              <dt class="col-sm-4">Priority</dt>
+              <dd class="col-sm-8">
+                {% set ticket_priority_value = ticket.priority.value if ticket.priority else 'NOT_SET' %}
+                <span  class="badge badge-{{ 'danger' if ticket_priority_value == 'critical' else 'warning' if ticket_priority_value == 'high' else 'info' if ticket_priority_value == 'medium' else 'secondary' }} mr-1">
+                  {{ 'NOT SET' if ticket_priority_value == 'NOT_SET' else ticket_priority_value|upper }}
+                </span>
+              </dd>
+              {% endif %}
+
+              <dt class="col-sm-4">Status</dt>
+              <dd class="col-sm-8">
+                {% set status_value = ticket.status.value %}
+                {% set badge = 'secondary' %}
+                {% if status_value in ['resolved'] %}
+                  {% set badge = 'success' %}
+                {% elif status_value in ['closed'] %}
+                  {% set badge = 'dark' %}
+                {% elif status_value in ['in_progress'] %}
+                  {% set badge = 'primary' %}
+                {% elif status_value in ['reopened'] %}
+                  {% set badge = 'warning' %}
+                {% endif %}
+                <span   class="badge badge-{{ badge }}">
+                  {{ status_labels.get(ticket.status, ticket.status.value.replace('_', ' ')|title) }}
+                </span>
+              </dd>
+              {% if (current_user.user_type or '').lower() == 'it' %}
+              <dt class="col-sm-4">Work Status</dt>
+              <dd class="col-sm-8">
+                {% set work_badge = 'success' if ticket.is_working else 'secondary' %}
+                {% set work_label = 'Working' if ticket.is_working else 'Not Working' %}
+                <span class="badge badge-{{ work_badge }}">{{ work_label }}</span>
+                {% if ticket.started_date %}
+                  <small class="text-muted ml-1">since {{ ticket.started_date.strftime('%Y-%m-%d') }}</small>
+                {% endif %}
+              </dd>
+              {% endif %}
+
+              {# Assigned Engineer/IT details hidden per request.
+              <dt class="col-sm-4">Assigned Engineer/ IT</dt>
+              <dd class="col-sm-8">
+                {% if ticket.assigned_engineer %}
+                  {{ ticket.assigned_engineer.full_name or ticket.assigned_engineer.username }}
+                  {% if ticket.assigned_by %}
+                    <br><small class="text-muted">Assigned by: {{ ticket.assigned_by.full_name or ticket.assigned_by.username }}</small>
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted">Not assigned</span>
+                {% endif %}
+              </dd>
+              #}
+
+              <dt class="col-sm-4">Reported By</dt>
+              <dd class="col-sm-8">{{ ticket.reported_by.full_name or ticket.reported_by.username }}</dd>
+
+              <dt class="col-sm-4">Contact Number</dt>
+              <dd class="col-sm-8">
+                {% if ticket.reported_by and ticket.reported_by.contact_number %}
+                  {{ ticket.reported_by.contact_number }}
+                {% else %}
+                  <span class="text-muted">Not set</span>
+                {% endif %}
+              </dd>
+
+              <dt class="col-sm-4">Created</dt>
+              <dd class="col-sm-8">{{ to_localtime(ticket.created_at).strftime('%Y-%m-%d %I:%M %p') }}</dd>
+
+              <dt class="col-sm-4">Last Updated</dt>
+              <dd class="col-sm-8">{{ to_localtime(ticket.updated_at).strftime('%Y-%m-%d %I:%M %p') }}</dd>
+
+              <dt class="col-sm-4">Closed At</dt>
+              <dd class="col-sm-8">
+                {% if ticket.closed_at %}
+                  {{ to_localtime(ticket.closed_at).strftime('%Y-%m-%d %I:%M %p') }}
+                {% else %}
+                  <span class="text-muted">Not closed</span>
+                {% endif %}
+              </dd>
+
+              <dt class="col-sm-4">Turnaround Time</dt>
+              <dd class="col-sm-8">
+                {% if ticket.closed_at %}
+                  {% set tat_hours = ((ticket.closed_at - ticket.created_at).total_seconds() / 3600) if ticket.created_at else None %}
+                  {% if tat_hours is not none %}
+                    {{ tat_hours|round(2) }} hrs
+                  {% else %}
+                    <span class="text-muted">N/A</span>
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted">In progress</span>
+                {% endif %}
+              </dd>
+
+              <dt class="col-sm-4">Target Schedule</dt>
+              <dd class="col-sm-8">
+                {% if ticket.target_date %}
+                  {{ ticket.target_date.strftime('%Y-%m-%d') }}
+                {% else %}
+                  <span class="text-muted">Not set</span>
+                {% endif %}
+              </dd>
+              <dt class="col-sm-4">Date Needed</dt>
+              <dd class="col-sm-8">
+                {% if ticket.date_needed %}
+                  {{ ticket.date_needed.strftime('%Y-%m-%d') }}
+                {% else %}
+                  <span class="text-muted">Not set</span>
+                {% endif %}
+              </dd>
+            </dl>
+
+          </div>
+          <div class="col-md-4">
+            {% if current_user.role.value not in ['client', 'client_admin', 'sales'] %}
+              <div class="bg-light p-3 rounded">
+                {% set is_assigned_it = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() == 'it' %}
+
+                {% if is_assigned_it and ticket.status != TicketStatus.CLOSED %}
+                  <form method="post" action="{{ url_for('tickets.toggle_work_state', ticket_id=ticket.id) }}">
+                    <input type="hidden" name="action" value="{{ 'stop' if ticket.is_working else 'start' }}">
+                    <button type="submit" class="btn btn-{{ 'danger' if ticket.is_working else 'success' }} btn-sm btn-block">
+                      {{ 'Stop Work' if ticket.is_working else 'Start Work' }}
+                    </button>
+                    {% if ticket.started_date %}
+                      <small class="text-muted d-block mt-1">Started {{ ticket.started_date.strftime('%Y-%m-%d') }}</small>
+                    {% endif %}
+                  </form>
+                  <hr>
+                {% endif %}
+
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-comments metric-icon"></i>Comments</h3>
+      </div>
+      <div class="card-body ticket-chat-thread" id="ticket-comments-list">
+        {% for c in comments %}
+        {% set is_mine = c.user_id == current_user.id %}
+        {% set reaction_states = c.reaction_state_map() %}
+        {% set my_reaction_state = reaction_states.get(current_user.id ~ '', {}) %}
+        {% set viewer_is_client = current_user.role.value in ['client', 'client_admin'] %}
+        {% set commenter_is_client = c.user and c.user.role and c.user.role.value in ['client', 'client_admin'] %}
+        {% set can_acknowledge = viewer_is_client != commenter_is_client %}
+        <div
+          class="ticket-chat-row {{ 'mine' if is_mine else 'theirs' }}"
+          data-comment-id="{{ c.id }}"
+          data-commenter-is-client="{{ 'true' if commenter_is_client else 'false' }}"
+          data-my-acknowledged="{{ 'true' if my_reaction_state.get('acknowledge') else 'false' }}"
+        >
+          <div class="ticket-chat-item">
+            <div class="ticket-chat-meta">
+              {{ c.user.full_name or c.user.username }}
+              {% if c.is_internal %}
+                <span class="badge badge-secondary ml-1">Internal</span>
+              {% endif %}
+              <span class="ml-1">{{ to_localtime(c.created_at).strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            {% if c.comment_text %}
+            <div class="ticket-chat-bubble">{{ c.comment_text }}</div>
+            {% endif %}
+            {% set attachments = comment_attachments.get(c.id, []) %}
+            {% if attachments %}
+            <div class="comment-attachments">
+              {% for att in attachments %}
+              {% set is_image = att.content_type and att.content_type.startswith('image/') %}
+              <div class="comment-attachment">
+                {% if is_image %}
+                <a
+                  href="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  class="attachment-preview-trigger"
+                  data-preview-url="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  data-preview-name="{{ att.original_filename }}"
+                  data-preview-type="{{ att.content_type or '' }}">
+                  <img
+                    src="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                    alt="{{ att.original_filename }}"
+                    class="comment-attachment-thumb">
+                </a>
+                {% else %}
+                <a
+                  href="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  class="comment-attachment-link attachment-preview-trigger"
+                  data-preview-url="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  data-preview-name="{{ att.original_filename }}"
+                  data-preview-type="{{ att.content_type or '' }}">
+                  <i class="fas {{ 'fa-image' if is_image else 'fa-paperclip' }}"></i>
+                  <span>{{ att.original_filename }}</span>
+                </a>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            {% endif %}
+            {% if ticket.status != TicketStatus.CLOSED %}
+            <div class="ticket-chat-actions">
+              {% if can_acknowledge %}
+              <button
+                type="button"
+                class="acknowledge-button{% if my_reaction_state.get('acknowledge') %} active{% endif %}"
+                data-acknowledge-button
+              >
+                {% if my_reaction_state.get('acknowledge') %}Acknowledged{% else %}Acknowledge{% endif %}
+              </button>
+              {% endif %}
+              <button type="button" class="reaction-trigger" data-comment-id="{{ c.id }}" title="React">
+                <i class="far fa-smile"></i>
+              </button>
+              <div class="reaction-summary" data-reaction-summary>
+                {% for reaction in c.reaction_summary() %}
+                {% if reaction.code == 'acknowledge' and viewer_is_client == commenter_is_client %}
+                <span class="acknowledge-status">Acknowledged</span>
+                {% elif reaction.code != 'acknowledge' %}
+                <span class="reaction-chip">{{ reaction.emoji }} {{ reaction.count }}</span>
+                {% endif %}
+                {% endfor %}
+              </div>
+              <div class="reaction-picker" data-reaction-picker>
+                {% for reaction in reaction_options %}
+                <button type="button" class="reaction-option{% if my_reaction_state.get('reaction') == reaction.code %} active{% endif %}" data-code="{{ reaction.code }}">{{ reaction.emoji }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% else %}
+        <p class="text-muted" id="ticket-no-comments">No comments yet.</p>
+        {% endfor %}
+      </div>
+      {% if ticket.status != TicketStatus.CLOSED %}
+      <div class="card-footer">
+        <form method="post" enctype="multipart/form-data" id="ticket-comment-form">
+          <div class="form-group">
+            <label for="comment_text">Add Comment</label>
+            <textarea id="comment_text" name="comment_text" rows="3" class="form-control"></textarea>
+          </div>
+          {# Internal Note option hidden per request.
+          <div class="form-group form-check">
+            {% if current_user.role.value not in ['client', 'client_admin', 'sales'] %}
+              <input type="checkbox" class="form-check-input" id="is_internal" name="is_internal" value="1">
+              <label class="form-check-label" for="is_internal">Internal note (engineers/admins only)</label>
+            {% else %}
+              <input type="checkbox" class="form-check-input" disabled>
+              <label class="form-check-label text-muted" for="is_internal">Internal note (staff only)</label>
+            {% endif %}
+          </div>
+          #}
+          <div class="form-group">
+            <label for="attachment">Attachment (optional)</label>
+            <input type="file" name="attachment" id="attachment" class="form-control-file" multiple>
+            <ul class="selected-files-list d-none" id="attachment-selected-list"></ul>
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-comment"></i> Save Comment / Attachment
+          </button>
+        </form>
+      </div>
+      {% else %}
+      <div class="card-footer text-muted">
+        This ticket is closed and read-only.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="col-md-5">
+    <div class="card timeline-toggle-card">
+      <div class="card-header">
+        <button
+          type="button"
+          class="btn btn-tool left mr-2"
+          data-toggle="collapse"
+          data-target="#ticketTimelineCollapse"
+          aria-expanded="true"
+          aria-controls="ticketTimelineCollapse"
+          title="Toggle timeline">
+          <i class="fas fa-minus" id="ticketTimelineToggleIcon"></i>
+        </button>
+        <h3 class="card-title mb-0 left"><i class="fas fa-stream metric-icon"></i>Tickets Update Timeline</h3>
+      </div>
+      <div class="collapse show" id="ticketTimelineCollapse">
+      <div class="card-body">
+        {% if timeline_events %}
+          <div class="timeline">
+            {% for event in timeline_events %}
+              <div class="timeline-item">
+                <div class="timeline-date">{{ to_localtime(event.timestamp).strftime('%b %d, %I:%M %p').upper() }}</div>
+                <div class="timeline-marker timeline-{{ event.type }}"></div>
+                <div class="timeline-content">
+                  <div class="timeline-title">{{ event.title }}</div>
+                  <p class="timeline-text">{{ event.description }}</p>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">No updates yet.</p>
+        {% endif %}
+      </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-history metric-icon"></i>Service Logs</h3>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Visit Date</th>
+              <th>Engineer/ IT</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in ticket.service_logs %}
+            <tr onclick="window.location='{{ url_for('service_logs.detail', log_id=log.id) }}'" style="cursor:pointer;">
+              <td>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</td>
+              <td>{{ log.engineer.full_name or log.engineer.username }}</td>
+              <td>{{ log.service_type|capitalize }}</td>
+             
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-muted">No service logs linked.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and not is_task_ticket %}
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-tasks metric-icon"></i>Ticket Tasks</h3>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Ticket No</th>
+              <th>Task</th>
+              <th>Assigned IT</th>
+              <th>Priority</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for task in ticket_tasks %}
+            <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=task.id) }}'" style="cursor:pointer;">
+              <td>{{ task.ticket_no }}</td>
+              <td>
+                {{ task.subject }}
+              </td>
+              <td>{{ task.assigned_engineer.full_name or task.assigned_engineer.username if task.assigned_engineer else 'Unassigned' }}</td>
+              <td>
+                {% set task_priority_value = task.priority.value if task.priority else 'NOT_SET' %}
+                <span class="badge badge-{{ 'danger' if task_priority_value == 'critical' else 'warning' if task_priority_value == 'high' else 'info' if task_priority_value == 'medium' else 'secondary' }}">
+                  {{ 'NOT SET' if task_priority_value == 'NOT_SET' else task_priority_value|upper }}
+                </span>
+              </td>
+              <td>{{ status_labels.get(task.status, task.status.value.replace('_', ' ')|title) }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5" class="text-center text-muted">No tasks created from this ticket.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="card">
+      <div class="card-header d-flex align-items-center">
+        <button
+          type="button"
+          class="btn btn-tool left mr-2"
+          data-toggle="collapse"
+          data-target="#ticketAttachmentsCollapse"
+          aria-expanded="true"
+          aria-controls="ticketAttachmentsCollapse"
+          title="Toggle attachments">
+          <i class="fas fa-minus" id="ticketAttachmentsToggleIcon"></i>
+        </button>
+        <h3 class="card-title mb-0 left"><i class="fas fa-paperclip metric-icon"></i>Attachments</h3>
+      </div>
+      <div class="collapse show" id="ticketAttachmentsCollapse">
+      <div class="card-body">
+        <p class="text-muted mb-0{% if ticket.attachments %} d-none{% endif %}" id="ticket-no-attachments">No attachments.</p>
+        {% if ticket.attachments %}
+        <ul class="list-unstyled" id="ticket-attachments-list">
+          {% for att in ticket.attachments %}
+          <li data-attachment-id="{{ att.id }}">
+            <i class="fas fa-paperclip mr-1"></i>
+            <a
+              href="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+              class="attachment-preview-trigger"
+              data-preview-url="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+              data-preview-name="{{ att.original_filename }}"
+              data-preview-type="{{ att.content_type or '' }}">
+              {{ att.original_filename }}
+            </a>
+            <small class="text-muted">
+              - Sent by {{ att.user.full_name or att.user.username if att.user else 'Unknown' }}
+            </small>
+            <small class="text-muted"> – {{ to_localtime(att.uploaded_at).strftime('%Y-%m-%d %H:%M') }}</small>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <ul class="list-unstyled d-none" id="ticket-attachments-list"></ul>
+        {% endif %}
+      </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="modal fade attachment-preview-modal" id="attachmentPreviewModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="attachmentPreviewTitle">Attachment Preview</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body attachment-preview-body" id="attachmentPreviewBody"></div>
+      <div class="modal-footer">
+        <a href="#" class="btn btn-outline-primary" id="attachmentPreviewOpen" target="_blank" rel="noopener">Open File</a>
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+{% if current_user.role.value not in ['client', 'client_admin', 'sales'] and ticket.status != TicketStatus.CLOSED %}
+<div class="modal fade ticket-edit-modal" id="updateInfoModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-pen mr-2"></i>Update Ticket Info</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <form method="post" action="{{ url_for('tickets.update_ticket_info', ticket_id=ticket.id) }}" id="update-ticket-info-form">
+        <div class="modal-body">
+          <div class="ticket-edit-panel">
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="target_date">Target Schedule</label>
+                  <input
+                    type="date"
+                    name="target_date"
+                    id="target_date"
+                    class="form-control"
+                    value="{{ ticket.target_date.strftime('%Y-%m-%d') if ticket.target_date else '' }}"
+                  >
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="priority">Priority</label>
+                  <select name="priority" id="priority" class="form-control">
+                    {% for p, label in priority_options %}
+                      <option value="{{ p.value }}" {% if ticket.priority == p %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-group mb-0">
+              <label for="status">Update Status</label>
+              <select name="status" id="status" class="form-control">
+                {% for s, label in status_options %}
+                  <option value="{{ s.value }}" {% if ticket.status == s %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              {% if ticket.reported_by and ticket.reported_by.role.value in ['client', 'client_admin'] %}
+                <small class="text-muted d-block mt-2">Closing requires client signature.</small>
+              {% endif %}
+            </div>
+
+            <input type="hidden" name="signature_data" id="ticket_signature_data_update">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% if current_user.role.value in ['client', 'client_admin'] and ticket.status != TicketStatus.CLOSED %}
+<div class="modal fade ticket-edit-modal" id="clientUpdateModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-pen mr-2"></i>Update Ticket</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <form method="post" action="{{ url_for('tickets.update_client_fields', ticket_id=ticket.id) }}">
+        <div class="modal-body">
+          <div class="ticket-edit-panel">
+            <div class="form-group">
+              <label for="client_subject">Complaint</label>
+              <input
+                type="text"
+                name="subject"
+                id="client_subject"
+                class="form-control"
+                maxlength="100"
+                required
+                value="{{ ticket.subject }}">
+            </div>
+            <div class="form-group mb-0">
+              <label for="client_description">Description</label>
+              <textarea
+                name="description"
+                id="client_description"
+                rows="5"
+                class="form-control">{{ ticket.description or '' }}</textarea>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
+<div class="modal fade" id="ticketSignatureModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-pen mr-2"></i>Client Signature</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-info py-2 px-3">
+          Please capture the client's approval before closing this ticket.
+        </div>
+        <div class="border rounded" style="height: 300px;">
+          <canvas id="ticket-signature-canvas" style="width: 100%; height: 100%;"></canvas>
+        </div>
+        <div class="mt-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="ticket-clear-signature">Clear</button>
+          <button type="button" class="btn btn-primary btn-sm" id="ticket-save-signature">Save Signature</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="createTaskModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-tasks mr-2"></i>Create Task</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      {% if current_user.role.value == 'admin' %}
+      <form method="post" action="{{ url_for('tickets.create_tasks', ticket_id=ticket.id) }}">
+        <div class="modal-body">
+          <div class="alert alert-info py-2 px-3">
+            Split this ticket into separate tasks. Each task copies the parent ticket details and only needs an assigned IT.
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-2" id="ticket-task-table">
+              <thead>
+                <tr>
+                  <th style="width: 25%;">Task</th>
+                  <th style="width: 25%;">Assigned IT</th>
+                  <th style="width: 15%;">Priority</th>
+                  <th>Notes</th>
+                  <th style="width: 6%;"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <button type="button" class="btn btn-outline-primary btn-sm" id="add-ticket-task-row">
+            <i class="fas fa-plus"></i> Add Task
+          </button>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Create Task</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    var reporterIsClient = {{ 'true' if ticket.reported_by and ticket.reported_by.role.value in ['client', 'client_admin'] else 'false' }};
+    var statusForm = document.getElementById('update-ticket-info-form');
+    var acceptForm = document.getElementById('accept-form');
+    var statusSelect = document.getElementById('status');
+    var commentForm = document.getElementById('ticket-comment-form');
+    var acceptSignatureInput = document.getElementById('ticket_signature_data_accept');
+    var updateSignatureInput = document.getElementById('ticket_signature_data_update');
+    var modalEl = document.getElementById('ticketSignatureModal');
+    var signatureCanvas = document.getElementById('ticket-signature-canvas');
+    var clearBtn = document.getElementById('ticket-clear-signature');
+    var saveBtn = document.getElementById('ticket-save-signature');
+    var ctx, drawing = false, lastPos = { x: 0, y: 0 };
+    var pendingSubmit = false;
+    var taskTableBody = document.querySelector('#ticket-task-table tbody');
+    var addTaskRowBtn = document.getElementById('add-ticket-task-row');
+    var commentTextarea = document.getElementById('comment_text');
+    var attachmentInput = document.getElementById('attachment');
+    var attachmentSelectedList = document.getElementById('attachment-selected-list');
+    var taskEngineerOptions = `{% for eng in task_engineers %}<option value="{{ eng.id }}">{{ eng.full_name or eng.username }}</option>{% endfor %}`;
+    var taskPriorityOptions = `
+      <option value="NOT_SET" {% if not ticket.priority or ticket.priority.value == 'NOT_SET' %}selected{% endif %}>Not set yet</option>
+      <option value="critical" {% if ticket.priority and ticket.priority.value == 'critical' %}selected{% endif %}>Critical</option>
+      <option value="high" {% if ticket.priority and ticket.priority.value == 'high' %}selected{% endif %}>High</option>
+      <option value="medium" {% if ticket.priority and ticket.priority.value == 'medium' %}selected{% endif %}>Medium</option>
+      <option value="low" {% if ticket.priority and ticket.priority.value == 'low' %}selected{% endif %}>Low</option>
+    `;
+    var realtimeSocket = window.io ? io() : null;
+    var commentsCard = document.getElementById('ticket-comments-card');
+    var commentsList = document.getElementById('ticket-comments-list');
+    var commentScrollKey = 'ticket-comments-return-{{ ticket.id }}';
+    var currentUserIsClient = {{ 'true' if current_user.role.value in ['client', 'client_admin'] else 'false' }};
+    var attachmentPreviewModal = document.getElementById('attachmentPreviewModal');
+    var attachmentPreviewBody = document.getElementById('attachmentPreviewBody');
+    var attachmentPreviewTitle = document.getElementById('attachmentPreviewTitle');
+    var attachmentPreviewOpen = document.getElementById('attachmentPreviewOpen');
+    var attachmentsList = document.getElementById('ticket-attachments-list');
+    var noAttachmentsMessage = document.getElementById('ticket-no-attachments');
+    var ticketTimelineCollapse = document.getElementById('ticketTimelineCollapse');
+    var ticketTimelineToggleIcon = document.getElementById('ticketTimelineToggleIcon');
+    var ticketAttachmentsCollapse = document.getElementById('ticketAttachmentsCollapse');
+    var ticketAttachmentsToggleIcon = document.getElementById('ticketAttachmentsToggleIcon');
+    var suppressRealtimeReloadUntil = 0;
+    var pendingRealtimeReload = null;
+
+    var reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡'];
+
+    var reactionOptions = {{ reaction_options|tojson }};
+
+    if (sessionStorage.getItem(commentScrollKey) === '1') {
+      sessionStorage.removeItem(commentScrollKey);
+      if (commentsCard) {
+        commentsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      scrollCommentsToBottom();
+    }
+    scrollCommentsToBottom();
+
+    function renderReactionSummary(container, reactions, showAcknowledgeStatus) {
+      if (!container) return;
+      container.innerHTML = '';
+      (reactions || []).forEach(function(reaction) {
+        if (reaction.code === 'acknowledge' && !showAcknowledgeStatus) {
+          return;
+        }
+        var chip = document.createElement('span');
+        if (reaction.code === 'acknowledge') {
+          chip.className = 'acknowledge-status';
+          chip.textContent = 'Acknowledged';
+        } else {
+          chip.className = 'reaction-chip';
+          chip.textContent = reaction.emoji + ' ' + reaction.count;
+        }
+        container.appendChild(chip);
+      });
+    }
+
+    function buildReactionPicker(selectedCode) {
+      var picker = document.createElement('div');
+      picker.className = 'reaction-picker';
+      picker.setAttribute('data-reaction-picker', '');
+      reactionOptions.forEach(function(reaction) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'reaction-option' + (selectedCode === reaction.code ? ' active' : '');
+        button.setAttribute('data-code', reaction.code);
+        button.textContent = reaction.emoji;
+        picker.appendChild(button);
+      });
+      return picker;
+    }
+
+    document.querySelectorAll('[data-reaction-picker]').forEach(function(existingPicker) {
+      existingPicker.parentNode.replaceChild(buildReactionPicker(''), existingPicker);
+    });
+
+    function closeReactionPickers() {
+      document.querySelectorAll('[data-reaction-picker].show').forEach(function(picker) {
+        picker.classList.remove('show');
+      });
+    }
+
+    function scrollCommentsToBottom() {
+      if (commentsList) {
+        commentsList.scrollTop = commentsList.scrollHeight;
+      }
+    }
+
+    function scheduleRealtimePageRefresh(delay) {
+      if (pendingRealtimeReload) {
+        window.clearTimeout(pendingRealtimeReload);
+      }
+      pendingRealtimeReload = window.setTimeout(function() {
+        sessionStorage.setItem(commentScrollKey, '1');
+        window.location.reload();
+      }, delay || 500);
+    }
+
+    function openAttachmentPreview(url, name, contentType) {
+      if (!attachmentPreviewModal || !attachmentPreviewBody) return;
+      attachmentPreviewBody.innerHTML = '';
+      if (attachmentPreviewTitle) {
+        attachmentPreviewTitle.textContent = name || 'Attachment Preview';
+      }
+      if (attachmentPreviewOpen) {
+        attachmentPreviewOpen.href = url || '#';
+      }
+
+      if ((contentType || '').indexOf('image/') === 0) {
+        var image = document.createElement('img');
+        image.src = url;
+        image.alt = name || 'Attachment preview';
+        image.className = 'attachment-preview-image';
+        attachmentPreviewBody.appendChild(image);
+      } else {
+        var frame = document.createElement('iframe');
+        frame.src = url;
+        frame.className = 'attachment-preview-frame';
+        frame.setAttribute('title', name || 'Attachment preview');
+        attachmentPreviewBody.appendChild(frame);
+      }
+
+      $('#attachmentPreviewModal').modal('show');
+    }
+
+    function getAttachmentFiles() {
+      return attachmentInput && attachmentInput.files ? Array.from(attachmentInput.files) : [];
+    }
+
+    function setAttachmentFiles(files) {
+      if (!attachmentInput) return;
+      var dataTransfer = new DataTransfer();
+      files.forEach(function(file) {
+        dataTransfer.items.add(file);
+      });
+      attachmentInput.files = dataTransfer.files;
+    }
+
+    function renderAttachmentList() {
+      if (!attachmentSelectedList || !attachmentInput) return;
+      var files = getAttachmentFiles();
+      attachmentSelectedList.innerHTML = '';
+      attachmentSelectedList.classList.toggle('d-none', files.length === 0);
+      files.forEach(function(file, index) {
+        var item = document.createElement('li');
+
+        var name = document.createElement('span');
+        name.className = 'selected-files-name';
+        name.textContent = file.name;
+
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-outline-danger btn-xs';
+        removeBtn.setAttribute('data-file-index', index);
+        removeBtn.textContent = 'Remove';
+
+        item.appendChild(name);
+        item.appendChild(removeBtn);
+        attachmentSelectedList.appendChild(item);
+      });
+    }
+
+    function buildCommentAttachments(attachments) {
+      if (!attachments || !attachments.length) return null;
+      var wrapper = document.createElement('div');
+      wrapper.className = 'comment-attachments';
+
+      attachments.forEach(function(attachment) {
+        var item = document.createElement('div');
+        item.className = 'comment-attachment';
+
+        if (attachment.is_image) {
+          var thumbLink = document.createElement('a');
+          thumbLink.href = attachment.url || '#';
+          thumbLink.className = 'attachment-preview-trigger';
+          thumbLink.setAttribute('data-preview-url', attachment.url || '');
+          thumbLink.setAttribute('data-preview-name', attachment.name || '');
+          thumbLink.setAttribute('data-preview-type', attachment.content_type || '');
+
+          var thumb = document.createElement('img');
+          thumb.src = attachment.url || '';
+          thumb.alt = attachment.name || 'Attachment';
+          thumb.className = 'comment-attachment-thumb';
+
+          thumbLink.appendChild(thumb);
+          item.appendChild(thumbLink);
+        } else {
+          var fileLink = document.createElement('a');
+          fileLink.href = attachment.url || '#';
+          fileLink.className = 'comment-attachment-link attachment-preview-trigger';
+          fileLink.setAttribute('data-preview-url', attachment.url || '');
+          fileLink.setAttribute('data-preview-name', attachment.name || '');
+          fileLink.setAttribute('data-preview-type', attachment.content_type || '');
+          fileLink.innerHTML = '<i class="fas fa-paperclip"></i><span>' + (attachment.name || 'Attachment') + '</span>';
+          item.appendChild(fileLink);
+        }
+
+        wrapper.appendChild(item);
+      });
+
+      return wrapper;
+    }
+
+    function appendAttachmentToCard(attachment, comment) {
+      if (!attachment || !attachmentsList) return;
+      if (attachment.id && attachmentsList.querySelector('[data-attachment-id="' + attachment.id + '"]')) return;
+
+      if (noAttachmentsMessage) {
+        noAttachmentsMessage.classList.add('d-none');
+      }
+      attachmentsList.classList.remove('d-none');
+
+      var item = document.createElement('li');
+      if (attachment.id) {
+        item.setAttribute('data-attachment-id', attachment.id);
+      }
+
+      var icon = document.createElement('i');
+      icon.className = 'fas fa-paperclip mr-1';
+
+      var link = document.createElement('a');
+      link.href = attachment.url || '#';
+      link.className = 'attachment-preview-trigger';
+      link.setAttribute('data-preview-url', attachment.url || '');
+      link.setAttribute('data-preview-name', attachment.name || '');
+      link.setAttribute('data-preview-type', attachment.content_type || '');
+      link.textContent = attachment.name || 'Attachment';
+
+      var sender = document.createElement('small');
+      sender.className = 'text-muted';
+      sender.textContent = ' - Sent by ' + ((comment && comment.user) ? comment.user : 'Unknown');
+
+      var timestamp = document.createElement('small');
+      timestamp.className = 'text-muted';
+      timestamp.textContent = ' - ' + ((comment && comment.created_at) ? comment.created_at : '');
+
+      item.appendChild(icon);
+      item.appendChild(link);
+      item.appendChild(sender);
+      item.appendChild(timestamp);
+      attachmentsList.insertBefore(item, attachmentsList.firstChild);
+    }
+
+    function updateReactionUI(commentId, reactions, myReaction, myAcknowledged) {
+      var row = document.querySelector('[data-comment-id="' + commentId + '"]');
+      if (!row) return;
+      var commenterIsClient = row.getAttribute('data-commenter-is-client') === 'true';
+      var showAcknowledgeStatus = Boolean(currentUserIsClient) === Boolean(commenterIsClient);
+      renderReactionSummary(row.querySelector('[data-reaction-summary]'), reactions || [], showAcknowledgeStatus);
+      if (typeof myReaction !== 'undefined' && myReaction !== null) {
+        row.querySelectorAll('.reaction-option').forEach(function(button) {
+          button.classList.toggle('active', myReaction && button.getAttribute('data-code') === myReaction);
+        });
+      }
+      if (typeof myAcknowledged !== 'undefined' && myAcknowledged !== null) {
+        row.setAttribute('data-my-acknowledged', myAcknowledged ? 'true' : 'false');
+        var acknowledgeButton = row.querySelector('[data-acknowledge-button]');
+        if (acknowledgeButton) {
+          acknowledgeButton.classList.toggle('active', !!myAcknowledged);
+          acknowledgeButton.textContent = myAcknowledged ? 'Acknowledged' : 'Acknowledge';
+        }
+      }
+    }
+
+    function submitReaction(commentId, reactionCode) {
+      var formData = new FormData();
+      formData.append('emoji', reactionCode || '');
+      return fetch('{{ url_for("tickets.react_comment", comment_id=0) }}'.replace('0', commentId), {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(payload) {
+        if (payload && !payload.error) {
+          updateReactionUI(
+            payload.comment_id,
+            payload.reactions || [],
+            payload.my_reaction || '',
+            !!payload.my_acknowledged
+          );
+        }
+      })
+      .catch(function() {});
+    }
+
+    function bindReactionControls(row) {
+      if (!row) return;
+      var trigger = row.querySelector('.reaction-trigger');
+      var actions = row.querySelector('.ticket-chat-actions');
+      var summary = row.querySelector('[data-reaction-summary]');
+      var acknowledgeButton = row.querySelector('[data-acknowledge-button]');
+      var existingPicker = row.querySelector('[data-reaction-picker]');
+      var selectedCode = '';
+      row.querySelectorAll('.reaction-option.active').forEach(function(button) {
+        selectedCode = button.getAttribute('data-code') || selectedCode;
+      });
+      var picker = buildReactionPicker(selectedCode);
+      if (existingPicker && existingPicker.parentNode) {
+        existingPicker.parentNode.replaceChild(picker, existingPicker);
+      } else if (actions) {
+        actions.appendChild(picker);
+      }
+
+      picker.querySelectorAll('.reaction-option').forEach(function(button) {
+        button.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          submitReaction(row.getAttribute('data-comment-id'), button.getAttribute('data-code') || '');
+          closeReactionPickers();
+        });
+      });
+
+      if (trigger) {
+        trigger.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var shouldShow = !picker.classList.contains('show');
+          closeReactionPickers();
+          if (shouldShow) {
+            picker.classList.add('show');
+          }
+        });
+      }
+
+      if (summary) {
+        summary.addEventListener('click', function(e) {
+          e.stopPropagation();
+        });
+      }
+
+      if (acknowledgeButton) {
+        acknowledgeButton.addEventListener('click', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          submitReaction(row.getAttribute('data-comment-id'), 'acknowledge');
+          closeReactionPickers();
+        });
+      }
+    }
+
+    function appendRealtimeComment(comment) {
+      if (!comment || comment.ticket_id !== {{ ticket.id }}) return;
+      var list = document.getElementById('ticket-comments-list');
+      if (!list || document.querySelector('[data-comment-id="' + comment.comment_id + '"]')) return;
+
+      var empty = document.getElementById('ticket-no-comments');
+      if (empty) empty.remove();
+
+      var isMine = Number(comment.user_id) === {{ current_user.id }};
+      var row = document.createElement('div');
+      row.className = 'ticket-chat-row ' + (isMine ? 'mine' : 'theirs');
+      row.setAttribute('data-comment-id', comment.comment_id);
+      row.setAttribute('data-commenter-is-client', comment.user_is_client ? 'true' : 'false');
+      row.setAttribute('data-my-acknowledged', 'false');
+
+      var item = document.createElement('div');
+      item.className = 'ticket-chat-item';
+
+      var meta = document.createElement('div');
+      meta.className = 'ticket-chat-meta';
+      meta.appendChild(document.createTextNode(comment.user || 'User'));
+      if (comment.is_internal) {
+        var badge = document.createElement('span');
+        badge.className = 'badge badge-secondary ml-1';
+        badge.textContent = 'Internal';
+        meta.appendChild(badge);
+      }
+      var timestamp = document.createElement('span');
+      timestamp.className = 'ml-1';
+      timestamp.textContent = comment.created_at || '';
+      meta.appendChild(timestamp);
+
+      if (comment.comment_text) {
+        var bubble = document.createElement('div');
+        bubble.className = 'ticket-chat-bubble';
+        bubble.textContent = comment.comment_text || '';
+        item.appendChild(bubble);
+      }
+
+      var attachmentsBlock = buildCommentAttachments(comment.attachments || []);
+      if (attachmentsBlock) {
+        item.appendChild(attachmentsBlock);
+        (comment.attachments || []).forEach(function(attachment) {
+          appendAttachmentToCard(attachment, comment);
+        });
+      }
+
+      var actions = document.createElement('div');
+      actions.className = 'ticket-chat-actions';
+
+      var canAcknowledge = Boolean(currentUserIsClient) !== Boolean(comment.user_is_client);
+      if (canAcknowledge) {
+        var acknowledgeButton = document.createElement('button');
+        acknowledgeButton.type = 'button';
+        acknowledgeButton.className = 'acknowledge-button';
+        acknowledgeButton.setAttribute('data-acknowledge-button', '');
+        acknowledgeButton.textContent = 'Acknowledge';
+        actions.appendChild(acknowledgeButton);
+      }
+
+      var trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.className = 'reaction-trigger';
+      trigger.setAttribute('data-comment-id', comment.comment_id);
+      trigger.setAttribute('title', 'React');
+      trigger.innerHTML = '<i class="far fa-smile"></i>';
+
+      var summary = document.createElement('div');
+      summary.className = 'reaction-summary';
+      summary.setAttribute('data-reaction-summary', '');
+      renderReactionSummary(summary, comment.reactions || [], Boolean(currentUserIsClient) === Boolean(comment.user_is_client));
+
+      actions.appendChild(trigger);
+      actions.appendChild(summary);
+      actions.appendChild(buildReactionPicker(''));
+      item.appendChild(meta);
+      item.appendChild(actions);
+      row.appendChild(item);
+      list.appendChild(row);
+      bindReactionControls(row);
+      scrollCommentsToBottom();
+    }
+
+    if (realtimeSocket) {
+      realtimeSocket.on('connect', function() {
+        realtimeSocket.emit('join_ticket_detail', { ticket_id: {{ ticket.id }} });
+      });
+      realtimeSocket.on('ticket_comment_added', function(payload) {
+        appendRealtimeComment(payload);
+        if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
+        if (Number(payload.user_id) !== {{ current_user.id }}) {
+          scheduleRealtimePageRefresh(600);
+        }
+      });
+      realtimeSocket.on('ticket_comment_reacted', function(payload) {
+        if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
+        updateReactionUI(payload.comment_id, payload.reactions || [], null);
+      });
+      realtimeSocket.on('ticket_changed', function(payload) {
+        if (payload && (payload.id === {{ ticket.id }} || payload.parent_ticket_id === {{ ticket.id }})) {
+          if (payload.action === 'commented' && Date.now() < suppressRealtimeReloadUntil) {
+            return;
+          }
+          scheduleRealtimePageRefresh(700);
+        }
+      });
+    }
+
+    document.querySelectorAll('[data-comment-id]').forEach(bindReactionControls);
+
+    document.addEventListener('click', function(event) {
+      var previewTrigger = event.target.closest('.attachment-preview-trigger');
+      if (previewTrigger) {
+        event.preventDefault();
+        openAttachmentPreview(
+          previewTrigger.getAttribute('data-preview-url') || previewTrigger.getAttribute('href') || '',
+          previewTrigger.getAttribute('data-preview-name') || '',
+          previewTrigger.getAttribute('data-preview-type') || ''
+        );
+        return;
+      }
+      if (!event.target.closest('[data-reaction-picker]')) {
+        closeReactionPickers();
+      }
+    });
+
+    if (attachmentPreviewModal) {
+      $('#attachmentPreviewModal').on('hidden.bs.modal', function() {
+        if (attachmentPreviewBody) {
+          attachmentPreviewBody.innerHTML = '';
+        }
+        if (attachmentPreviewOpen) {
+          attachmentPreviewOpen.href = '#';
+        }
+      });
+    }
+
+    if (ticketTimelineCollapse && ticketTimelineToggleIcon) {
+      $('#ticketTimelineCollapse').on('shown.bs.collapse', function() {
+        ticketTimelineToggleIcon.classList.remove('fa-plus');
+        ticketTimelineToggleIcon.classList.add('fa-minus');
+      });
+      $('#ticketTimelineCollapse').on('hidden.bs.collapse', function() {
+        ticketTimelineToggleIcon.classList.remove('fa-minus');
+        ticketTimelineToggleIcon.classList.add('fa-plus');
+      });
+    }
+
+    if (ticketAttachmentsCollapse && ticketAttachmentsToggleIcon) {
+      $('#ticketAttachmentsCollapse').on('shown.bs.collapse', function() {
+        ticketAttachmentsToggleIcon.classList.remove('fa-plus');
+        ticketAttachmentsToggleIcon.classList.add('fa-minus');
+      });
+      $('#ticketAttachmentsCollapse').on('hidden.bs.collapse', function() {
+        ticketAttachmentsToggleIcon.classList.remove('fa-minus');
+        ticketAttachmentsToggleIcon.classList.add('fa-plus');
+      });
+    }
+
+    if (attachmentInput) {
+      attachmentInput.addEventListener('change', renderAttachmentList);
+    }
+
+    if (attachmentSelectedList) {
+      attachmentSelectedList.addEventListener('click', function(event) {
+        var removeBtn = event.target.closest('[data-file-index]');
+        if (!removeBtn) return;
+        var index = Number(removeBtn.getAttribute('data-file-index'));
+        var files = getAttachmentFiles().filter(function(_, fileIndex) {
+          return fileIndex !== index;
+        });
+        setAttachmentFiles(files);
+        renderAttachmentList();
+      });
+    }
+
+    function addTaskRow() {
+      if (!taskTableBody) return;
+      var row = document.createElement('tr');
+      row.innerHTML = `
+        <td>
+          <input type="text" name="task_subjects[]" class="form-control form-control-sm" placeholder="Optional task subject override">
+        </td>
+        <td>
+          <select name="task_engineer_ids[]" class="form-control form-control-sm" required>
+            <option value="">-- select IT --</option>
+            ${taskEngineerOptions || '<option value="" disabled>No IT users available</option>'}
+          </select>
+        </td>
+        <td>
+          <select name="task_priorities[]" class="form-control form-control-sm">
+            ${taskPriorityOptions}
+          </select>
+        </td>
+        <td>
+          <textarea name="task_descriptions[]" rows="1" class="form-control form-control-sm" placeholder="Optional task note"></textarea>
+        </td>
+        <td class="text-center">
+          <button type="button" class="btn btn-sm btn-outline-danger remove-ticket-task-row"><i class="fas fa-trash"></i></button>
+        </td>
+      `;
+      taskTableBody.appendChild(row);
+    }
+
+    if (addTaskRowBtn) {
+      addTaskRowBtn.addEventListener('click', addTaskRow);
+    }
+    if (taskTableBody) {
+      taskTableBody.addEventListener('click', function(event) {
+        var btn = event.target.closest('.remove-ticket-task-row');
+        if (!btn) return;
+        btn.closest('tr').remove();
+        if (!taskTableBody.children.length) {
+          addTaskRow();
+        }
+      });
+      addTaskRow();
+    }
+
+    function needsSignature() {
+      return reporterIsClient && statusSelect && statusSelect.value === 'closed';
+    }
+
+    function resizeCanvas() {
+      if (!signatureCanvas) return;
+      var ratio = window.devicePixelRatio || 1;
+      var width = signatureCanvas.clientWidth;
+      var height = signatureCanvas.clientHeight;
+      signatureCanvas.width = width * ratio;
+      signatureCanvas.height = height * ratio;
+      ctx = signatureCanvas.getContext('2d');
+      ctx.scale(ratio, ratio);
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#111';
+      ctx.clearRect(0, 0, width, height);
+    }
+
+    function getPosition(event) {
+      var rect = signatureCanvas.getBoundingClientRect();
+      var x, y;
+      if (event.touches && event.touches.length) {
+        x = event.touches[0].clientX - rect.left;
+        y = event.touches[0].clientY - rect.top;
+      } else {
+        x = event.clientX - rect.left;
+        y = event.clientY - rect.top;
+      }
+      return { x: x, y: y };
+    }
+
+    function startDrawing(event) {
+      drawing = true;
+      lastPos = getPosition(event);
+    }
+
+    function draw(event) {
+      if (!drawing) return;
+      event.preventDefault();
+      var pos = getPosition(event);
+      ctx.beginPath();
+      ctx.moveTo(lastPos.x, lastPos.y);
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+      lastPos = pos;
+    }
+
+    function stopDrawing() {
+      drawing = false;
+    }
+
+    function clearSignature() {
+      if (!ctx) return;
+      ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+      if (acceptSignatureInput) acceptSignatureInput.value = '';
+      if (updateSignatureInput) updateSignatureInput.value = '';
+    }
+
+    function saveSignature() {
+      if (!signatureCanvas) return;
+      var dataUrl = signatureCanvas.toDataURL('image/png');
+      if (acceptSignatureInput) acceptSignatureInput.value = dataUrl;
+      if (updateSignatureInput) updateSignatureInput.value = dataUrl;
+      if (window.jQuery && $('#ticketSignatureModal').modal) {
+        $('#ticketSignatureModal').modal('hide');
+      }
+      if (pendingSubmit) {
+        if (acceptForm) {
+          acceptForm.submit();
+        } else {
+          statusForm.submit();
+        }
+        pendingSubmit = false;
+      }
+    }
+
+    if (signatureCanvas) {
+      if (modalEl) {
+        modalEl.addEventListener('shown.bs.modal', resizeCanvas);
+      }
+      if (window.jQuery && $('#ticketSignatureModal').on) {
+        $('#ticketSignatureModal').on('shown.bs.modal', resizeCanvas);
+      }
+      signatureCanvas.addEventListener('mousedown', startDrawing);
+      signatureCanvas.addEventListener('mousemove', draw);
+      signatureCanvas.addEventListener('mouseup', stopDrawing);
+      signatureCanvas.addEventListener('mouseleave', stopDrawing);
+      signatureCanvas.addEventListener('touchstart', startDrawing, { passive: false });
+      signatureCanvas.addEventListener('touchmove', draw, { passive: false });
+      signatureCanvas.addEventListener('touchend', stopDrawing);
+    }
+    if (clearBtn) clearBtn.addEventListener('click', clearSignature);
+    if (saveBtn) saveBtn.addEventListener('click', saveSignature);
+
+    if (statusForm) {
+      statusForm.addEventListener('submit', function(e) {
+        if (needsSignature() && updateSignatureInput && !updateSignatureInput.value) {
+          e.preventDefault();
+          pendingSubmit = true;
+          if (window.jQuery && $('#ticketSignatureModal').modal) {
+            $('#ticketSignatureModal').modal('show');
+          }
+        }
+      });
+    }
+
+    if (acceptForm) {
+      acceptForm.addEventListener('submit', function(e) {
+        if (reporterIsClient && acceptSignatureInput && !acceptSignatureInput.value) {
+          e.preventDefault();
+          pendingSubmit = true;
+          if (window.jQuery && $('#ticketSignatureModal').modal) {
+            $('#ticketSignatureModal').modal('show');
+          }
+        }
+      });
+    }
+
+    if (commentTextarea) {
+      commentTextarea.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          if (commentTextarea.form) {
+            commentTextarea.form.requestSubmit();
+          }
+        }
+      });
+    }
+
+    if (commentForm) {
+      commentForm.addEventListener('submit', function(e) {
+        var hasFiles = attachmentInput && attachmentInput.files && attachmentInput.files.length > 0;
+        var commentTextValue = commentTextarea ? commentTextarea.value.trim() : '';
+        if (!hasFiles && !commentTextValue) {
+          e.preventDefault();
+          return;
+        }
+
+        suppressRealtimeReloadUntil = Date.now() + 3000;
+        e.preventDefault();
+        var formData = new FormData(commentForm);
+        fetch(commentForm.action || window.location.href, {
+          method: 'POST',
+          body: formData,
+          credentials: 'same-origin',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(payload) {
+          if (!payload || !payload.ok) return;
+          if (payload.comment) {
+            appendRealtimeComment(payload.comment);
+            if (commentTextarea) {
+              commentTextarea.value = '';
+              commentTextarea.focus();
+            }
+            if (attachmentInput) {
+              attachmentInput.value = '';
+            }
+            renderAttachmentList();
+            scrollCommentsToBottom();
+          } else if (payload.reload) {
+            sessionStorage.setItem(commentScrollKey, '1');
+            window.location.reload();
+          }
+        })
+        .catch(function() {
+          sessionStorage.setItem(commentScrollKey, '1');
+          commentForm.submit();
+        });
+      });
+    }
+  });
+</script>
+{% endblock %}

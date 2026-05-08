@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ monitor_title or 'CDS App Monitoring' }}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.4/css/all.min.css">
+  <style>
+    :root {
+      --bg: #07111f;
+      --panel: #101c2d;
+      --panel-2: #14243a;
+      --border: rgba(255,255,255,0.08);
+      --text: #f4f7fb;
+      --muted: #aeb9c9;
+      --open: #3b82f6;
+      --progress: #f59e0b;
+      --resolved: #22c55e;
+      --closed: #94a3b8;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      background: radial-gradient(circle at top right, #173050 0%, var(--bg) 58%);
+      color: var(--text);
+    }
+
+    .monitor-shell {
+      min-height: 100vh;
+      padding: 20px 24px 24px;
+    }
+
+    .monitor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 18px;
+    }
+
+    .monitor-brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+    }
+
+    .monitor-brand img {
+      height: 56px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .monitor-brand-text {
+      flex: 1;
+      text-align: center;
+    }
+
+    .monitor-title {
+      font-size: 30px;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .monitor-subtitle {
+      text-align: center;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .monitor-datetime {
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .monitor-date {
+      font-size: 17px;
+      font-weight: 700;
+    }
+
+    .monitor-time {
+      font-size: 28px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .monitor-sync {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .summary-card,
+    .monitor-table-wrap {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+    }
+
+    .summary-card {
+      padding: 18px 20px;
+    }
+
+    .summary-label {
+      font-size: 12px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .summary-value {
+      font-size: 42px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .summary-open { color: var(--open); }
+    .summary-progress { color: var(--progress); }
+    .summary-resolved { color: var(--resolved); }
+    .summary-closed { color: var(--closed); }
+    .summary-total { color: var(--text); }
+
+    .monitor-table-wrap {
+      overflow: hidden;
+    }
+
+    .monitor-tables-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.72fr) minmax(270px, 0.78fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .monitor-table-title {
+      padding: 14px 16px;
+      font-size: 15px;
+      font-weight: 700;
+      border-bottom: 1px solid var(--border);
+      color: #dbe7f5;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .monitor-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .monitor-table thead th {
+      background: rgba(255,255,255,0.05);
+      color: #dbe7f5;
+      text-align: left;
+      font-size: 13px;
+      letter-spacing: 0.03em;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .monitor-table tbody td {
+      padding: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 15px;
+    }
+
+    .monitor-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .monitor-table tbody tr.rank-up td {
+      animation: table-rank-up-glow 1.2s ease;
+    }
+
+    .count-pill {
+      display: inline-block;
+      min-width: 52px;
+      text-align: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .pill-open { background: var(--open); }
+    .pill-progress { background: var(--progress); }
+    .pill-resolved { background: var(--resolved); }
+    .pill-closed { background: var(--closed); }
+
+    .empty-row td {
+      text-align: center;
+      color: var(--muted);
+      padding: 26px 16px;
+    }
+
+    .leaderboard-wrap {
+      padding: 10px 12px 12px;
+    }
+
+    .leaderboard-stage {
+      position: relative;
+      min-height: 56px;
+    }
+
+    .leaderboard-row {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 46px;
+      transition: transform 900ms ease, opacity 350ms ease;
+    }
+
+    .leaderboard-row.rank-up .leaderboard-track {
+      animation: leaderboard-rank-up-glow 1.2s ease;
+    }
+
+    .leaderboard-track {
+      position: relative;
+      height: 100%;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .leaderboard-content {
+      position: relative;
+      z-index: 1;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 12px;
+    }
+
+    .leaderboard-rank {
+      width: 28px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+      flex: 0 0 auto;
+    }
+
+    .leaderboard-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .leaderboard-total {
+      flex: 0 0 auto;
+      min-width: 56px;
+      text-align: right;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+
+    @keyframes leaderboard-rank-up-glow {
+      0% {
+        box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+        border-color: rgba(255,255,255,0.06);
+      }
+      30% {
+        box-shadow: 0 0 26px rgba(59, 130, 246, 0.45);
+        border-color: rgba(59, 130, 246, 0.55);
+      }
+      100% {
+        box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+        border-color: rgba(255,255,255,0.06);
+      }
+    }
+
+    @keyframes table-rank-up-glow {
+      0% {
+        background: rgba(59, 130, 246, 0);
+      }
+      35% {
+        background: rgba(59, 130, 246, 0.22);
+      }
+      100% {
+        background: rgba(59, 130, 246, 0);
+      }
+    }
+
+    @media (max-width: 1100px) {
+      .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+      .monitor-tables-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .monitor-shell { padding: 16px; }
+      .monitor-header { flex-direction: column; align-items: flex-start; }
+      .monitor-datetime { text-align: left; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .monitor-title { font-size: 24px; }
+      .monitor-time { font-size: 22px; }
+      .monitor-table thead th,
+      .monitor-table tbody td { padding: 12px 10px; font-size: 13px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="monitor-shell">
+    <div class="monitor-header">
+      <div class="monitor-brand">
+        <img src="{{ url_for('static', filename='img/cds.png') }}" alt="Cerebro Logo">
+        <div class="monitor-brand-text">
+          <div class="monitor-title">{{ monitor_title or 'CDS Application Monitoring' }}</div>
+          <div class="monitor-subtitle">{{ monitor_subtitle or 'Realtime ticket status summary per CDS Application' }}</div>
+        </div>
+      </div>
+      <div class="monitor-datetime">
+        <div class="monitor-date" id="monitor-date"></div>
+        <div class="monitor-time" id="monitor-time"></div>
+      <!-- <div class="monitor-sync" id="monitor-sync">Updated {{ now.strftime('%Y-%m-%d %H:%M') }}</div> -->
+      </div>
+    </div>
+
+    {% set total_open = rows | sum(attribute='open') %}
+    {% set total_in_progress = rows | sum(attribute='in_progress') %}
+    {% set total_resolved = rows | sum(attribute='resolved') %}
+    {% set total_closed = rows | sum(attribute='closed') %}
+
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">Open</div>
+        <div class="summary-value summary-open" id="summary-open">{{ total_open }}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">In-Process</div>
+        <div class="summary-value summary-progress" id="summary-in-progress">{{ total_in_progress }}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Fix/Completed</div>
+        <div class="summary-value summary-resolved" id="summary-resolved">{{ total_resolved }}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Closed</div>
+        <div class="summary-value summary-closed" id="summary-closed">{{ total_closed }}</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Total</div>
+        <div class="summary-value summary-total" id="summary-total">{{ total_open + total_in_progress + total_resolved + total_closed }}</div>
+      </div>
+    </div>
+
+    <div class="monitor-tables-grid">
+      <div class="monitor-table-wrap">
+        <div class="monitor-table-title">CDS Applications</div>
+        <table class="monitor-table">
+          <thead>
+            <tr>
+              <th>CDS Application</th>
+              <th>Open</th>
+              <th>In-Process</th>
+              <th>Fix/Completed</th>
+              <th>Closed</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="monitor-table-body">
+            {% for row in rows %}
+            <tr>
+              <td>{{ row.app_name }}</td>
+              <td><span class="count-pill pill-open">{{ row.open }}</span></td>
+              <td><span class="count-pill pill-progress">{{ row.in_progress }}</span></td>
+              <td><span class="count-pill pill-resolved">{{ row.resolved }}</span></td>
+              <td><span class="count-pill pill-closed">{{ row.closed }}</span></td>
+              <td><strong>{{ row.total }}</strong></td>
+            </tr>
+            {% else %}
+            <tr class="empty-row">
+              <td colspan="6">No CDS Application tickets found.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="monitor-table-wrap">
+        <div class="monitor-table-title">Hospitals</div>
+        <div class="leaderboard-wrap">
+          <div class="leaderboard-stage" id="hospital-leaderboard-stage"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    (function() {
+      var tableBody = document.getElementById('monitor-table-body');
+      var hospitalLeaderboardStage = document.getElementById('hospital-leaderboard-stage');
+      var syncLabel = document.getElementById('monitor-sync');
+      var dateLabel = document.getElementById('monitor-date');
+      var timeLabel = document.getElementById('monitor-time');
+      var socket = window.io ? io() : null;
+      var previousHospitalTotals = {};
+      var leaderboardRows = {};
+      var leaderboardRowHeight = 54;
+      var previousHospitalRanks = {};
+      var previousAppRanks = {};
+
+      function updateClock() {
+        var now = new Date();
+        var dateText = now.toLocaleDateString(undefined, {
+          year: 'numeric',
+          month: 'long',
+          day: '2-digit'
+        });
+        var timeText = now.toLocaleTimeString(undefined, {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit'
+        });
+        if (dateLabel) dateLabel.textContent = dateText;
+        if (timeLabel) timeLabel.textContent = timeText;
+      }
+
+      function ensureLeaderboardRow(rowKey, row) {
+        if (leaderboardRows[rowKey]) {
+          return leaderboardRows[rowKey];
+        }
+        var el = document.createElement('div');
+        el.className = 'leaderboard-row';
+        el.setAttribute('data-hospital-key', rowKey);
+        el.innerHTML =
+          '<div class="leaderboard-track">' +
+            '<div class="leaderboard-content">' +
+              '<div class="leaderboard-rank"></div>' +
+              '<div class="leaderboard-name"></div>' +
+              '<div class="leaderboard-total"></div>' +
+            '</div>' +
+          '</div>';
+        hospitalLeaderboardStage.appendChild(el);
+        leaderboardRows[rowKey] = el;
+        return el;
+      }
+
+      function renderHospitalLeaderboard(rows) {
+        if (!hospitalLeaderboardStage) return;
+        var list = rows || [];
+        hospitalLeaderboardStage.style.height = (list.length * leaderboardRowHeight) + 'px';
+        var activeKeys = {};
+        list.forEach(function(row, index) {
+          var rowKey = String(row.client_id || row.client_name || '');
+          activeKeys[rowKey] = true;
+          var el = ensureLeaderboardRow(rowKey, row);
+          var rank = el.querySelector('.leaderboard-rank');
+          var name = el.querySelector('.leaderboard-name');
+          var total = el.querySelector('.leaderboard-total');
+          rank.textContent = index + 1;
+          name.textContent = row.client_name || '';
+          total.textContent = row.total || 0;
+          el.style.transform = 'translateY(' + (index * leaderboardRowHeight) + 'px)';
+          el.style.opacity = '1';
+
+          if (Object.prototype.hasOwnProperty.call(previousHospitalRanks, rowKey) && index < previousHospitalRanks[rowKey]) {
+            el.classList.remove('rank-up');
+            void el.offsetWidth;
+            el.classList.add('rank-up');
+          }
+        });
+
+        Object.keys(leaderboardRows).forEach(function(rowKey) {
+          if (activeKeys[rowKey]) return;
+          var el = leaderboardRows[rowKey];
+          if (!el) return;
+          el.style.opacity = '0';
+          window.setTimeout(function() {
+            if (el.parentNode) {
+              el.parentNode.removeChild(el);
+            }
+          }, 350);
+          delete leaderboardRows[rowKey];
+        });
+
+        previousHospitalRanks = {};
+        list.forEach(function(row, index) {
+          var rowKey = String(row.client_id || row.client_name || '');
+          previousHospitalRanks[rowKey] = index;
+        });
+      }
+
+      function trackHospitalChanges(rows) {
+        var nextTotals = {};
+        (rows || []).forEach(function(row) {
+          var key = String(row.client_id || row.client_name || '');
+          var nextTotal = Number(row.total || 0);
+          nextTotals[key] = nextTotal;
+        });
+        previousHospitalTotals = nextTotals;
+      }
+
+      function renderAppRows(rows) {
+        var existingRows = {};
+        Array.from(tableBody.querySelectorAll('tr[data-app-key]')).forEach(function(row) {
+          existingRows[row.getAttribute('data-app-key')] = row;
+        });
+
+        var previousRects = {};
+        Object.keys(existingRows).forEach(function(key) {
+          previousRects[key] = existingRows[key].getBoundingClientRect();
+        });
+
+        tableBody.innerHTML = '';
+        if (!rows || !rows.length) {
+          tableBody.innerHTML = '<tr class="empty-row"><td colspan="6">No CDS Application tickets found.</td></tr>';
+          document.getElementById('summary-open').textContent = '0';
+          document.getElementById('summary-in-progress').textContent = '0';
+          document.getElementById('summary-resolved').textContent = '0';
+          document.getElementById('summary-closed').textContent = '0';
+          document.getElementById('summary-total').textContent = '0';
+          previousAppRanks = {};
+          return;
+        }
+
+        var totalOpen = 0;
+        var totalInProgress = 0;
+        var totalResolved = 0;
+        var totalClosed = 0;
+
+        rows.forEach(function(row) {
+          var rowKey = String(row.app_id || row.app_name || '');
+          totalOpen += Number(row.open || 0);
+          totalInProgress += Number(row.in_progress || 0);
+          totalResolved += Number(row.resolved || 0);
+          totalClosed += Number(row.closed || 0);
+
+          var tr = existingRows[rowKey] || document.createElement('tr');
+          tr.setAttribute('data-app-key', rowKey);
+          tr.innerHTML =
+            '<td>' + (row.app_name || '') + '</td>' +
+            '<td><span class="count-pill pill-open">' + (row.open || 0) + '</span></td>' +
+            '<td><span class="count-pill pill-progress">' + (row.in_progress || 0) + '</span></td>' +
+            '<td><span class="count-pill pill-resolved">' + (row.resolved || 0) + '</span></td>' +
+            '<td><span class="count-pill pill-closed">' + (row.closed || 0) + '</span></td>' +
+            '<td><strong>' + (row.total || 0) + '</strong></td>';
+          tableBody.appendChild(tr);
+
+          if (Object.prototype.hasOwnProperty.call(previousAppRanks, rowKey) && rows.indexOf(row) < previousAppRanks[rowKey]) {
+            tr.classList.remove('rank-up');
+            void tr.offsetWidth;
+            tr.classList.add('rank-up');
+          } else {
+            tr.classList.remove('rank-up');
+          }
+        });
+
+        document.getElementById('summary-open').textContent = totalOpen;
+        document.getElementById('summary-in-progress').textContent = totalInProgress;
+        document.getElementById('summary-resolved').textContent = totalResolved;
+        document.getElementById('summary-closed').textContent = totalClosed;
+        document.getElementById('summary-total').textContent = totalOpen + totalInProgress + totalResolved + totalClosed;
+
+        Array.from(tableBody.querySelectorAll('tr[data-app-key]')).forEach(function(row) {
+          var key = row.getAttribute('data-app-key');
+          if (!previousRects[key]) return;
+          var newRect = row.getBoundingClientRect();
+          var deltaY = previousRects[key].top - newRect.top;
+          if (Math.abs(deltaY) > 1) {
+            row.style.transition = 'none';
+            row.style.transform = 'translateY(' + deltaY + 'px)';
+            requestAnimationFrame(function() {
+              row.style.transition = 'transform 900ms ease';
+              row.style.transform = '';
+            });
+          }
+        });
+
+        previousAppRanks = {};
+        rows.forEach(function(row, index) {
+          var rowKey = String(row.app_id || row.app_name || '');
+          previousAppRanks[rowKey] = index;
+        });
+      }
+
+      function refreshMonitoring() {
+        fetch('{{ url_for(monitor_data_url or "monitoring.apps_data") }}', { credentials: 'same-origin' })
+          .then(function(response) { return response.json(); })
+          .then(function(payload) {
+            renderAppRows(payload.rows || []);
+            renderHospitalLeaderboard(payload.hospital_rows || []);
+            trackHospitalChanges(payload.hospital_rows || []);
+            if (syncLabel) {
+              var now = new Date();
+              syncLabel.textContent = 'Updated ' + now.toLocaleString();
+            }
+          })
+          .catch(function() {});
+      }
+
+      updateClock();
+      window.setInterval(updateClock, 1000);
+      renderHospitalLeaderboard({% if hospital_rows %}{{ hospital_rows|tojson }}{% else %}[]{% endif %});
+      trackHospitalChanges({% if hospital_rows %}{{ hospital_rows|tojson }}{% else %}[]{% endif %});
+
+      if (socket) {
+        socket.on('connect', function() {
+          socket.emit('join_ticket_list');
+        });
+        socket.on('ticket_changed', refreshMonitoring);
+      }
+
+      window.setInterval(refreshMonitoring, 30000);
+    })();
+  </script>
+</body>
+</html>

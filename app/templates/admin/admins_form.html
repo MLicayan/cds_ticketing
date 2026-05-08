@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Admin' if admin_user else 'New Admin' }}{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">{{ 'Edit' if admin_user else 'New' }} Admin</h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="username">Username</label>
+          <input name="username" id="username" class="form-control" required value="{{ admin_user.username if admin_user else '' }}">
+        </div>
+        <div class="form-group col-md-4">
+          <label for="full_name">Full Name</label>
+          <input name="full_name" id="full_name" class="form-control" value="{{ admin_user.full_name if admin_user else '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="password">{{ 'New Password' if admin_user else 'Password' }}</label>
+          <input type="password" name="password" id="password" class="form-control" {% if not admin_user %}required{% endif %} placeholder="{% if admin_user %}Leave blank to keep{% endif %}">
+        </div>
+      </div>
+      {% with access_user=admin_user, default_nav_keys=['tickets', 'developer_tasks', 'service_logs', 'weekly_schedules', 'pm_schedules', 'instruments', 'reports', 'app_monitoring', 'daily_monitoring'] %}
+        {% include "admin/_nav_permissions.html" %}
+      {% endwith %}
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('admin.admins_index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

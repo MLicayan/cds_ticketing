@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Instrument Models - Admin{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">Instrument Models</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.instrument_models_create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Model
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card card-outline card-secondary mb-3">
+  <div class="card-header d-flex">
+    <button type="button" class="btn btn-tool left" data-card-widget="collapse" title="Toggle filters">
+      <i class="fas fa-minus"></i>
+    </button>
+    <h3 class="card-title mb-0 left">Filters</h3>
+  </div>
+  <div class="card-body">
+    <form method="get">
+      <div class="form-group">
+        <label for="q">Search</label>
+        <input type="text" name="q" id="q" class="form-control" placeholder="Code or name" value="{{ q }}">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Apply</button>
+      <a href="{{ url_for('admin.instrument_models_index') }}" class="btn btn-secondary btn-sm">Reset</a>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Code</th>
+          <th>Name</th>
+          <th>Brand</th>
+          <th>Type</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in models %}
+        <tr onclick="window.location='{{ url_for('admin.instrument_models_edit', model_id=m.id) }}'">
+          <td>{{ loop.index }}</td>
+          <td>{{ m.code }}</td>
+          <td>{{ m.name }}</td>
+          <td>{{ m.brand_name }}</td>
+          <td>{{ m.machine_type.value }}</td>
+          <td class="text-right">
+            <form method="post" action="{{ url_for('admin.instrument_models_delete', model_id=m.id) }}" style="display:inline-block" onsubmit="return confirm('Delete this model?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="text-center text-muted">No models found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+

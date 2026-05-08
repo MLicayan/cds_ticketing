@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}PM Schedule {{ schedule.doc_no }} - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-calendar-check text-primary mr-2"></i>Preventive Maintenance {{ schedule.doc_no }}</h1>
+    <p class="text-muted mb-0">{{ schedule.instrument.display_label() if schedule.instrument else 'Instrument N/A' }}</p>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('pm_schedules.edit', schedule_id=schedule.id) }}" class="btn btn-outline-secondary mr-2">
+      <i class="fas fa-edit"></i> Edit
+    </a>
+    {% if current_user.role.value not in ['client', 'sales'] %}
+      <a href="{{ url_for('service_logs.create', pm_schedule_id=schedule.id) }}" class="btn btn-outline-primary">
+        <i class="fas fa-tools"></i> New Service Log
+      </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<style>
+.card-highlight { border-top: 3px solid #3c8dbc; }
+.metric-icon { font-size: 20px; margin-right: 6px; }
+.info-chip { display: inline-block; padding: 4px 10px; border-radius: 20px; background: #f4f6f9; margin-right: 6px; font-size: 12px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-md-8">
+    <div class="card card-outline card-info card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-clipboard-list metric-icon"></i>Schedule Overview</h3>
+      </div>
+      <div class="card-body">
+        <dl class="row">
+          <dt class="col-sm-4">Client</dt>
+          <dd class="col-sm-8">{{ schedule.client.name if schedule.client else '-' }}</dd>
+
+          <dt class="col-sm-4">Instrument</dt>
+          <dd class="col-sm-8">{{ schedule.instrument.display_label() if schedule.instrument else '-' }}</dd>
+
+          <dt class="col-sm-4">Schedule Date</dt>
+          <dd class="col-sm-8">{{ schedule.date.strftime('%Y-%m-%d') if schedule.date else '-' }}</dd>
+
+          <dt class="col-sm-4">Task Duration (hrs)</dt>
+          <dd class="col-sm-8">{{ schedule.task_duration or '-' }}</dd>
+        </dl>
+        <hr>
+        <h5><i class="fas fa-align-left text-secondary mr-1"></i>Description</h5>
+        <p>{{ (schedule.description or 'No description provided.')|replace('\n', '<br>')|safe }}</p>
+      </div>
+    </div>
+
+    <div class="card card-outline card-secondary card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-comments metric-icon"></i>Comments</h3>
+      </div>
+      <div class="card-body">
+        {% if comments %}
+          {% for c in comments %}
+          <div class="post clearfix">
+            <div class="user-block">
+              <span class="username">
+                {{ c.user.full_name or c.user.username }}
+              </span>
+              <span class="description">{{ c.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+            <p>{{ c.comment_text }}</p>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="text-muted mb-0">No comments yet.</p>
+        {% endif %}
+      </div>
+      <div class="card-footer">
+        <form method="post" enctype="multipart/form-data">
+          <div class="form-group">
+            <label for="comment_text">Add Comment</label>
+            <textarea id="comment_text" name="comment_text" rows="3" class="form-control"></textarea>
+          </div>
+          <div class="form-group">
+            <label for="attachment">Attachment (optional)</label>
+            <input type="file" name="attachment" id="attachment" class="form-control-file">
+          </div>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-comment"></i> Save Comment / Attachment
+          </button>
+        </form>
+      </div>
+    </div>
+
+    
+  </div>
+
+  <div class="col-md-4">
+    <div class="card card-outline card-info card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-info-circle metric-icon"></i>Quick Info</h3>
+      </div>
+      <div class="card-body">
+        <p><strong>Assigned Engineer/IT:</strong><br>
+          {% if schedule.assigned_engineer %}
+            {{ schedule.assigned_engineer.full_name or schedule.assigned_engineer.username }}
+            {% if schedule.assigned_by %}
+              <br><small class="text-muted">Assigned by: {{ schedule.assigned_by.full_name or schedule.assigned_by.username }}</small>
+            {% endif %}
+          {% else %}
+            <span class="text-muted">Not assigned</span>
+          {% endif %}
+        </p>
+       
+        <p><strong>Created:</strong><br>{{ schedule.created_at.strftime('%Y-%m-%d %H:%M') if schedule.created_at else '-' }}</p>
+        <p><strong>Updated:</strong><br>{{ schedule.updated_at.strftime('%Y-%m-%d %H:%M') if schedule.updated_at else '-' }}</p>
+
+        {% if current_user.role.value not in ['client', 'sales'] %}
+        <hr>
+        <form method="post" action="{{ url_for('pm_schedules.update_assignee', schedule_id=schedule.id) }}">
+            <div class="form-group">
+              <label for="engineer_id">Assign Engineer/ IT</label>
+              <select name="engineer_id" id="engineer_id" class="form-control form-control-sm">
+                <option value="">-- None --</option>
+                {% for eng in engineers %}
+                  <option value="{{ eng.id }}" {% if schedule.assigned_engineer and schedule.assigned_engineer.id == eng.id %}selected{% endif %}>
+                    {{ eng.full_name or eng.username }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            <button type="submit" class="btn btn-secondary btn-sm">Save Assignment</button>
+          </form>
+        {% endif %}
+      </div>
+    </div>
+    
+    <div class="card card-outline card-secondary card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-history metric-icon"></i>Service Logs</h3>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Visit Date</th>
+              <th>Engineer/ IT</th>
+              <th>Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in service_logs %}
+            <tr onclick="window.location='{{ url_for('service_logs.detail', log_id=log.id) }}'" style="cursor:pointer;">
+              <td>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</td>
+              <td>{{ log.engineer.full_name or log.engineer.username }}</td>
+              <td>{{ log.service_type|replace('-', ' ')|title }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-muted">No service logs linked.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card card-outline card-primary card-highlight">
+      <div class="card-header">
+        <h3 class="card-title mb-0"><i class="fas fa-paperclip metric-icon"></i>Attachments</h3>
+      </div>
+      <div class="card-body">
+        {% if schedule.attachments %}
+        <ul class="list-unstyled">
+          {% for att in schedule.attachments %}
+          <li>
+            <i class="fas fa-paperclip mr-1"></i>
+            <a href="{{ url_for('uploads.pm_schedule_file', filename=att.stored_filename) }}" target="_blank">
+              {{ att.original_filename }}
+            </a>
+            <small class="text-muted"> – {{ att.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</small>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted mb-0">No attachments.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

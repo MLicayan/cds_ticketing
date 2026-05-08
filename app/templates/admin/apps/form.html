@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit CDS Application' if app else 'New CDS Application' }} - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 page-title"><i class="fas fa-layer-group"></i> {{ 'Edit' if app else 'New' }} CDS Application</h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-body">
+      <div class="form-group">
+        <label for="code">Code</label>
+        <input type="text" name="code" id="code" class="form-control" required value="{{ app.code if app else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="name">Name</label>
+        <input type="text" name="name" id="name" class="form-control" required value="{{ app.name if app else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="description">Description</label>
+        <textarea name="description" id="description" class="form-control" rows="4">{{ app.description if app else '' }}</textarea>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('admin.apps_index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

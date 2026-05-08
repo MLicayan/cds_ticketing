@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}App Monitoring - CDS Service Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2 ml-1">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-desktop text-primary mr-2"></i>App Monitoring</h1>
+  </div>
+</div>
+{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<style>
+.monitoring-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.monitoring-stat {
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: #fff;
+}
+
+.monitoring-stat-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  color: #6c757d;
+  margin-bottom: 6px;
+}
+
+.monitoring-stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.monitoring-open { color: #0d6efd; }
+.monitoring-progress { color: #fd7e14; }
+.monitoring-resolved { color: #28a745; }
+.monitoring-closed { color: #6c757d; }
+
+.table td, .table th {
+  vertical-align: middle;
+}
+</style>
+{% endblock %}
+{% block content %}
+{% set total_open = rows | sum(attribute='open') %}
+{% set total_in_progress = rows | sum(attribute='in_progress') %}
+{% set total_resolved = rows | sum(attribute='resolved') %}
+{% set total_closed = rows | sum(attribute='closed') %}
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title"><i class="fas fa-satellite-dish mr-2"></i>Realtime Summary</h3>
+    <div class="float-right text-sm" id="monitoring-last-sync">Updated {{ now.strftime('%Y-%m-%d %H:%M') }}</div>
+  </div>
+  <div class="card-body">
+    <div class="monitoring-grid mb-4">
+      <div class="monitoring-stat">
+        <div class="monitoring-stat-label">Open</div>
+        <div class="monitoring-stat-value monitoring-open" id="summary-open">{{ total_open }}</div>
+      </div>
+      <div class="monitoring-stat">
+        <div class="monitoring-stat-label">In-Process</div>
+        <div class="monitoring-stat-value monitoring-progress" id="summary-in-progress">{{ total_in_progress }}</div>
+      </div>
+      <div class="monitoring-stat">
+        <div class="monitoring-stat-label">Fix/Completed</div>
+        <div class="monitoring-stat-value monitoring-resolved" id="summary-resolved">{{ total_resolved }}</div>
+      </div>
+      <div class="monitoring-stat">
+        <div class="monitoring-stat-label">Closed</div>
+        <div class="monitoring-stat-value monitoring-closed" id="summary-closed">{{ total_closed }}</div>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-bordered table-hover mb-0">
+        <thead>
+          <tr>
+            <th>CDS Application</th>
+            <th>Open</th>
+            <th>In-Process</th>
+            <th>Fix/Completed</th>
+            <th>Closed</th>
+            <th>Total</th>
+            <th>Last Updated</th>
+          </tr>
+        </thead>
+        <tbody id="app-monitoring-body">
+          {% for row in rows %}
+          <tr data-app-id="{{ row.app_id or 0 }}">
+            <td>{{ row.app_name }}</td>
+            <td><span class="badge badge-primary">{{ row.open }}</span></td>
+            <td><span class="badge badge-warning">{{ row.in_progress }}</span></td>
+            <td><span class="badge badge-success">{{ row.resolved }}</span></td>
+            <td><span class="badge badge-secondary">{{ row.closed }}</span></td>
+            <td><strong>{{ row.total }}</strong></td>
+            <td>{{ to_localtime(row.last_updated_at).strftime('%Y-%m-%d %H:%M') if row.last_updated_at else '' }}</td>
+          </tr>
+          {% else %}
+          <tr id="app-monitoring-empty">
+            <td colspan="7" class="text-center text-muted">No CDS Application tickets found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  (function() {
+    var tbody = document.getElementById('app-monitoring-body');
+    var syncLabel = document.getElementById('monitoring-last-sync');
+    var socket = window.io ? io() : null;
+
+    function renderRows(rows) {
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (!rows || !rows.length) {
+        tbody.innerHTML = '<tr id="app-monitoring-empty"><td colspan="7" class="text-center text-muted">No CDS Application tickets found.</td></tr>';
+        document.getElementById('summary-open').textContent = '0';
+        document.getElementById('summary-in-progress').textContent = '0';
+        document.getElementById('summary-resolved').textContent = '0';
+        document.getElementById('summary-closed').textContent = '0';
+        return;
+      }
+
+      var totalOpen = 0;
+      var totalInProgress = 0;
+      var totalResolved = 0;
+      var totalClosed = 0;
+
+      rows.forEach(function(row) {
+        totalOpen += Number(row.open || 0);
+        totalInProgress += Number(row.in_progress || 0);
+        totalResolved += Number(row.resolved || 0);
+        totalClosed += Number(row.closed || 0);
+
+        var tr = document.createElement('tr');
+        tr.innerHTML =
+          '<td>' + (row.app_name || '') + '</td>' +
+          '<td><span class="badge badge-primary">' + (row.open || 0) + '</span></td>' +
+          '<td><span class="badge badge-warning">' + (row.in_progress || 0) + '</span></td>' +
+          '<td><span class="badge badge-success">' + (row.resolved || 0) + '</span></td>' +
+          '<td><span class="badge badge-secondary">' + (row.closed || 0) + '</span></td>' +
+          '<td><strong>' + (row.total || 0) + '</strong></td>' +
+          '<td>' + (row.last_updated_at || '') + '</td>';
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('summary-open').textContent = totalOpen;
+      document.getElementById('summary-in-progress').textContent = totalInProgress;
+      document.getElementById('summary-resolved').textContent = totalResolved;
+      document.getElementById('summary-closed').textContent = totalClosed;
+    }
+
+    function refreshMonitoring() {
+      fetch('{{ url_for("tickets.app_monitoring_data") }}', {
+        credentials: 'same-origin'
+      })
+      .then(function(response) { return response.json(); })
+      .then(function(payload) {
+        renderRows(payload.rows || []);
+        if (syncLabel) {
+          var now = new Date();
+          syncLabel.textContent = 'Updated ' + now.getFullYear() + '-' +
+            String(now.getMonth() + 1).padStart(2, '0') + '-' +
+            String(now.getDate()).padStart(2, '0') + ' ' +
+            String(now.getHours()).padStart(2, '0') + ':' +
+            String(now.getMinutes()).padStart(2, '0');
+        }
+      })
+      .catch(function() {});
+    }
+
+    if (socket) {
+      socket.on('connect', function() {
+        socket.emit('join_ticket_list');
+      });
+      socket.on('ticket_changed', function() {
+        refreshMonitoring();
+      });
+    }
+
+    window.setInterval(refreshMonitoring, 30000);
+  })();
+</script>
+{% endblock %}

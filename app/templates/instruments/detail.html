@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+{% block title %}Instrument {{ instrument.code }} - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">
+      <i class="fas fa-microscope text-primary mr-2"></i> Instrument {{ instrument.code }}
+    </h1>
+    <p class="text-muted mb-0">{{ instrument.name }}{% if instrument.serial_number %} (<span class="text-danger text-bold"> SN: {{ instrument.serial_number }} )</span>{% endif %}</p>
+  </div>
+</div>
+{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<style>
+.card-highlight { border-top: 3px solid #3c8dbc; }
+.metric-icon { font-size: 22px; margin-right: 6px; }
+
+.tag-body {
+      background: #eaeaea;
+      font-family: Arial, sans-serif;
+      padding: 2rem;
+      text-align: center;
+    }
+
+.tag {
+      width: 550px;
+      height: 200px;
+      /*background: linear-gradient(135deg, #dcdcdc, #f5f5f5);*/
+      background: linear-gradient(330deg, #dcdcdcde, #f5f5f5c7);
+      border: 1px solid #999;
+      border-radius: 8px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.5rem;
+      box-shadow: 0 0 4px rgba(0,0,0,0.1);
+    }
+
+
+
+    .logo {
+      height: 60px;
+    }
+
+    .info {
+      text-align: left;
+    }
+
+    .info h2 {
+      /*font-size: 14px;
+      text-transform: uppercase; */
+      font-size: 11.784px;
+      font-weight: bold;
+      margin: 0;
+      color: #0865a3;
+
+    }
+
+    .info p {
+      font-size: 13px;
+      /*margin: 4px 0;*/
+      color: #222;
+    }
+
+    .serial {
+      color: #d90429;
+      font-weight: bold;
+      font-family: monospace;
+    }
+
+    #qrcode {
+      width: 150px;
+      height: 150px;
+      background: white;
+      padding: 8px;
+      border-radius: 4px;
+      box-shadow: 0 4px 10px rgb(0 0 0 / 22%);
+    }
+
+    .print-btn {
+      margin-top: 2rem;
+      padding: 8px 16px;
+      font-size: 14px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+
+</style>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+(function() {
+  var ctx = document.getElementById('timelineChart');
+  if (!ctx) return;
+  var labels = {{ timeline_labels|tojson }};
+  var ticketData = {{ timeline_ticket_counts|tojson }};
+  var logData = {{ timeline_log_counts|tojson }};
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Tickets',
+          data: ticketData,
+          borderColor: '#ff6384',
+          backgroundColor: 'rgba(255,99,132,0.2)',
+          tension: 0.3,
+          fill: true,
+          pointRadius: 3,
+        },
+        {
+          label: 'Service Logs',
+          data: logData,
+          borderColor: '#36a2eb',
+          backgroundColor: 'rgba(54,162,235,0.2)',
+          tension: 0.3,
+          fill: true,
+          pointRadius: 3,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top' },
+        tooltip: { mode: 'index', intersect: false }
+      },
+      interaction: { mode: 'index', intersect: false },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision:0 } }
+      }
+    }
+  });
+})();
+</script>
+{% endblock %}
+{% block content %}
+
+{% set code_url = url_for('instruments.logs', identifier=instrument.code, _external=True) %}
+{% set alt_url = url_for('instruments.logs', identifier=name_serial_slug, _external=True) if name_serial_slug else None %}
+
+<div class="row">
+  <div class="col-md-4">
+    <div class="card  card-info card-highlight pulse">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-id-card metric-icon"></i>Instrument Details</h3>
+      </div>
+      <div class="card-body">
+        <p><strong>Client:</strong><br>{{ instrument.client.name }}</p>
+        <p><strong>Model / Brand:</strong><br>{{ instrument.model.name if instrument.model else 'N/A' }}{% if instrument.brand %} / {{ instrument.brand }}{% endif %}</p>
+        <p><strong>Machine Type:</strong><br>{{ instrument.machine_type or 'N/A' }}</p>
+        <p><strong>Status:</strong><br>{{ instrument.status|capitalize }}</p>
+        <p><strong>Installation Date:</strong><br>
+          {% if instrument.installation_date %}
+            {{ instrument.installation_date.strftime('%Y-%m-%d') }}
+          {% else %}
+            <span class="text-muted">Not set</span>
+          {% endif %}
+        </p>
+        <p><strong>Warranty End:</strong><br>
+          {% if instrument.warranty_end_date %}
+            {{ instrument.warranty_end_date.strftime('%Y-%m-%d') }}
+          {% else %}
+            <span class="text-muted">Not set</span>
+          {% endif %}
+        </p>
+        <p><strong>LIS Comm.:</strong><br>
+          {% if instrument.lis_status == 'connected' %}
+            <span class="badge badge-success">Connected</span>
+          {% else %}
+            <span class="badge badge-secondary">Not Connected</span>
+          {% endif %}
+        </p>
+        <p><strong>LIS Protocol:</strong><br>{{ instrument.lis_protocol or 'N/A' }}</p>
+      </div>
+    </div>
+
+    <div class="card  card-success card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-chart-line metric-icon"></i>Ticket/ Service Metrics</h3>
+      </div>
+      <div class="card-body">
+        <p><strong>Latest Open Ticket:</strong><br>
+          {% if latest_open_ticket %}
+            <a href="{{ url_for('tickets.detail', ticket_id=latest_open_ticket.id) }}">{{ latest_open_ticket.ticket_no }}</a>
+            <br><small>{{ latest_open_ticket.subject }}</small>
+          {% else %}
+            <span class="text-muted">None</span>
+          {% endif %}
+        </p>
+        <p><strong>Pending Tickets:</strong><br>{{ total_pending_tickets }}</p>
+        <p><strong>Total Tickets:</strong><br>{{ total_tickets }}</p>
+        <p><strong>Total Service Logs:</strong><br>{{ total_logs }}</p>
+      </div>
+    </div>    
+
+  </div>
+
+  <div class="col-md-8">
+    <div class="card  card-secondary card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-history metric-icon"></i>Recent Service History</h3>
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <h6>Last Preventive Maintenance</h6>
+            {% if last_pm %}
+              <p class="mb-1">{{ last_pm.visit_date.strftime('%Y-%m-%d') if last_pm.visit_date else '' }}</p>
+              <p class="text-muted mb-2">Engineer: {{ last_pm.engineer.full_name or last_pm.engineer.username }}</p>
+              <a href="{{ url_for('service_logs.detail', log_id=last_pm.id) }}">View log</a>
+            {% else %}
+              <p class="text-muted">None</p>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <h6>Last Calibration</h6>
+            {% if last_calibration %}
+              <p class="mb-1">{{ last_calibration.visit_date.strftime('%Y-%m-%d') if last_calibration.visit_date else '' }}</p>
+              <p class="text-muted mb-2">Engineer: {{ last_calibration.engineer.full_name or last_calibration.engineer.username }}</p>
+              <a href="{{ url_for('service_logs.detail', log_id=last_calibration.id) }}">View log</a>
+            {% else %}
+              <p class="text-muted">None</p>
+            {% endif %}
+          </div>
+        </div>
+        <div class="row mt-3">
+          <div class="col-md-6">
+            <h6>Installation</h6>
+            {% if last_install %}
+              <p class="mb-1">{{ last_install.visit_date.strftime('%Y-%m-%d') if last_install.visit_date else '' }}</p>
+              <p class="text-muted mb-2">Engineer: {{ last_install.engineer.full_name or last_install.engineer.username }}</p>
+              <a href="{{ url_for('service_logs.detail', log_id=last_install.id) }}">View log</a>
+            {% else %}
+              <p class="text-muted">None</p>
+            {% endif %}
+          </div>
+          <div class="col-md-6">
+            <h6>LIS Comm.</h6>
+            <p class="mb-1"><strong>Last Active:</strong>
+              {% if instrument.lis_last_active_at %}
+                {{ instrument.lis_last_active_at.strftime('%Y-%m-%d %H:%M') }}
+              {% else %}
+                <span class="text-muted">N/A</span>
+              {% endif %}
+            </p>
+            <p class="mb-1"><strong>Last Send:</strong>
+              {% if instrument.lis_last_sent_at %}
+                {{ instrument.lis_last_sent_at.strftime('%Y-%m-%d %H:%M') }}
+              {% else %}
+                <span class="text-muted">N/A</span>
+              {% endif %}
+            </p>
+            <p class="mb-1"><strong>Last Receive:</strong>
+              {% if instrument.lis_last_received_at %}
+                {{ instrument.lis_last_received_at.strftime('%Y-%m-%d %H:%M') }}
+              {% else %}
+                <span class="text-muted">N/A</span>
+              {% endif %}
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card  card-info card-highlight" >
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-qrcode metric-icon"></i>QR-Tag Link</h3>
+        <div class="btn-group" style="float: right;">
+          <a  class="btn btn-outline-primary btn-sm" href="{{ url_for('instruments.qr_preview', instrument_id=instrument.id) }}" target="_blank">
+            <i class="fas fa-print"></i> Preview / QR-Tag
+          </a>
+        </div>
+      </div>
+      <div class="card-body tag-body text-center" style="background-color: #fff;"> 
+        <div class="tag" id="tag" onclick="window.location.href='{{ code_url }}'" style="cursor: pointer;">
+          <div class="left">
+            <div class="info">
+              <div class="" style="display: flex; align-items: center; padding-top: 5px;">
+                  <img style="padding-right: 10px;" class="logo" src="{{ url_for('static', filename='img/cds.png') }}" alt="Logo">
+                  <span style="font-size: 8px; color: #000000; padding-left: 15px; border-left: solid; border-left-color: #bfbfbf; border-left-width: 1px;">
+                      Alwana Business Park, Zone 4 Cugman<br>
+                      Cagayan de Oro City.<br>
+                      <b>+639 260 235 049</b> / <b>+639 222 979 774</b><br>
+                      <b>cerebro.info@gmail.com</b>
+                  </span>
+
+              </div>
+              <hr style="margin-right: 0px; margin-top: 0px; margin-bottom: 15px; border-color: #9f9898; border-style: solid;">
+              <h2 style="margin-right: 15px; margin-bottom: -5px;">{{ instrument.client.name if instrument and instrument.client else 'Cerebro Diagnostics System' }}</h2>
+              <span style="margin-right: 15px;font-size: 10px;" class="location">{{ instrument.client.address if instrument and instrument.client and instrument.client.address else '' }}</span>
+              <p style="margin-right: 15px; margin-bottom: 0px; margin-top: 10px;"><strong>{{ instrument.name if instrument else '' }}</strong> ( <span class="serial">SN: {{ instrument.serial_number or 'N/A' }}</span> ) </p>
+              <!-- <p style="margin-right: 15px;"><span class="serial">SN: {{ instrument.serial_number or 'N/A' }}</span></p> -->
+              <p style="margin-right: 15px; margin-bottom: 0px;"><strong>Installed Date:</strong> {{ instrument.installation_date.strftime('%B %d, %Y') if instrument and instrument.installation_date else 'N/A' }}</p>
+            </div>
+          </div>
+          <div id="qrcode">
+              {% set code_url = url_for('instruments.logs', identifier=instrument.code, _external=True) %}
+              {% set alt_url = url_for('instruments.logs', identifier=name_serial_slug, _external=True) if name_serial_slug else None %}
+              <a href="{{ code_url }}"><img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={{ code_url | urlencode }}" alt="QR" class="img-fluid"></a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card  card-info card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-chart-bar metric-icon"></i>Tickets & Service Logs (Weekly)</h3>
+      </div>
+      <div class="card-body">
+        <canvas id="timelineChart" height="120"></canvas>
+      </div>
+    </div>
+
+    <div class="card  card-info card-highlight">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h3 class="card-title mb-0"><i class="fas fa-tools metric-icon"></i>Service Logs</h3>
+        <a href="{{ url_for('instruments.logs', identifier=instrument.code) }}" class="btn btn-outline-primary btn-sm">
+          <i class="fas fa-external-link-alt"></i> View all logs
+        </a>
+      </div>
+      <div class="card-body table-responsive p-0">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Engineer / IT</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in recent_logs %}
+            <tr onclick="window.location='{{ url_for('service_logs.detail', log_id=log.id) }}'" style="cursor:pointer;">
+              <td>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</td>
+              <td>{{ log.service_type|capitalize }}</td>
+              <td>{{ log.engineer.full_name or log.engineer.username }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="3" class="text-center text-muted">No service logs.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card  card-primary card-highlight">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-exchange-alt metric-icon"></i>LIS Comm. Logs</h3>
+      </div>
+      <div class="card-body table-responsive p-0">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for log in lis_logs %}
+            <tr>
+              <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '' }}</td>
+              <td>
+                <span class="badge badge-{{ 'info' if log.direction == 'tx' else 'secondary' }}">
+                  {{ log.direction|upper }}
+                </span>
+              </td>
+              <td style="white-space: pre-wrap;">{{ log.message }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="3" class="text-center text-muted">No LIS logs.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

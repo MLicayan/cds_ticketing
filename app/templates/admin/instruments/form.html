@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Instrument' if instrument else 'New Instrument' }} - Admin{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
+</style>
+{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">{{ 'Edit Instrument' if instrument else 'New Instrument' }}</h1>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+  if (window.$) {
+
+    const initSelect2 = (selector, placeholder = 'All') => {
+      if (!$(selector).length) return;
+
+      $(selector).select2({
+        width: '100%',
+        placeholder: placeholder,
+        allowClear: true
+      });
+
+      $(selector).on('select2:open', function () {
+        document
+          .querySelector('.select2-container--open .select2-search__field')
+          ?.focus();
+      });
+    };
+
+    initSelect2('#client_id', 'None');
+    initSelect2('#model_id', 'None');
+  }
+
+</script>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-body">
+      <div class="form-group">
+        <label for="code">Code</label>
+        <input name="code" id="code" class="form-control" required value="{{ instrument.code if instrument else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="name">Name</label>
+        <input name="name" id="name" class="form-control" required value="{{ instrument.name if instrument else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="client_id">Client</label>
+        <select name="client_id" id="client_id" class="form-control select2" required>
+          <option value="">-- select client --</option>
+          {% for c in clients %}
+          <option value="{{ c.id }}" {% if instrument and instrument.client_id == c.id %}selected{% endif %}>
+            {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="model_id">Model</label>
+        <select name="model_id" id="model_id" class="form-control select2">
+          <option value="">-- select model --</option>
+          {% for m in models or [] %}
+          <option value="{{ m.id }}" {% if instrument and instrument.model_id == m.id %}selected{% endif %}>
+            {{ m.name }}{% if m.code %} ({{ m.code }}){% endif %}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="serial_number">Serial Number</label>
+        <input name="serial_number" id="serial_number" class="form-control" value="{{ instrument.serial_number if instrument else '' }}">
+      </div>
+      <div class="form-row">
+        <div class="form-group col-md-6">
+          <label for="installation_date">Installation Date</label>
+          <input type="date" name="installation_date" id="installation_date" class="form-control"
+            value="{{ (instrument.installation_date.strftime('%Y-%m-%d') if instrument and instrument.installation_date else '') }}">
+        </div>
+        <div class="form-group col-md-6">
+          <label for="warranty_end_date">Warranty End</label>
+          <input type="date" name="warranty_end_date" id="warranty_end_date" class="form-control"
+            value="{{ (instrument.warranty_end_date.strftime('%Y-%m-%d') if instrument and instrument.warranty_end_date else '') }}">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="status">Status</label>
+        <select name="status" id="status" class="form-control">
+          <option value="active" {% if instrument and instrument.status == 'active' %}selected{% endif %}>Active</option>
+          <option value="inactive" {% if instrument and instrument.status == 'inactive' %}selected{% endif %}>Inactive</option>
+        </select>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('admin.instruments_index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

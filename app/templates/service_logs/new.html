@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+{% block title %}New Service Log - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark ml-3"><i class="fas fa-tools text-primary mr-2"></i>New Service Log</h1>
+    {% if ticket %}
+      <p class="text-muted mb-0">Linked to Ticket <a href="{{ url_for('tickets.detail', ticket_id=ticket.id) }}">{{ ticket.ticket_no }}</a></p>
+    {% endif %}
+    {% if pm_schedule %}
+      <p class="text-muted mb-0">Linked to PM Schedule <a href="{{ url_for('pm_schedules.detail', schedule_id=pm_schedule.id) }}">{{ pm_schedule.doc_no }}</a></p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<style>
+.select2-container--default .select2-selection--multiple {
+  font-size: 14px;
+  min-height: 38px;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice {
+  font-size: 14px;
+  color: #333;
+}
+.select2-container--default .select2-selection--multiple .select2-selection__choice__display{
+  padding-left: 15px;
+  padding-right: 10px;
+}
+
+.select2-container--default .select2-selection--multiple.select2-selection--clearable{
+  padding-top: 5px;
+  padding-bottom: 10px;
+}
+
+.select2-container--default .select2-selection--multiple .select2-selection__placeholder {
+  color: #6c757d;
+  font-size: 14px;
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post" enctype="multipart/form-data">
+    <div class="card-body">
+      {% if ticket %}
+        <input type="hidden" name="ticket_id" value="{{ ticket.id }}">
+      {% endif %}
+      {% if pm_schedule %}
+        <input type="hidden" name="pm_schedule_id" value="{{ pm_schedule.id }}">
+      {% endif %}
+      {% set selected_engineer_id = (request.form.get('engineer_id') or ticket.assigned_engineer_id if ticket else current_user.id)|int %}
+      {% set has_current_user_option = (engineers | selectattr('id', 'equalto', current_user.id) | list | length) > 0 %}
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="client_id">Client</label>
+            <select name="client_id" id="client_id" class="form-control select2" required>
+              <option value="">-- select client --</option>
+              {% for c in clients %}
+              <option value="{{ c.id }}"
+                {% if ticket and ticket.client_id == c.id %}selected{% endif %}
+                {% if pm_schedule and pm_schedule.client_id == c.id %}selected{% endif %}>
+                {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+        </div>
+        {% if not pm_schedule %}
+        <div class="form-group col-md-2">
+          <label for="service_for">Service For</label>
+          <select name="service_for" id="service_for" class="form-control">
+            <option value="instrument" {% if ticket.ticket_for == 'instrument' %}selected{% endif %}>Instrument</option>
+            <option value="app" {% if ticket.ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
+          </select>
+        </div>
+        {% endif %}
+        <div class="form-group col-md-3 service-target service-instrument">
+          <label for="instrument_id">Instrument</label>
+          <select name="instrument_id" id="instrument_id" class="form-control" required>
+            <option value="">-- select instrument --</option>
+            {% for ins in instruments %}
+            <option value="{{ ins.id }}"
+              data-client-id="{{ ins.client_id }}"
+              {% if ticket and ticket.instrument_id == ins.id %}selected{% endif %}
+              {% if pm_schedule and pm_schedule.instrument_id == ins.id %}selected{% endif %}>
+              {{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group col-md-3 service-target service-app d-none">
+          <label for="app_id">CDS Application</label>
+          <select name="app_id" id="app_id" class="form-control">
+            <option value="">-- select application --</option>
+            {% for app in apps %}
+            <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}">{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group col-md-3">
+          <label for="engineer_id">Engineer / IT</label>
+          <select name="engineer_id" id="engineer_id" class="form-control">
+            <option value="{{ current_user.id }}" {% if selected_engineer_id == current_user.id and not has_current_user_option %}selected{% endif %}>-- current user ({{ current_user.full_name or current_user.username }}) --</option>
+            {% for eng in engineers %}
+            <option value="{{ eng.id }}" {% if ticket.assigned_engineer_id == eng.id %}selected{% endif %}>{{ eng.full_name or eng.username }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="service_type">Service Type</label>
+          {% if pm_schedule %}
+            <input type="hidden" name="service_type" id="service_type" value="pm-onsite">
+            <input class="form-control" value="Preventive Maintenance" readonly>
+          {% else %}
+            {% set selected_service_type = request.form.get('service_type', 'corrective-remote') %}
+            <select name="service_type" id="service_type" class="form-control">
+              <option value="corrective-remote" {% if selected_service_type == 'corrective-remote' %}selected{% endif %}>Corrective Remote Support</option>
+              <option value="corrective-onsite" {% if selected_service_type == 'corrective-onsite' %}selected{% endif %}>Corrective On-Site Support</option>
+              <option value="calibration-remote" {% if selected_service_type == 'calibration-remote' %}selected{% endif %}>Calibration Remote Support</option>
+              <option value="calibration-onsite" {% if selected_service_type == 'calibration-onsite' %}selected{% endif %}>Calibration On-Site Support</option>
+              <option value="install-onsite" {% if selected_service_type == 'install-onsite' %}selected{% endif %}>Installation</option>
+              <option value="pullout-onsite" {% if selected_service_type == 'pullout-onsite' %}selected{% endif %}>Pull-out</option>
+              <option value="demo-onsite" {% if selected_service_type == 'demo-onsite' %}selected{% endif %}>Demo</option>
+              <option value="endorsement-onsite" {% if selected_service_type == 'endorsement-onsite' %}selected{% endif %}>Endorsement</option>
+              {% if not ticket %}
+              <option value="pm-onsite" {% if selected_service_type == 'pm-onsite' %}selected{% endif %}>Preventive Maintenance</option>
+              {% endif %}
+            </select>
+          {% endif %}
+        </div>
+        <div class="form-group col-md-4">
+          <label for="visit_date">Service Report Date</label>
+          <input type="date" name="visit_date" id="visit_date" class="form-control" value="{{ (request.form.get('visit_date') or default_visit_date)|default('', true) }}">
+        </div>
+        <div class="form-group col-md-2">
+          <label for="start_time">Start Time</label>
+          <input type="time" name="start_time" id="start_time" class="form-control" value="{{ request.form.get('start_time','') }}">
+        </div>
+        <div class="form-group col-md-2">
+          <label for="end_time">End Time</label>
+          <input type="time" name="end_time" id="end_time" class="form-control" value="{{ request.form.get('end_time','') }}">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="problem_description">Client Complaint</label>
+        <textarea name="problem_description" id="problem_description" rows="3" class="form-control">{{ ticket.subject if ticket else '' }}</textarea>
+      </div>
+      <div class="form-group">
+        <label for="root_cause">Root Cause</label>
+        <textarea name="root_cause" id="root_cause" rows="3" class="form-control"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="action_taken">Action Taken</label>
+        <textarea name="action_taken" id="action_taken" rows="3" class="form-control"></textarea>
+      </div>
+      <div class="form-group mt-5">
+        <label>Parts Used</label>
+        <div class="table-responsive">
+          <table class="table table-sm" id="parts-table">
+            <thead>
+              <tr>
+                <th style="width: 22%;">Part Name</th>
+                <th style="width: 16%;">Part No.</th>
+                <th style="width: 10%;">Qty</th>
+                <th style="width: 14%;">Price</th>
+                <th style="width: 14%;">Total</th>
+                <th style="width: 12%;">Under Warranty</th>
+                <th style="width: 12%;"></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="add-part-row">
+          <i class="fas fa-plus"></i> Add Part
+        </button>
+        <small class="text-muted d-block mt-2">Use rows to capture parts with quantities and pricing.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="recommendations">Recommendations</label>
+        <textarea name="recommendations" id="recommendations" rows="2" class="form-control"></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="status_after">Status after this service</label>
+          <select name="status_after" id="status_after" class="form-control">
+            <option value="operational">Operational</option>
+            <option value="non-operational">Non-Operational</option>
+          </select>
+      </div>
+        <div class="form-group col-md-4 d-flex align-items-end">
+          <label class="ml-5" for="is_monitor">To be Monitored</label>
+          <div class="d-flex">
+            <input type="checkbox" name="is_monitor" id="is_monitor" class="form-control" style="width: 20px; padding: 0; margin-right: 10px; margin-left: 10px;" {% if request.form.get('is_monitor') not in [None, '', '0'] %}checked{% endif %}>
+            <span id="no_of_days" class="small" style="vertical-align: middle; height: 100%; margin-top: 5px; padding-right: 6px; padding-left: 17px;" hidden>No. of Days</span><input type="number" hidden name="monitored_days" id="monitored_days" class="form-control" style="width: 80px;" value="{{ request.form.get('monitored_days', '0') }}" min="0">
+          </div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group col-md-12 mt-4">
+          <label for="photo">Confirmation Photo (required)</label>
+          <input type="file" name="photo" id="photo" class="form-control-file">
+          <small class="text-muted">Attach photo evidence confirmed by the client personnel.</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-row mx-3">
+        <div class="form-group col-md-4">
+          <label for="confirmed_by">Confirmed By (Client)</label>
+          <input type="text" name="confirmed_by" id="confirmed_by" class="form-control" required>
+        </div>
+        <div class="form-group col-md-4">
+          <label for="confirmed_by_position">Position/Title</label>
+          <input type="text" name="confirmed_by_position" id="confirmed_by_position" class="form-control" required>
+        </div>
+        <div class="form-group col-md-4">
+          <label>Customer Signature</label>
+          <div class="d-flex align-items-center">
+            <button type="button" class="btn btn-outline-primary btn-sm" data-toggle="modal" data-target="#signatureModal">Capture Signature</button>
+            <small id="signature-status" class="text-muted ml-2 mb-0">Signature required for on-site services</small>
+          </div>
+          <input type="hidden" name="signature_data" id="signature_data" value="{{ request.form.get('signature_data', '') }}">
+          <div id="signature-preview" class="mt-2" style="display: none;">
+            <img id="signature-preview-img" class="img-fluid border" alt="Signature preview">
+          </div>
+        </div>
+      </div>
+
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-save"></i> Save Service Log
+      </button>
+      <a href="{% if ticket %}{{ url_for('tickets.detail', ticket_id=ticket.id) }}{% else %}{{ url_for('service_logs.index') }}{% endif %}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<div class="modal fade" id="signatureModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Capture Signature</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted">Use your mouse or touch to sign inside the box.</p>
+        <div class="border rounded" style="height: 200px;">
+          <canvas id="signature-canvas" style="width: 100%; height: 100%;"></canvas>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="clear-signature">Clear</button>
+        <button type="button" class="btn btn-primary" id="save-signature">Save Signature</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+(function() { 
+  
+  function filterInstruments() {
+    var clientSelect = document.getElementById('client_id');
+    var insSelect = document.getElementById('instrument_id');
+    if (!clientSelect || !insSelect) return;
+    var cid = clientSelect.value;
+    Array.from(insSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !cid || opt.getAttribute('data-client-id') === cid;
+      opt.hidden = !match;
+    });
+    if (insSelect.selectedOptions.length && insSelect.selectedOptions[0].hidden) {
+      insSelect.value = '';
+    }
+  }
+  var clientSelect = document.getElementById('client_id');
+  if (clientSelect) {
+    var onClientChange = function() { filterInstruments(); };
+    clientSelect.addEventListener('change', onClientChange);
+    if (window.$) {
+      $('#client_id').select2({ width: '100%', placeholder: '-- select client --' }).on('change', onClientChange);
+    }
+    filterInstruments();
+  }
+
+  // Parts table
+  var partsTableBody = document.querySelector('#parts-table tbody');
+  var addPartBtn = document.getElementById('add-part-row');
+  var partOptionsHtml = `{% for p in parts %}<option value="{{ p.id }}" data-price="{{ p.price or '' }}">{{ p.name }}</option>{% endfor %}`;
+
+  function recalcRow(row) {
+    var qtyInput = row.querySelector('.part-qty');
+    var priceInput = row.querySelector('.part-price');
+    var totalInput = row.querySelector('.part-total');
+    var qty = parseFloat(qtyInput.value || '0') || 0;
+    var price = parseFloat(priceInput.value || '0') || 0;
+    totalInput.value = (qty * price).toFixed(2);
+  }
+
+  function syncWarranty(row) {
+    var checkbox = row.querySelector('.part-warranty');
+    var hidden = row.querySelector('.part-warranty-flag');
+    hidden.value = checkbox.checked ? '1' : '0';
+  }
+
+  function addPartRow() {
+    var row = document.createElement('tr');
+    row.innerHTML = `
+      <td>
+        <select name="part_ids[]" class="form-control form-control-sm part-select">
+          <option value="">-- select --</option>
+          ${partOptionsHtml}
+        </select>
+      </td>
+      <td><input name="part_nos[]" class="form-control form-control-sm" placeholder="Part No."></td>
+      <td><input name="part_qtys[]" class="form-control form-control-sm part-qty" type="number" min="0" step="1" value="1"></td>
+      <td><input name="part_prices[]" class="form-control form-control-sm part-price" type="number" min="0" step="0.01"></td>
+      <td><input name="part_totals[]" class="form-control form-control-sm part-total" type="number" min="0" step="0.01" readonly></td>
+      <td class="text-center">
+        <input type="hidden" name="part_warranties[]" class="part-warranty-flag" value="0">
+        <input type="checkbox" class="part-warranty">
+      </td>
+      <td class="text-right">
+        <button type="button" class="btn btn-sm btn-outline-danger remove-part"><i class="fas fa-trash"></i></button>
+      </td>
+    `;
+    partsTableBody.appendChild(row);
+
+    var select = row.querySelector('.part-select');
+    select.addEventListener('change', function() {
+      var selected = select.options[select.selectedIndex];
+      if (selected && selected.dataset.price && !row.querySelector('.part-price').value) {
+        row.querySelector('.part-price').value = selected.dataset.price;
+      }
+      recalcRow(row);
+    });
+    row.querySelector('.part-qty').addEventListener('input', function() { recalcRow(row); });
+    row.querySelector('.part-price').addEventListener('input', function() { recalcRow(row); });
+    row.querySelector('.part-warranty').addEventListener('change', function() { syncWarranty(row); });
+    row.querySelector('.remove-part').addEventListener('click', function() {
+      row.remove();
+    });
+
+    recalcRow(row);
+  }
+
+  if (addPartBtn && partsTableBody) {
+    addPartBtn.addEventListener('click', addPartRow);
+    // addPartRow(); // initial row
+  }
+
+  function getServiceTypeValue() {
+    var select = document.getElementById('service_type');
+    if (select) return select.value;
+    var hidden = document.querySelector('input[name="service_type"]');
+    return hidden ? hidden.value : '';
+  }
+
+  var is_monitor = document.getElementById('is_monitor');
+  if (is_monitor) {
+    var monitored_days = document.getElementById('monitored_days');
+    var no_of_days = document.getElementById('no_of_days');
+    function syncMonitorFields() {
+      if (!is_monitor.checked) {
+        is_monitor.value = '0';
+        monitored_days.value = '0';
+        monitored_days.hidden = true; 
+        no_of_days.hidden = true;
+      } else {
+        is_monitor.value = '1';
+        monitored_days.hidden = false;
+        no_of_days.hidden = false;
+        if (!monitored_days.value) {
+          monitored_days.value = '1';
+        }
+      }
+    }
+    is_monitor.addEventListener('change', syncMonitorFields);
+    syncMonitorFields();
+  }
+
+  // Signature
+  var signatureCanvas = document.getElementById('signature-canvas');
+  var signatureStatus = document.getElementById('signature-status');
+  var signatureInput = document.getElementById('signature_data');
+  var signaturePreview = document.getElementById('signature-preview');
+  var signaturePreviewImg = document.getElementById('signature-preview-img');
+  var clearBtn = document.getElementById('clear-signature');
+  var saveBtn = document.getElementById('save-signature');
+  var modalEl = document.getElementById('signatureModal');
+  var formEl = document.querySelector('form');
+  var ctx, drawing = false, lastPos = { x: 0, y: 0 };
+  if (signatureInput && signatureInput.value && signaturePreviewImg && signaturePreview) {
+    signaturePreviewImg.src = signatureInput.value;
+    signaturePreview.style.display = 'block';
+    signatureStatus.textContent = 'Signature captured';
+    signatureStatus.classList.remove('text-muted', 'text-danger');
+  }
+
+  function resizeCanvas() {
+    if (!signatureCanvas) return;
+    var ratio = window.devicePixelRatio || 1;
+    var width = signatureCanvas.clientWidth;
+    var height = signatureCanvas.clientHeight;
+    signatureCanvas.width = width * ratio;
+    signatureCanvas.height = height * ratio;
+    ctx = signatureCanvas.getContext('2d');
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#111';
+    ctx.clearRect(0, 0, width, height);
+  }
+
+  function getPosition(event) {
+    var rect = signatureCanvas.getBoundingClientRect();
+    var x, y;
+    if (event.touches && event.touches.length) {
+      x = event.touches[0].clientX - rect.left;
+      y = event.touches[0].clientY - rect.top;
+    } else {
+      x = event.clientX - rect.left;
+      y = event.clientY - rect.top;
+    }
+    return { x: x, y: y };
+  }
+
+  function startDrawing(event) {
+    drawing = true;
+    lastPos = getPosition(event);
+  }
+
+  function draw(event) {
+    if (!drawing) return;
+    event.preventDefault();
+    var pos = getPosition(event);
+    ctx.beginPath();
+    ctx.moveTo(lastPos.x, lastPos.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    lastPos = pos;
+  }
+
+  function stopDrawing() {
+    drawing = false;
+  }
+
+  function clearSignature() {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, signatureCanvas.width, signatureCanvas.height);
+  }
+
+  function saveSignature() {
+    if (!signatureCanvas) return;
+    var dataUrl = signatureCanvas.toDataURL('image/png');
+    signatureInput.value = dataUrl;
+    if (signaturePreviewImg) {
+      signaturePreviewImg.src = dataUrl;
+      signaturePreview.style.display = 'block';
+    }
+    if (signatureStatus) {
+      signatureStatus.textContent = 'Signature captured';
+      signatureStatus.classList.remove('text-muted');
+    }
+    if (window.jQuery && $('#signatureModal').modal) {
+      $('#signatureModal').modal('hide');
+    }
+  }
+
+  if (signatureCanvas) {
+    if (modalEl) {
+      modalEl.addEventListener('shown.bs.modal', resizeCanvas);
+    }
+    if (window.jQuery && $('#signatureModal').on) {
+      $('#signatureModal').on('shown.bs.modal', function() {
+        resizeCanvas();
+      });
+    }
+
+    signatureCanvas.addEventListener('mousedown', startDrawing);
+    signatureCanvas.addEventListener('mousemove', draw);
+    signatureCanvas.addEventListener('mouseup', stopDrawing);
+    signatureCanvas.addEventListener('mouseleave', stopDrawing);
+
+    signatureCanvas.addEventListener('touchstart', startDrawing, { passive: false });
+    signatureCanvas.addEventListener('touchmove', draw, { passive: false });
+    signatureCanvas.addEventListener('touchend', stopDrawing);
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function() {
+      clearSignature();
+      signatureInput.value = '';
+      if (signaturePreview) {
+        signaturePreview.style.display = 'none';
+      }
+      if (signatureStatus) {
+        signatureStatus.textContent = 'No signature captured';
+        signatureStatus.classList.add('text-muted');
+      }
+    });
+  }
+  if (saveBtn) {
+    saveBtn.addEventListener('click', saveSignature);
+  }
+
+  if (formEl) {
+    formEl.addEventListener('submit', function(e) {
+      var serviceTypeVal = getServiceTypeValue();
+      var signatureRequired = !['corrective-remote', 'calibration-remote'].includes(serviceTypeVal);
+      if (signatureRequired && !signatureInput.value) {
+        e.preventDefault();
+        if (signatureStatus) {
+          signatureStatus.textContent = 'Please capture signature for on-site services before saving.';
+          signatureStatus.classList.remove('text-muted');
+          signatureStatus.classList.add('text-danger');
+        }
+        if (window.jQuery && $('#signatureModal').modal) {
+          $('#signatureModal').modal('show');
+        }
+      }
+        //return;
+      //} 
+    });
+  }
+
+  function toggleTargets() {
+    var serviceFor = document.getElementById('service_for');
+    var target = serviceFor ? serviceFor.value : 'instrument';
+    var instrumentGrp = document.querySelector('.service-instrument');
+    var appGrp = document.querySelector('.service-app');
+    if (instrumentGrp) instrumentGrp.classList.toggle('d-none', target !== 'instrument');
+    if (appGrp) appGrp.classList.toggle('d-none', target !== 'app');
+  }
+
+  var serviceFor = document.getElementById('service_for');
+    if (serviceFor) serviceFor.addEventListener('change', toggleTargets);
+    toggleTargets();
+})();
+</script>
+{% endblock %}

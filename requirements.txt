@@ -1,0 +1,8 @@
+Flask==2.0.3
+Flask-SQLAlchemy==2.5.1
+Flask-Migrate==4.1.0
+Flask-Login==0.5.0
+Flask-SocketIO==5.3.6
+Werkzeug==2.0.3
+pymysql==1.0.2
+alembic==1.7.7

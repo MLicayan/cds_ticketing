@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Clients - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">Clients</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.clients_create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Client
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card card-outline card-secondary mb-3">
+  <div class="card-header d-flex">
+    <button type="button" class="btn btn-tool left" data-card-widget="collapse" title="Toggle filters">
+      <i class="fas fa-minus"></i>
+    </button>
+    <h3 class="card-title mb-0 left">Filters</h3>
+  </div>
+  <div class="card-body">
+    <form method="get">
+      <div class="filter-grid">
+        <div class="form-group">
+          <label for="name">Name / Contact</label>
+          <input type="text" name="name" id="name" class="form-control" placeholder="Client name or contact" value="{{ selected_filters.name }}">
+        </div>
+        <div class="form-group">
+          <label for="code">Code</label>
+          <input type="text" name="code" id="code" class="form-control" placeholder="Client code" value="{{ selected_filters.code }}">
+        </div>
+        <div class="form-group">
+          <label for="sales_id">Assigned Sales</label>
+          <select name="sales_id" id="sales_id" class="form-control">
+            <option value="">All</option>
+            {% for s in sales_users %}
+            <option value="{{ s.id }}" {% if selected_filters.sales_id == s.id|string %}selected{% endif %}>
+              {{ s.full_name or s.username }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Apply</button>
+      <a href="{{ url_for('admin.clients_index') }}" class="btn btn-secondary btn-sm">Reset</a>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Code</th>
+          <th>Name</th>
+          <th>Contact</th>
+          <th>Email</th>
+          <th>Sales</th>
+          <!-- <th>Login</th> -->
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clients %}
+        <tr onclick="window.location='{{ url_for('admin.clients_edit', client_id=c.id) }}'">
+          <td>{{ loop.index }}</td>
+          <td>{{ c.client_code }}</td>
+          <td>{{ c.name }}</td>
+          <td>{{ c.contact_person }}</td>
+          <td>{{ c.email}}</td>
+          <td>{{ (c.assigned_sales.full_name or c.assigned_sales.username) if c.assigned_sales else '-' }}</td>
+          <td class="text-right">
+            <!-- <a href="{{ url_for('admin.clients_edit', client_id=c.id) }}" class="btn btn-sm btn-outline-secondary">
+              <i class="fas fa-edit"></i>
+            
+            <form method="post" action="{{ url_for('admin.clients_delete', client_id=c.id) }}" style="display:inline-block" onsubmit="return confirm('Delete this client?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i>
+              </button>
+            </form>
+            </a> -->
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted">No clients found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Instruments - Admin{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
+</style>
+{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">Instruments</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.instruments_create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Instrument
+    </a>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+  if (window.$) {
+
+    const initSelect2 = (selector, placeholder = 'All') => {
+      if (!$(selector).length) return;
+
+      $(selector).select2({
+        width: '100%',
+        placeholder: placeholder,
+        allowClear: true
+      });
+
+      // Auto-focus search input when opened
+      $(selector).on('select2:open', function () {
+        document
+          .querySelector('.select2-container--open .select2-search__field')
+          ?.focus();
+      });
+    };
+
+    initSelect2('#client_id', 'All Clients');
+    initSelect2('#model_id', 'All Models');
+  }
+</script>
+{% endblock %}
+{% block content %}
+<div class="card card-outline card-secondary mb-3">
+  <div class="card-header d-flex">
+    <button type="button" class="btn btn-tool left" data-card-widget="collapse" title="Toggle filters">
+      <i class="fas fa-minus"></i>
+    </button>
+    <h3 class="card-title mb-0 left">Filters</h3>
+  </div>
+  <div class="card-body">
+    <form method="get">
+      <div class="filter-grid">
+        <div class="form-group">
+          <label for="client_id">Client</label>
+          <select name="client_id" id="client_id" class="form-control select2">
+            <option value="">All</option>
+            {% for c in clients %}
+            <option value="{{ c.id }}" {% if selected_filters.client_id == c.id|string %}selected{% endif %}>
+              {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="name">Name / Code</label>
+          <input type="text" name="name" id="name" class="form-control" placeholder="Instrument name or code" value="{{ selected_filters.name }}">
+        </div>
+        <div class="form-group">
+          <label for="serial_number">Serial No.</label>
+          <input type="text" name="serial_number" id="serial_number" class="form-control" placeholder="Serial number" value="{{ selected_filters.serial_number }}">
+        </div>
+        <div class="form-group">
+          <label for="model_id">Model</label>
+          <select name="model_id" id="model_id" class="form-control select2">
+            <option value="">All</option>
+            {% for m in models %}
+            <option value="{{ m.id }}" {% if selected_filters.model_id == m.id|string %}selected{% endif %}>
+              {{ m.name }}{% if m.code %} ({{ m.code }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Apply</button>
+      <a href="{{ url_for('admin.instruments_index') }}" class="btn btn-secondary btn-sm">Reset</a>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Code</th>
+          <th>Name / Serial</th>
+          <th>Model</th>
+          <th>Type</th>
+          <th>Client</th>
+          <th>Date Installed</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ins in instruments %}
+        <tr onclick="window.location='{{ url_for('admin.instruments_edit', instrument_id=ins.id) }}'">
+          <td>{{ loop.index }}</td>
+          <td>{{ ins.code }}</td>
+          <td>{{ ins.name }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}</td>
+          <td>{{ ins.model.name if ins.model else '-' }}</td>
+          <td>{{ ins.model.machine_type.value if ins.model else '-' }}</td>
+          <td>{{ ins.client.name }}</td>
+          <td>{{ ins.installation_date.strftime('%Y-%m-%d') if ins.installation_date else '-' }}</td>
+          <td>{{ ins.status|capitalize }}</td>
+          <td class="text-right">
+            <!-- <a href="{{ url_for('admin.instruments_edit', instrument_id=ins.id) }}" class="btn btn-sm btn-outline-secondary">
+              <i class="fas fa-edit"></i>
+            </a> -->
+            <form method="post" action="{{ url_for('admin.instruments_delete', instrument_id=ins.id) }}" style="display:inline-block" onsubmit="return confirm('Delete this instrument?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center text-muted">No instruments found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

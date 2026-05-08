@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Service Report</title>
+<style>
+    * { box-sizing:border-box; }
+    body{
+        font-family: Arial, Helvetica, sans-serif;
+        margin:0;
+        padding:20px;
+        background:#f5f5f5;
+    }
+    .text-left{text-align:left;}
+    .text-right{text-align:right;}
+    .page{
+        width: 800px;
+        margin:0 auto;
+        background:#fff;
+        padding:25px 30px;
+        border:1px solid #ccc;
+    }
+    .header{
+        display:flex;
+        justify-content:space-between;
+        align-items:flex-start;
+        margin-bottom:10px;
+    }
+    .logo{
+        font-weight:bold;
+        font-size:18px;
+        line-height:1.2;
+    }
+    .logo small{font-size:11px;}
+    .company-info{
+        text-align:right;
+        font-size:11px;
+        line-height:1.3;
+    }
+    h2.title{
+        text-align:center;
+        margin:10px 0 15px;
+        letter-spacing:2px;
+    }
+    table{
+        width:100%;
+        border-collapse:collapse;
+        font-size:12px;
+    }
+    td, th{
+        border:1px solid #000;
+        padding:3px 5px;
+        vertical-align:middle;
+    }
+    
+    td.label{
+        width:110px;
+        background:#f0f0f0;
+        font-weight:bold;
+    }
+    .no-border td,
+    .no-border th{
+        border:none;
+        padding:0;
+    }
+    .section-title{
+        background:#f0f0f0;
+        font-weight:bold;
+        padding:3px 5px;
+        border:1px solid #000;
+        border-bottom:none;
+        margin-top:10px;
+        font-size:12px;
+    }
+    .lines{
+        border:1px solid #000;
+        border-top:none;
+        height:80px;
+    }
+    .checkbox-group{
+        font-size:12px;
+        line-height:1.7;
+    }
+    .checkbox-group label{
+        margin-right:20px;
+        white-space:nowrap;
+    }
+    .small{font-size:11px;}
+    .mt-5{margin-top:5px;}
+    .mt-10{margin-top:10px;}
+    .text-center{text-align:center;}
+</style>
+</head>
+<body>
+<div class="page">
+
+    <!-- HEADER -->
+    <div class="header">
+        <div class="logo">
+            <!-- replace with <img src="logo.png" ...> if you have a logo -->
+             <img src="{{ url_for('static', filename='img/cds.png') }}" alt="Cerebro Diagnostic Systems Logo" style="max-height: 60px;">
+            <!-- CEREBRO<br>
+            DIAGNOSTIC SYSTEMS<br>
+            <small>Amplifying your productivity</small> -->
+        </div>
+        <div class="company-info">
+            Alwana Business Park, Zone 4 Cugman,<br>
+            Cagayan de Oro City, Misamis Oriental 9000<br>
+            Tel Nos. (088) 881 7723 • 9095 515 5056<br>
+            (0975) 6243 • 639 744 1055<br>
+            Email: cerebro.info@gmail.com<br>
+            Website: www.cerebrodiagnostics.com
+        </div>
+    </div>
+
+    <h2 class="title">SERVICE REPORT</h2>
+
+    <!-- TOP INFO -->
+    <table>
+        <tr>
+           
+            <td><strong class="uppercase">Equipment &amp; Model:</strong> 
+                <br/><strong class="uppercase">S/N:</strong> <span style="padding-left: 15px">{{ log.instrument.display_label() if log.instrument else '' }}</span>
+            </td>
+            <td><strong class="uppercase">Engineer:</strong>  <br/><br/>
+                <span style="padding-left: 15px">{{ log.engineer.full_name or log.engineer.username }}</span>
+            </td>
+            <td>
+                <strong class="uppercase">Date:</strong>  <br/><span style="padding-left: 15px; ">{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</span><br/>
+                <strong class="uppercase">Time:</strong>  <br/>
+                <span style="padding-left: 15px">
+                    {% if log.start_time %}
+                        {{ log.start_time.strftime('%I:%M %p') }}
+                    {% else %}
+                        -
+                    {% endif %}
+                    -
+                    {% if log.end_time %}
+                        {{ log.end_time.strftime('%I:%M %p') }}
+                    {% else %}
+                        -
+                    {% endif %}
+                    {% if work_duration %}
+                        <small class="text-muted">
+                            ({{ work_duration }})
+                        </small>
+                    {% endif %}
+                </span>
+
+            </td>
+             <td style="height: 60px;"><strong class="uppercase">Report No.:</strong>
+                <br/>
+                <br/><span style="font-weight: bold; color:red; padding-left: 15px; "> # {{ log.id }}</span>
+            </td>
+        </tr>
+
+        <tr style="height: 60px; vertical-align:middle;">
+            <td colspan="2">
+                <strong class="uppercase">Institution:</strong>  <br/><br/>
+                <span style="padding-left: 15px">{{ log.client.name if log.client else '' }}</span>
+            </td>
+            <td colspan="2">
+                <strong class="uppercase">Location:</strong>  <br/><br/>
+                <span style="padding-left: 15px">{{ log.client.address if log.client else '' }}</span>
+            </td>
+            
+        </tr>
+        
+    </table>
+
+    <!-- JOB TYPE -->
+    <div class="section-title mt-10" style="background-color: rgb(0 154 255 / 31%); height: 22px;">Job Type</div>
+    <table style="border-top:none;">
+        <tr>
+            <td style="border-top:none; height:30px;">
+                <span style="padding-left: 15px">{{ log.service_type|replace('-', ' ')|title }}</span>
+            </td>
+        </tr>
+    </table>
+
+    
+    
+    <!-- CUSTOMER COMPLAINT / CAUSE -->
+    <table class="">
+        <tr>
+            <th class="text-left" style="background-color: rgb(0 154 255 / 31%); height: 22px;">Customer Complaint</th>
+            <th class="text-left" style="background-color: rgb(0 154 255 / 31%); height: 22px;">Cause of Problem</th>
+        </tr>
+        <tr>
+            <td style="height:100px;"><span style="padding-left: 15px">{{ log.problem_description or '' }}</span></td>
+            <td><span style="padding-left: 15px">{{ log.root_cause or '' }}</span></td>
+        </tr>
+    </table>
+    
+    
+
+    <!-- ACTIONS TAKEN -->
+     <table class="">
+        <tr>
+            <th class="text-left" style="background-color: rgb(0 154 255 / 31%); height: 22px;">Actions Taken</th>
+        </tr>
+        <tr>
+            <td style="height:100px;"><span style="padding-left: 15px">{{ log.action_taken or '' }}</span></td>
+        </tr>
+    </table>
+    
+    <!-- REMARKS -->
+     <table class="">
+        <tr>
+            <th class="text-left" style="background-color: rgb(0 154 255 / 31%); height: 22px;">Remarks &amp; Recommendations</th>
+        </tr>
+        <tr>
+            <td style="height:100px;"><span style="padding-left: 15px">{{ log.recommendations or '' }}</span></td>
+        </tr>
+    </table>
+  
+    <!-- STATUS -->
+    <div class="mt-10 small d-flex justify-content-between checkbox-group">
+        Status after this service:
+        <label><input type="checkbox" {{ 'checked' if log.status_after == 'operational' else '' }}> Operational</label>
+        <label><input type="checkbox" {{ 'checked' if log.status_after == 'non-operational' else '' }}> Non-Operational</label>
+        <label><input type="checkbox" {{ 'checked' if log.is_monitor == True else '' }}> To be Monitored</label>
+        <input type="text" style="width:40px;border:none;border-bottom:1px solid #000;" value="{{ log.monitored_days or '' }}"> days
+    </div>
+
+    <!-- SPARE PARTS -->
+    <div class="section-title mt-10" style="background-color: rgb(0 154 255 / 31%); height: 22px;">SPARE PART(S) USED</div>
+    <table style="border-top:none;">
+        <tr>
+            <th style="width:18%;">P/N or Ref #</th>
+            <th>Description</th>
+            <th style="width:7%;">Qty</th>
+            <th style="width:13%;">Free of Charge</th>
+            <th style="width:13%;">For Monitoring</th>
+            <th style="width:20%;">Invoice No.</th>
+            <th style="width:12%;">Total PHP</th>
+        </tr>
+        
+        
+        {% for lp in log.service_log_parts %}
+        <tr>
+          <td>{{ lp.part_no or '-' }}</td>
+          <td style="height:55px;">{{ lp.part.name if lp.part else lp.part_no or 'N/A' }}</td>
+          <td>{{ lp.qty or '0' }}</td>
+          <td>{{ 'Yes' if lp.under_warranty else 'No' }}</td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <!-- SIGNATURES -->
+    <table class="mt-10">
+        <tr >
+            <th class="text-center" style="background-color: rgb(0 154 255 / 31%); height: 22px;">CUSTOMER DETAILS</th>
+            <th class="text-center" style="background-color: rgb(0 154 255 / 31%); height: 22px;">FIELD SERVICE ENGINEER</th>
+        </tr>
+       
+        <tr style="height: 80px;">
+            <td class="small">
+                <table style="width:100%; border:none; border-style: hidden;">
+                <tr style=" border-style: hidden;">
+                    <td style="height:55px;   border-style: hidden;">
+                      Name: {{ log.confirmed_by or '' }}<br>
+                      Designation: {% if log.confirmed_by_position %} ({{ log.confirmed_by_position }}){% endif %}
+                    </td>
+                    <td style="height:55px; border-style: hidden; text-align: center;">
+                      {% if log.signature_attachment %}
+                        <div style="margin-top:6px;">
+                          <img src="{{ url_for('uploads.service_log_file', filename=log.signature_attachment.stored_filename) }}"
+                               alt="Customer Signature"
+                               style="max-height:60px; max-width:180px;">
+                        </div>
+                      {% endif %}
+                    </td>
+                </table>
+                
+            </td>
+            <td class="small">
+                Name &amp; Signature : {{ log.engineer.full_name or log.engineer.username }}
+            </td>
+        </tr>
+    </table>
+    <div class="no-print" style="margin-top:12px;">
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+</div>
+</body>
+</html>

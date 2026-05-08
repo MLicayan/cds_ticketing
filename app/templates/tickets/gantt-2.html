@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Website Design Plan – Gantt</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+    }
+
+    body {
+      background: #f7f8fb;
+      padding: 24px;
+    }
+
+    .gantt-wrapper {
+      max-width: 1400px;
+      margin: 0 auto;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+      box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
+      display: grid;
+      grid-template-columns: 320px 1fr;
+    }
+
+    /* LEFT PANEL (task list) */
+    .task-panel {
+      border-right: 1px solid #e5e7eb;
+      background: #f9fafb;
+    }
+
+    .task-panel-header,
+    .task-row.phase,
+    .task-row.task {
+      display: grid;
+      grid-template-columns: 2fr 1fr 60px;
+      align-items: center;
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+
+    .task-panel-header {
+      font-weight: 600;
+      background: #f3f4f6;
+      border-bottom: 1px solid #e5e7eb;
+    }
+
+    .task-row.phase {
+      background: #eef2ff;
+      font-weight: 600;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .task-row.task:nth-child(odd) {
+      background: #ffffff;
+    }
+
+    .task-row.task:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    .task-name {
+      padding-left: 4px;
+    }
+
+    .task-name.indent {
+      padding-left: 16px;
+    }
+
+    .task-progress {
+      text-align: right;
+      color: #6b7280;
+    }
+
+    .checkbox {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      margin-left: auto;
+    }
+
+    .plan-title {
+      font-weight: 700;
+    }
+
+    /* RIGHT PANEL (Gantt grid) */
+    .gantt-panel {
+      position: relative;
+      overflow-x: auto;
+      padding-bottom: 12px;
+    }
+
+    .gantt-inner {
+      min-width: 1100px;
+    }
+
+    .gantt-header-months {
+      display: grid;
+      grid-template-columns: repeat(16, minmax(0, 1fr));
+      font-size: 11px;
+      text-align: center;
+      border-bottom: 1px solid #e5e7eb;
+      background: #f9fafb;
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+
+    .gantt-header-months div {
+      padding: 4px 0;
+      border-left: 1px solid #f3f4f6;
+    }
+
+    .gantt-header-months div span {
+      display: block;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    /* rows grid */
+    .gantt-grid {
+      display: grid;
+      grid-template-columns: repeat(16, minmax(0, 1fr));
+      position: relative;
+    }
+
+    .gantt-row {
+      position: relative;
+      height: 32px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+
+    /* vertical day lines */
+    .gantt-grid::before,
+    .gantt-grid::after {
+      content: "";
+    }
+
+    .gantt-grid > div {
+      border-left: 1px solid #f9fafb;
+    }
+
+    .gantt-bar {
+      height: 16px;
+      border-radius: 999px;
+      margin-top: 8px;
+      box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.4);
+    }
+
+    .bar-overall {
+      background: #e5e7eb;
+    }
+
+    .bar-phase {
+      background: #e5e7eb;
+    }
+
+    .bar-purple {
+      background: #c7d2fe;
+    }
+
+    .bar-red {
+      background: #fecaca;
+    }
+
+    .bar-green {
+      background: #d9f99d;
+    }
+
+    .bar-yellow {
+      background: #fde68a;
+    }
+
+    .bar-blue {
+      background: #bfdbfe;
+    }
+
+    .bar-orange {
+      background: #fed7aa;
+    }
+
+    .milestone {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: #fbbf24;
+      transform: rotate(45deg);
+      margin-top: 11px;
+      box-shadow: 0 0 0 1px #f59e0b;
+    }
+  </style>
+</head>
+<body>
+  <div class="gantt-wrapper">
+    <!-- LEFT SIDE: TASK LIST -->
+    <div class="task-panel">
+      <div class="task-panel-header">
+        <div>Task</div>
+        <div>Assigned</div>
+        <div style="text-align:right;">Progress</div>
+      </div>
+
+      <!-- Plan title -->
+      <div class="task-row phase">
+        <div class="plan-title">Website Design Plan</div>
+        <div></div>
+        <div class="task-progress">0%</div>
+      </div>
+
+      <!-- Project Definition -->
+      <div class="task-row phase">
+        <div class="task-name">Project Definition</div>
+        <div></div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Conduct research</div>
+        <div>Kiara</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Define project scope</div>
+        <div>Kiara</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Team kickoff meeting</div>
+        <div>Kiara</div>
+        <div class="checkbox"></div>
+      </div>
+
+      <!-- Content Phase -->
+      <div class="task-row phase">
+        <div class="task-name">Content Phase</div>
+        <div></div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Define content hierarchy</div>
+        <div>Kiara, Michelle</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Create sitemap</div>
+        <div>Michelle</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Write content</div>
+        <div>Michelle</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Review content</div>
+        <div>Greg, Kiara</div>
+        <div class="task-progress">0%</div>
+      </div>
+
+      <!-- Design Phase -->
+      <div class="task-row phase">
+        <div class="task-name">Design Phase</div>
+        <div></div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Build wireframe</div>
+        <div>Jason</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Design pages</div>
+        <div>Jason</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Review design</div>
+        <div>Greg, Kiara</div>
+        <div class="task-progress">0%</div>
+      </div>
+
+      <!-- Development Phase -->
+      <div class="task-row phase">
+        <div class="task-name">Development Phase</div>
+        <div></div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Code site</div>
+        <div>Courtney</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">QA site</div>
+        <div>Marcus</div>
+        <div class="task-progress">0%</div>
+      </div>
+
+      <!-- Review Phase -->
+      <div class="task-row phase">
+        <div class="task-name">Review Phase</div>
+        <div></div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Review full site</div>
+        <div>Greg, Kiara</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Make final updates</div>
+        <div>Courtney, Jason, Michelle</div>
+        <div class="task-progress">0%</div>
+      </div>
+      <div class="task-row task">
+        <div class="task-name indent">Official launch</div>
+        <div>Courtney, Kiara</div>
+        <div class="checkbox"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT SIDE: GANTT CHART -->
+    <div class="gantt-panel">
+      <div class="gantt-inner">
+        <!-- Month headers (16 equal columns representing days/weeks) -->
+        <div class="gantt-header-months">
+          <div><span>JANUARY 2021</span></div>
+          <div></div><div></div><div></div><div></div>
+          <div></div><div></div><div></div><div></div>
+          <div><span>FEBRUARY 2021</span></div>
+          <div></div><div></div><div></div><div></div>
+          <div></div><div></div>
+        </div>
+
+        <!-- Overall plan row -->
+        <div class="gantt-grid">
+          <!-- Website Design Plan -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-overall" style="grid-column:1 / 17;"></div>
+          </div>
+
+          <!-- Project Definition Phase -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-phase" style="grid-column:1 / 6;"></div>
+          </div>
+          <!-- Conduct research -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-purple" style="grid-column:1 / 4;"></div>
+          </div>
+          <!-- Define project scope -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-purple" style="grid-column:3 / 5;"></div>
+          </div>
+          <!-- Team kickoff meeting (milestone) -->
+          <div class="gantt-row">
+            <div class="milestone" style="grid-column:5 / 6;"></div>
+          </div>
+
+          <!-- Content Phase -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-phase" style="grid-column:5 / 13;"></div>
+          </div>
+          <!-- Define content hierarchy -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-red" style="grid-column:5 / 7;"></div>
+          </div>
+          <!-- Create sitemap -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-red" style="grid-column:6 / 8;"></div>
+          </div>
+          <!-- Write content -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-red" style="grid-column:7 / 12;"></div>
+          </div>
+          <!-- Review content -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-purple" style="grid-column:11 / 13;"></div>
+          </div>
+
+          <!-- Design Phase -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-phase" style="grid-column:9 / 15;"></div>
+          </div>
+          <!-- Build wireframe -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-green" style="grid-column:9 / 11;"></div>
+          </div>
+          <!-- Design pages -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-green" style="grid-column:10 / 13;"></div>
+          </div>
+          <!-- Review design -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-purple" style="grid-column:13 / 14;"></div>
+          </div>
+
+          <!-- Development Phase -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-phase" style="grid-column:13 / 17;"></div>
+          </div>
+          <!-- Code site -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-orange" style="grid-column:13 / 16;"></div>
+          </div>
+          <!-- QA site -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-blue" style="grid-column:15 / 17;"></div>
+          </div>
+
+          <!-- Review Phase -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-phase" style="grid-column:15 / 17;"></div>
+          </div>
+          <!-- Review full site -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-purple" style="grid-column:15 / 16;"></div>
+          </div>
+          <!-- Make final updates -->
+          <div class="gantt-row">
+            <div class="gantt-bar bar-red" style="grid-column:16 / 17;"></div>
+          </div>
+          <!-- Official launch milestone -->
+          <div class="gantt-row">
+            <div class="milestone" style="grid-column:16 / 17;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

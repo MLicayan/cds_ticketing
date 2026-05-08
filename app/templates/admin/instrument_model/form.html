@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Instrument Model' if model else 'New Instrument Model' }} - Admin{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">{{ 'Edit Instrument Model' if model else 'New Instrument Model' }}</h1>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-body">
+      <div class="form-group">
+        <label for="code">Code</label>
+        <input name="code" id="code" class="form-control" required value="{{ model.code if model else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="name">Name</label>
+        <input name="name" id="name" class="form-control" required value="{{ model.name if model else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="brand_name">Brand</label>
+        <input name="brand_name" id="brand_name" class="form-control" required value="{{ model.brand_name if model else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="machine_type">Type</label>
+        <select name="machine_type" id="machine_type" class="form-control">
+          <option value="">-- select model --</option>
+          {% for mt in machine_type or [] %}
+          <option value="{{ mt.value }}" {% if model and model.machine_type == mt.value %}selected{% endif %}>
+            {{ mt.value }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('admin.instrument_models_index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+

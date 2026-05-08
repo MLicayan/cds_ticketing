@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Sales Users - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">Sales Users</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.sales_create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Sales User
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Username</th>
+          <th>Full Name</th>
+          <!-- <th>Client</th> -->
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in sales_users %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ u.username }}</td>
+          <td>{{ u.full_name }}</td>
+          <!-- <td>{{ u.client.name if u.client else '' }}</td> -->
+          <td class="text-right">
+            <a href="{{ url_for('admin.sales_edit', user_id=u.id) }}" class="btn btn-sm btn-outline-secondary">
+              <i class="fas fa-edit"></i>
+            </a>
+            <form method="post" action="{{ url_for('admin.sales_delete', user_id=u.id) }}" style="display:inline-block" onsubmit="return confirm('Delete this sales user?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="text-center text-muted">No sales users found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

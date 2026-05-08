@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Ticket Calendar - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-calendar-alt text-primary mr-2"></i>Ticket Calendar</h1>
+    <p class="text-muted small mb-0">Monthly view based on target dates.</p>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('tickets.index') }}" class="btn btn-outline-secondary mr-2">
+      <i class="fas fa-list"></i> List View
+    </a>
+    <a href="{{ url_for('tickets.gantt_view') }}" class="btn btn-outline-primary mr-2">
+      <i class="fas fa-project-diagram"></i> Gantt
+    </a>
+    <a href="{{ url_for('tickets.kanban') }}" class="btn btn-outline-info mr-2">
+      <i class="fas fa-th-large"></i> Kanban
+    </a>
+    <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Ticket
+    </a>
+
+  </div>
+</div>
+{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<style>
+.calendar-card { overflow: hidden; }
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+  gap: 6px;
+}
+.calendar-header-row {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(140px, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.day-name {
+  text-align: center;
+  font-weight: 700;
+  color: #4b5563;
+  padding: 6px 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: #f8fafc;
+  text-transform: uppercase;
+}
+.calendar-day {
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  padding: 10px;
+  min-height: 140px;
+  background: #f9fbff;
+  box-shadow: 0 2px 8px rgba(15, 70, 140, 0.05);
+  display: flex;
+  flex-direction: column;
+}
+.calendar-day.other-month {
+  background: #f3f6fb;
+  color: #a0a7b3;
+}
+.calendar-day.today {
+  border: 2px solid var(--primary);
+}
+.day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.day-number {
+  font-weight: 700;
+  font-size: 16px;
+}
+.event-chip {
+  display: block;
+  padding: 6px 8px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.event-chip .title {
+  font-weight: 700;
+}
+.priority-critical { background: #b92c2c; }
+.priority-high { background: #d9822b; }
+.priority-medium { background: #0d6efd; }
+.priority-low { background: #5c6b80; }
+.event-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 4px;
+  font-size: 11px;
+  color: #f1f1f1;
+}
+.mini-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 35%;
+}
+@media (max-width: 1200px) {
+  .calendar-grid { grid-template-columns: repeat(7, minmax(110px, 1fr)); }
+  .calendar-header-row { grid-template-columns: repeat(7, minmax(110px, 1fr)); }
+}
+@media (max-width: 768px) {
+  .calendar-grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+  .calendar-header-row { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
+}
+</style>
+{% endblock %}
+{% block content %}
+<div class="card calendar-card">
+  <div class="card-body">
+    <div class="calendar-toolbar">
+      
+      <div>
+        <a class="btn btn-outline-secondary" href="{{ url_for('tickets.calendar_view', **prev_month_query) }}"><i class="fas fa-chevron-left"></i></a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('tickets.calendar_view', **next_month_query) }}"><i class="fas fa-chevron-right"></i></a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('tickets.calendar_view') }}">Today</a>
+        <span class="h5 mb-0 ml-2">{{ month_start.strftime('%B %Y') }}</span>
+      </div>
+      <form method="get" class="mini-filter">
+        <label for="filter_by" class="mb-0 font-weight-bold">Filter By</label>
+        <input type="hidden" name="year" value="{{ month_start.year }}">
+        <input type="hidden" name="month" value="{{ month_start.month }}">
+        <select name="filter_by" id="filter_by" class="form-control form-control-sm">
+          <option value="" {% if not selected_filter.filter_by %}selected{% endif %}>All Tickets</option>
+          <option value="my" {% if selected_filter.filter_by == 'my' %}selected{% endif %}>My Tickets</option>
+          <option value="engineer" {% if selected_filter.filter_by == 'engineer' %}selected{% endif %}>Assigned Engineer/IT</option>
+          <option value="client" {% if selected_filter.filter_by == 'client' %}selected{% endif %}>Client</option>
+        </select>
+        <select name="filter_value" id="filter_value_engineer" class="form-control form-control-sm">
+          <option value="">Select engineer</option>
+          <option value="unassigned" {% if selected_filter.filter_by == 'engineer' and selected_filter.filter_value == 'unassigned' %}selected{% endif %}>Unassigned</option>
+          {% for eng in engineers %}
+            <option value="{{ eng.id }}" {% if selected_filter.filter_by == 'engineer' and selected_filter.filter_value == eng.id|string %}selected{% endif %}>
+              {{ eng.full_name or eng.username }}
+            </option>
+          {% endfor %}
+        </select>
+        <select name="filter_value" id="filter_value_client" class="form-control form-control-sm">
+          <option value="">Select client</option>
+          {% for c in clients %}
+            <option value="{{ c.id }}" {% if selected_filter.filter_by == 'client' and selected_filter.filter_value == c.id|string %}selected{% endif %}>
+              {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Apply</button>
+        <a href="{{ url_for('tickets.calendar_view', year=month_start.year, month=month_start.month) }}" class="btn btn-secondary btn-sm">Reset</a>
+      </form>
+    </div>
+
+    <div class="calendar-header-row">
+      <div class="day-name ">Sun</div>
+      <div class="day-name ">Mon</div>
+      <div class="day-name ">Tue</div>
+      <div class="day-name ">Wed</div>
+      <div class="day-name ">Thu</div>
+      <div class="day-name ">Fri</div>
+      <div class="day-name ">Sat</div>
+    </div>
+
+    <div class="calendar-grid">
+      {% for week in weeks %}
+        {% set week_index = loop.index %}
+        {% for day in week %}
+          {% set in_month = day.month == month_start.month %}
+          {% set events = events_by_date.get(day, []) %}
+          <div class="calendar-day {% if not in_month %}other-month{% endif %} {% if day == today %}today{% endif %}">
+            <div class="day-header">
+              <span class="day-number">
+                {{ day.day }}
+              </span>
+              <!-- <span class="day-number">
+                ISO {{ day.isocalendar()[1] }} • {{ day.strftime('%A') }} {{ day.day }}
+              </span> -->
+              {% if day == today %}
+                <span class="badge badge-primary">Today</span>
+              {% endif %}
+            </div>
+            <div class="flex-grow-1">
+              {% for t in events %}
+                {% set priority_value = t.priority.value if t.priority else 'low' %}
+                {% set priority_class = 'priority-' + priority_value %}
+                <a class="event-chip {{ priority_class }}" href="{{ url_for('tickets.detail', ticket_id=t.id) }}">
+                  <div class="title">{{ t.ticket_no }}</div>
+                  <div>{{ t.subject or 'No subject' }}</div>
+                  <div class="event-meta">
+                    <!-- <span>{{ priority_value|upper }}</span> -->
+                    <!-- <span>{{ (t.assigned_engineer.full_name or t.assigned_engineer.username) if t.assigned_engineer else 'Unassigned' }}</span> -->
+                  </div>
+                </a>
+              {% endfor %}
+              {% if not events %}
+                <div class="text-muted small">No tickets</div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+  var filterBy = document.getElementById('filter_by');
+  var engSelect = document.getElementById('filter_value_engineer');
+  var clientSelect = document.getElementById('filter_value_client');
+
+  function syncFilter() {
+    var mode = filterBy ? filterBy.value : '';
+    if (!engSelect || !clientSelect) return;
+    engSelect.style.display = mode === 'engineer' ? '' : 'none';
+    clientSelect.style.display = mode === 'client' ? '' : 'none';
+    engSelect.disabled = mode !== 'engineer';
+    clientSelect.disabled = mode !== 'client';
+    if (mode !== 'engineer') { engSelect.value = ''; }
+    if (mode !== 'client') { clientSelect.value = ''; }
+  }
+
+  if (filterBy) {
+    filterBy.addEventListener('change', syncFilter);
+    syncFilter();
+  }
+})();
+</script>
+{% endblock %}

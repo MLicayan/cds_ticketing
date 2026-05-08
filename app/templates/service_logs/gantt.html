@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+{% block title %}Service Logs Gantt{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-project-diagram text-primary mr-2"></i>Service Logs Gantt</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('service_logs.index') }}" class="btn btn-outline-secondary mr-2">
+      <i class="fas fa-list"></i> List
+    </a>
+    <a href="{{ url_for('tickets.gantt_view') }}" class="btn btn-outline-info mr-2">
+      <i class="fas fa-ticket-alt"></i> Tickets Gantt
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+{{ super() }}
+<style>
+.gantt-shell { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+.gantt-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.gantt-controls .nav-btns .btn { margin-right: 6px; }
+.legend { font-size: 12px; color: #4b5563; }
+.legend .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; margin-right: 6px; color: #111827; }
+.gantt-grid { --day-count: {{ day_headers|length }}; position: relative; }
+.gantt-months { display: grid; grid-template-columns: repeat({{ day_headers|length }}, 1fr); border-bottom: 1px solid #e5e7eb; }
+.gantt-month { text-align: center; font-weight: 700; padding: 6px 0; background: #f8fafc; border-right: 1px solid #e5e7eb; }
+.gantt-days { display: grid; grid-template-columns: repeat({{ day_headers|length }}, 1fr); font-size: 11px; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
+.gantt-day { text-align: center; padding: 4px 0; border-right: 1px solid #f1f5f9; }
+.gantt-day.weekend { background: #fef3f2; color: #b91c1c; }
+.gantt-header-row { display: grid; grid-template-columns: 32% 68%; align-items: center; padding: 6px 0; border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #374151; }
+.info-head { display: grid; grid-template-columns: 20% 25% 25% 30%; column-gap: 6px; padding-left: 8px; }
+.gantt-group { margin-top: 8px; }
+.gantt-group-title { font-weight: 700; color: #111827; margin: 8px 0 4px; padding: 4px 8px; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 4px; }
+.gantt-row { display: grid; grid-template-columns: 32% 68%; align-items: center; min-height: 42px; border-bottom: 1px solid #f1f5f9; }
+.row-info { display: grid; grid-template-columns: 20% 25% 25% 30%; column-gap: 6px; padding: 8px 8px; font-size: 13px; margin-left: 20px; margin-right: 5px;}
+.row-info div { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row-track { position: relative; height: 38px; background: #fafafa; }
+.row-track::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(to right, #e5e7eb 1px, transparent 1px); background-size: calc(100% / var(--day-count)) 100%; }
+.weekend-band { position: absolute; top: 0; bottom: 0; background: #fef3f2; opacity: 0.7; pointer-events: none; }
+.bar { position: absolute; top: 6px; height: 26px; border-radius: 6px; color: #111827; font-size: 12px; padding: 0 8px; display: flex; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.12); border: 1px solid rgba(0,0,0,0.05); background: #dbeafe; }
+.bar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.bar[data-tooltip] { position: relative; }
+.bar[data-tooltip]:hover:after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: -8px;
+  left: 0;
+  transform: translateY(-100%);
+  background: #ffffff;
+  color: #111827;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  width: 220px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  z-index: 10;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.bar[data-tooltip]:hover:before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 16px;
+  transform: translateY(-50%);
+  border: 10px solid transparent;
+  border-top-color: #ffffff;
+  filter: drop-shadow(0 -1px 0 #d1d5db);
+  z-index: 11;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="gantt-shell">
+  <div class="gantt-controls">
+    <div class="legend">
+      <span class="mr-2"><strong>Window:</strong> {{ window_start.strftime('%b %d, %Y') }} – {{ window_end.strftime('%b %d, %Y') }}</span>
+    </div>
+    <div class="d-flex w-100 justify-content-between align-items-center">
+      <div class="nav-btns">
+        <a class="btn btn-light btn-sm btn-nav" href="{{ url_for('service_logs.gantt', group_by=group_by, view_mode=view_mode, start=prev_start.isoformat(), date_from=range_start_raw, date_to=range_end_raw) }}"><i class="fas fa-chevron-left"></i></a>
+        <a class="btn btn-light btn-sm btn-nav" href="{{ url_for('service_logs.gantt', group_by=group_by, view_mode=view_mode, start=next_start.isoformat(), date_from=range_start_raw, date_to=range_end_raw) }}"><i class="fas fa-chevron-right"></i></a>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('service_logs.gantt', group_by=group_by, view_mode=view_mode, start=today_start.isoformat()) }}">Today</a>
+      </div>
+      <form class="form-inline" method="get" action="{{ url_for('service_logs.gantt') }}">
+        <input type="hidden" name="start" value="{{ window_start.isoformat() }}">
+        <label class="mr-2 mb-0">Group by</label>
+        <select name="group_by" class="form-control form-control-sm mr-2" onchange="this.form.submit()">
+          <option value="client" {% if group_by == 'client' %}selected{% endif %}>Client</option>
+          <option value="instrument" {% if group_by == 'instrument' %}selected{% endif %}>Instrument</option>
+          <option value="assignee" {% if group_by == 'assignee' %}selected{% endif %}>Engineer</option>
+        </select>
+
+        <label class="mr-2 mb-0">View</label>
+        <select name="view_mode" class="form-control form-control-sm mr-2" onchange="this.form.submit()">
+          <option value="month" {% if view_mode == 'month' %}selected{% endif %}>Monthly</option>
+          <option value="biweekly" {% if view_mode == 'biweekly' %}selected{% endif %}>Bi-Weekly</option>
+          <option value="week" {% if view_mode == 'week' %}selected{% endif %}>Weekly</option>
+          <option value="range" {% if view_mode == 'range' %}selected{% endif %}>Date Range</option>
+        </select>
+        <div class="form-row align-items-center">
+          <div class="col-auto">
+            <input type="date" name="date_from" class="form-control form-control-sm mb-2 {% if view_mode != 'range' %}d-none{% endif %}" value="{{ range_start_raw or '' }}">
+          </div>
+          <div class="col-auto">
+            <input type="date" name="date_to" class="form-control form-control-sm mb-2 {% if view_mode != 'range' %}d-none{% endif %}" value="{{ range_end_raw or '' }}">
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="gantt-header-row">
+    <div class="info-head">
+      <div>Log #</div>
+      <div>Client</div>
+      <div>Instrument/App</div>
+      <div>Engineer</div>
+    </div>
+    <div class="timeline-head">
+      <div class="gantt-months">
+        {% for span in month_spans %}
+          <div class="gantt-month" style="grid-column: span {{ span.days }};">{{ span.label }}</div>
+        {% endfor %}
+      </div>
+      <div class="gantt-days">
+        {% for d in day_headers %}
+          <div class="gantt-day {% if d.dow in ['Sat','Sun'] %}weekend{% endif %}">{{ d.day }} <small>{{ d.dow[0] }}</small></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if grouped_tasks %}
+    {% for group in grouped_tasks %}
+      <div class="gantt-group">
+        <div class="gantt-group-title">{{ group.label }}</div>
+        {% for item in group.items_list %}
+          <div class="gantt-row" style="--day-count: {{ day_headers|length }};">
+            <div class="row-info" style="background: {{ item.bg_color }}; color: {{ item.text_color }};">
+              <div>{{ item.log.id }}</div>
+              <div>{{ item.log.client.name if item.log.client else 'N/A' }}</div>
+              <div>{{ item.log.instrument.display_label() if item.log.instrument else 'N/A' }}</div>
+              <div>{{ item.log.engineer.full_name or item.log.engineer.username if item.log.engineer else 'Unassigned' }}</div>
+            </div>
+            <div class="row-track">
+              {% for d in day_headers %}
+                {% if d.dow in ['Sat','Sun'] %}
+                  {% set left = (loop.index0 / day_headers|length * 100) %}
+                  {% set width = (1 / day_headers|length * 100) %}
+                  <div class="weekend-band" style="left: {{ left }}%; width: {{ width }}%;"></div>
+                {% endif %}
+              {% endfor %}
+              <div class="bar" data-tooltip="{{ item.log.status_after or 'N/A' }}" style="left: {{ item.left_pct }}%; width: {{ item.width_pct }}%; background: {{ item.bg_color }}; color: {{ item.text_color }};">
+                <span>{{ item.log.ticket_id or '' }} {{ item.log.service_type or '' }}</span>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-muted mt-3 mb-0">No service logs to display in this window.</p>
+  {% endif %}
+</div>
+{% endblock %}

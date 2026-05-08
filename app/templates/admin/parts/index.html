@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Parts - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">Parts</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.parts_create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Parts
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Description</th>
+          <th>Unit Cost</th>
+          <th>Price</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in parts %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ p.name }}</td>
+          <td>{{ p.description }}</td>
+          <td>{{ "{:,.2f}".format(p.unit_cost) if p.unit_cost is not none else '-' }}</td>
+          <td>{{ "{:,.2f}".format(p.price) if p.price is not none else '-' }}</td>
+          <td class="text-right">
+            <a href="{{ url_for('admin.parts_edit', part_id=p.id) }}" class="btn btn-sm btn-outline-secondary">
+              <i class="fas fa-edit"></i>
+            </a>
+            <form method="post" action="{{ url_for('admin.parts_delete', part_id=p.id) }}" style="display:inline-block" onsubmit="return confirm('Delete this part?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-muted">No parts found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Client' if client else 'New Client' }} - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">{{ 'Edit Client' if client else 'New Client' }}</h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-body">
+
+      <div class="row">
+        <div class="col-md-6">
+          <div class="form-group">
+            <label for="name">Name</label>
+            <input name="name" id="name" class="form-control" required value="{{ request.form.get('name', client.name if client else '') }}">
+          </div>
+          <div class="form-group">
+            <label for="client_code">Code</label>
+            <input name="client_code" id="client_code" class="form-control" value="{{ request.form.get('client_code', client.client_code if client else '') }}" placeholder="e.g. LAB-001">
+          </div>
+          <div class="form-group">
+            <label for="address">Address</label>
+            <input name="address" id="address" class="form-control" value="{{ request.form.get('address', client.address if client else '') }}">
+          </div>
+          <div class="form-group">
+            <label for="contact_person">Contact Person</label>
+            <input name="contact_person" id="contact_person" class="form-control" value="{{ request.form.get('contact_person', client.contact_person if client else '') }}">
+          </div>
+          <div class="form-group">
+            <label for="contact_number">Contact Number</label>
+            <input name="contact_number" id="contact_number" class="form-control" value="{{ request.form.get('contact_number', client.contact_number if client else '') }}">
+          </div>
+          
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input name="email" id="email" type="email" class="form-control" value="{{ request.form.get('email', client.email if client else '') }}">
+          </div>
+
+          <div class="form-group">
+            <label for="assigned_sales_id">Assigned Sales</label>
+            <select name="assigned_sales_id" id="assigned_sales_id" class="form-control">
+              <option value="">-- None --</option>
+              {% for sales in sales_users or [] %}
+                {% set selected = (request.form.get('assigned_sales_id') or (client.assigned_sales_id if client else ''))|string == sales.id|string %}
+                <option value="{{ sales.id }}" {% if selected %}selected{% endif %}>{{ sales.full_name or sales.username }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="app_ids">CDS Applications</label>
+            <select name="app_ids" id="app_ids" class="form-control" multiple>
+              {% for app in apps or [] %}
+              {% set selected = (client and app in client.apps) or (app.id|string in request.form.getlist('app_ids')) %}
+              <option value="{{ app.id }}" {% if selected %}selected{% endif %}>{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
+              {% endfor %}
+            </select>
+            <small class="text-muted">Hold Ctrl/Cmd to select multiple.</small>
+          </div>
+
+        </div>
+        <div class="col-md-6">
+
+          <div class="form-group">
+            <label for="instruments">Instruments</label>
+            <table class="table table-sm mb-2">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Serial Number</th>
+                  <th>Model</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for instrument in instruments or [] %}
+                <tr>
+                  <td>{{ instrument.name }}</td>
+                  <td>{{ instrument.serial_number or '' }}</td>
+                  <td>{{ instrument.model.name if instrument.model else '' }}</td>
+                  <td>
+                    <button class="btn btn-sm btn-primary mr-3" type="button" data-toggle="modal" data-target="#addInstrumentModal" 
+                      onclick="
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;code&quot;]').value='{{ instrument.code }}';
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;name&quot;]').value='{{ instrument.name }}';
+                        document.getElementById('addInstrumentModal').querySelector('select[name=&quot;client_id&quot;]').value='{{ instrument.client_id }}';
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;model&quot;]').value='{{ instrument.model.name if instrument.model else '' }}';
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;brand&quot;]').value='{{ instrument.brand }}';
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;serial_number&quot;]').value='{{ instrument.serial_number }}';
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;machine_type&quot;]').value='{{ instrument.machine_type }}';
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;installation_date&quot;]').value='{{ (instrument.installation_date.strftime('%Y-%m-%d') if instrument.installation_date else '') }}';
+                        document.getElementById('addInstrumentModal').querySelector('input[name=&quot;warranty_end_date&quot;]').value='{{ (instrument.warranty_end_date.strftime('%Y-%m-%d') if instrument.warranty_end_date else '') }}';
+                      ">
+                      <i class="fas fa-edit"></i> Edit
+                    </button>
+                  </td>
+                </tr>
+                {% else %}
+                <tr>
+                  <td colspan="4" class="text-muted">No instruments assigned.</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('admin.clients_index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% if client %}
+<div class="card card-outline card-secondary">
+  <div class="card-header">
+    <h3 class="card-title">Client Users</h3>
+  </div>
+  <div class="card-body">
+    <h5>Add User</h5>
+    <form method="post" action="{{ url_for('admin.clients_add_user', client_id=client.id) }}" class="mb-3">
+      <div class="form-row">
+        <div class="form-group col-md-3">
+          <input name="username" class="form-control" placeholder="Username" required>
+        </div>
+        <div class="form-group col-md-3">
+          <input name="full_name" class="form-control" placeholder="Full name">
+        </div>
+        <div class="form-group col-md-3">
+          <input type="password" name="password" class="form-control" placeholder="Password" required>
+        </div>
+        <div class="form-group col-md-3">
+          <button type="submit" class="btn btn-primary">Add User</button>
+        </div>
+      </div>
+    </form>
+
+    <hr>
+    <h5>Existing Users</h5>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Full Name</th>
+            <th>Username</th>
+            <th>Password</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in client_users %}
+          <tr>
+            <form method="post" action="{{ url_for('admin.clients_update_user', client_id=client.id, user_id=u.id) }}">
+              <td><input name="full_name" class="form-control form-control-sm" value="{{ u.full_name or '' }}"></td>
+              <td><input name="username" class="form-control form-control-sm" value="{{ u.username }}" required></td>
+              <td><input type="password" name="password" class="form-control form-control-sm mr-2" placeholder="New password (optional)" ></td>
+              <td class="text-right">
+                <div class="d-flex ">
+                  
+                  <button type="submit" class="btn btn-sm btn-outline-primary mr-1">Save</button>
+                  <button type="submit"
+                          formaction="{{ url_for('admin.clients_delete_user', client_id=client.id, user_id=u.id) }}"
+                          formmethod="post"
+                          class="btn btn-sm btn-outline-danger"
+                          onclick="return confirm('Delete this user?');">
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </form>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="3" class="text-muted">No client users yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if current_user.role.value == 'admin' %}
+  <div class="modal fade" id="addInstrumentModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-pen mr-2"></i>Edit Client Instrument</h5>
+          <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <form method="post">
+          <input type="hidden" name="update_log" value="1">
+          <input type="hidden" name="client_id" value="{{ client.id if client else '' }}">
+          <div class="modal-body">
+            
+            <div class="form-row">
+              <div class="form-group col-md-12">
+                <label for="code">Code</label>
+                <input name="code" id="code" class="form-control" required value="">
+              </div>
+              <div class="form-group col-md-12">
+                <label for="name">Name</label>
+                <input name="name" id="name" class="form-control" required value="">
+              </div>
+              
+              <div class="form-group col-md-12">
+                <label for="model">Model</label>
+                <input name="model" id="model" class="form-control" value="">
+              </div>
+              <div class="form-group col-md-12">
+                <label for="brand">Brand</label>
+                <input name="brand" id="brand" class="form-control" value="">
+              </div>
+              <div class="form-group col-md-12">
+                <label for="serial_number">Serial Number</label>
+                <input name="serial_number" id="serial_number" class="form-control" value="">
+              </div>
+              <div class="form-group col-md-12">
+                <label for="machine_type">Instrument Type</label>
+                <input name="machine_type" id="machine_type" class="form-control" value="">
+              </div>
+              <div class="form-row">
+                <div class="form-group col-md-6">
+                  <label for="installation_date">Installation Date</label>
+                  <input type="date" name="installation_date" id="installation_date" class="form-control" value="">
+                </div>
+                <div class="form-group col-md-6">
+                  <label for="warranty_end_date">Warranty End</label>
+                  <input type="date" name="warranty_end_date" id="warranty_end_date" class="form-control" value="">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endif %}
+
+{% endblock %}

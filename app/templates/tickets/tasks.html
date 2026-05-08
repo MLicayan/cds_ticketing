@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Developer Tasks - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-tasks text-primary mr-2"></i>Developer Tasks</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('tickets.index') }}" class="btn btn-secondary">
+      <i class="fas fa-ticket-alt"></i> Tickets
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap mb-0">
+      <thead>
+        <tr>
+          <th>Task Ticket</th>
+          <th>Task</th>
+          <th>Parent Ticket</th>
+          <th>Assigned IT</th>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Client</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+          {% set parent_id = (task.category or '').replace('task:', '')|int %}
+          {% set parent = parents.get(parent_id) %}
+          <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=task.id) }}'" style="cursor:pointer;">
+            <td>{{ task.ticket_no }}</td>
+            <td>{{ task.subject }}</td>
+            <td>
+              {% if parent %}
+                <a href="{{ url_for('tickets.detail', ticket_id=parent.id) }}" onclick="event.stopPropagation();">{{ parent.ticket_no }}</a>
+              {% else %}
+                <span class="text-muted">N/A</span>
+              {% endif %}
+            </td>
+            <td>{{ task.assigned_engineer.full_name or task.assigned_engineer.username if task.assigned_engineer else 'Unassigned' }}</td>
+            <td>{{ status_labels.get(task.status, task.status.value.replace('_', ' ')|title) }}</td>
+            <td>
+              {% set task_priority_value = task.priority.value if task.priority else 'NOT_SET' %}
+              <span class="badge badge-{{ 'danger' if task_priority_value == 'critical' else 'warning' if task_priority_value == 'high' else 'info' if task_priority_value == 'medium' else 'secondary' }}">
+                {{ 'NOT SET' if task_priority_value == 'NOT_SET' else task_priority_value|upper }}
+              </span>
+            </td>
+            <td>{{ task.client.name if task.client else 'N/A' }}</td>
+            <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '' }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center text-muted">No developer tasks found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

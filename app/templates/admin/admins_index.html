@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Admins - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">Admin Users</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.admins_create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Admin
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Username</th>
+          <th>Full Name</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for admin in admins %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ admin.username }}</td>
+          <td>{{ admin.full_name or '-' }}</td>
+          <td class="text-right">
+            <a href="{{ url_for('admin.admins_edit', user_id=admin.id) }}" class="btn btn-sm btn-outline-secondary">Edit</a>
+            {% if admin.id != current_user.id %}
+            <form method="post" action="{{ url_for('admin.admins_delete', user_id=admin.id) }}" style="display:inline;" onsubmit="return confirm('Delete this admin?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+            </form>
+            {% else %}
+            <span class="text-muted small">Cannot delete self</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="4" class="text-center text-muted">No admin users found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Engineers - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+<h1 class="m-0 text-dark">Engineers / IT</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('admin.engineers_create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Engineer / IT
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Username</th>
+          <th>Full Name</th>
+          <th>Client</th>
+          <th>User Type</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in engineers %}
+        <tr>
+          <td>{{ loop.index }}</td>
+          <td>{{ e.username }}</td>
+          <td>{{ e.full_name }}</td>
+          <td>{{ e.client.name if e.client else '' }}</td>
+          <td>{{ e.user_type or 'Engineer' }}</td>
+          <td class="text-right">
+            <a href="{{ url_for('admin.engineers_edit', user_id=e.id) }}" class="btn btn-sm btn-outline-secondary">
+              <i class="fas fa-edit"></i>
+            </a>
+            <form method="post" action="{{ url_for('admin.engineers_delete', user_id=e.id) }}" style="display:inline-block" onsubmit="return confirm('Delete this engineer?');">
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="fas fa-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted">No engineers found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

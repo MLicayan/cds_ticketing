@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Service Logs - {{ instrument.display_label() }}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap4.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    body { background: #f4f7fc; }
+    .page-title { display: flex; align-items: center; gap: 0.75rem; font-size: 1.9rem; font-weight: 600; color: #1c2b4d; }
+    .page-title i { background: #0d6efd; color: #fff; padding: 10px; border-radius: 10px; font-size: 1.3rem; }
+    .small-muted { color: #6c757d; font-size: 0.95rem; }
+    .info-card, .logs-card { background: #ffffff; border-radius: 0.75rem; border: 1px solid #e3e9f4; box-shadow: 0 5px 20px rgba(15,70,140,0.05); overflow: hidden; }
+    .info-header, .logs-header { background: linear-gradient(135deg, #0d6efd, #003297); color: #fff; padding: .75rem 1rem; font-weight: 600; border-bottom: 1px solid #dce5f6; display: flex; align-items: center; gap: .5rem; }
+    .info-body { padding: 1.2rem 1.4rem; font-size: .95rem; }
+    .info-body strong { color: #1b2d4f; }
+    .table-hover tbody tr { cursor: pointer; }
+    .service-table thead { background: #f0f4fa; color: #1e2f54; font-size: .85rem; }
+    .service-table thead th { padding: 0.75rem; border-bottom: 1px solid #d7e1ef; }
+    .service-table tbody td { padding: 0.75rem; font-size: .9rem; border-bottom: 1px solid #eef2f7; }
+    .service-table tbody tr:hover { background: #f8fbff; }
+    .qr-card { margin-top: 1rem; }
+    code { word-break: break-all; }
+    .pre-wrap { white-space: pre-wrap; }
+    .service-modal .modal-content { border: none; border-radius: 1rem; box-shadow: 0 10px 40px rgba(15, 70, 140, 0.25); overflow: hidden; }
+    .service-modal .modal-header { border-bottom: none; padding: 1rem 1.5rem; background: linear-gradient(135deg, #0d6efd, #1f3b74); color: #fff; }
+    .service-modal .modal-title { font-weight: 600; display: flex; align-items: center; gap: .75rem; }
+    .service-modal .modal-title .icon-circle { width: 36px; height: 36px; border-radius: 999px; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; }
+    .service-modal .modal-body { background-color: #f5f7fb; padding: 1.5rem; font-size: 0.95rem; }
+    .service-pill { display: inline-flex; align-items: center; gap: .5rem; padding: .35rem .9rem; border-radius: 999px; background: #e9f2ff; color: #174274; font-size: .85rem; font-weight: 500; margin-right: .5rem; margin-bottom: .5rem; border: 1px solid rgba(13,110,253,.12); }
+    .service-section-title { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: #7b8495; font-weight: 600; margin-bottom: .35rem; }
+    .service-card { background: #fff; border-radius: .75rem; padding: 1rem 1.25rem; margin-bottom: .75rem; border: 1px solid #e3e7f3; }
+    .service-card p { margin-bottom: 0; color: #3d4250; }
+    .service-modal .modal-footer { border-top: none; background-color: #f5f7fb; padding: .9rem 1.5rem 1.3rem; }
+    .service-label { font-size: 0.85rem; color: #7b8495; }
+    /* ---- ICON EFFECTS ---- */
+    .icon-enhanced {
+        font-size: 1.2rem;
+        transition: 0.25s ease;
+        filter: drop-shadow(0 0 3px rgba(13,110,253,0.4));
+    }
+
+    .icon-enhanced:hover {
+        transform: scale(1.18);
+        filter: drop-shadow(0 0 6px rgba(13,110,253,0.7));
+    }
+
+    /* For title icon */
+    .icon-title {
+        font-size: 1.4rem;
+        padding: 10px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #0d6efd, #1a3c85);
+        color: white;
+        box-shadow: 0 0 10px rgba(13,110,253,0.4);
+        transition: .3s ease;
+    }
+
+    .icon-title:hover {
+        transform: scale(1.1);
+        box-shadow: 0 0 16px rgba(13,110,253,0.7);
+    }
+
+    /* Glow pulse (subtle, professional) */
+    @keyframes glowPulse {
+        0% { filter: drop-shadow(0 0 2px rgba(13,110,253,0.4)); }
+        50% { filter: drop-shadow(0 0 6px rgba(13,110,253,0.7)); }
+        100% { filter: drop-shadow(0 0 2px rgba(13,110,253,0.4)); }
+    }
+
+    .icon-pulse {
+        animation: glowPulse 2.4s infinite ease-in-out;
+    }
+
+      </style>
+    </head>
+    <body class="p-4">
+      <div class="container-fluid">
+        <div class="page-title mb-3">
+        <i class="fas fa-tools icon-title icon-pulse"></i>
+        Service Logs for <span class="text-danger">{{ instrument.name or 'N/A' }}</span>
+    </div>
+
+        <div class="text-muted mb-4 ml-1 small-muted">{{ instrument.name }}{% if instrument.serial_number %} (SN: {{ instrument.serial_number }}){% endif %}</div>
+
+        <div class="row g-4">
+          <div class="col-lg-4">
+            <div class="info-card mb-4">
+              <div class="info-header">
+                  <i class="fas fa-microscope icon-enhanced icon-pulse"></i> Instrument Details
+              </div>
+              <div class="card-body">
+                <p><strong>Client:</strong><br>{{ instrument.client.name }}</p>
+                <p><strong>Model / Brand:</strong><br>{{ instrument.model.name if instrument.model else 'N/A' }}{% if instrument.brand %} / {{ instrument.brand }}{% endif %}</p>
+                <p><strong>Machine Type:</strong><br>{{ instrument.machine_type or 'N/A' }}</p>
+                <p><strong>Status:</strong><br>{{ instrument.status|capitalize }}</p>
+                <p><strong>Installation Date:</strong><br>
+                  {% if instrument.installation_date %}
+                    {{ instrument.installation_date.strftime('%Y-%m-%d') }}
+                  {% else %}
+                    <span class="text-muted">Not set</span>
+                  {% endif %}
+                </p>
+                <p><strong>Warranty End:</strong><br>
+                  {% if instrument.warranty_end_date %}
+                    {{ instrument.warranty_end_date.strftime('%Y-%m-%d') }}
+                  {% else %}
+                    <span class="text-muted">Not set</span>
+                  {% endif %}
+                </p>
+                <p><strong>Last Preventive Maintenance:</strong><br>
+                  <span class="text-muted">
+                    {% if last_pm %}
+                      {{ last_pm.visit_date.strftime('%Y-%m-%d') if last_pm.visit_date else '' }}<br>
+                      Engineer: {{ last_pm.engineer.full_name or last_pm.engineer.username }} <br>
+                      <a href="{{ url_for('service_logs.detail', log_id=last_pm.id) }}">View log</a>
+                    {% else %}
+                      None
+                    {% endif %}
+                  </span>
+                </p>
+                <p><strong>Last Calibration:</strong><br>
+                  <span class="text-muted">
+                    {% if last_calibration %}
+                      {{ last_calibration.visit_date.strftime('%Y-%m-%d') if last_calibration.visit_date else '' }}<br>
+                      Engineer: {{ last_calibration.engineer.full_name or last_calibration.engineer.username }} <br>
+                      <a href="{{ url_for('service_logs.detail', log_id=last_calibration.id) }}">View log</a>
+                    {% else %}
+                      None
+                    {% endif %}
+                  </span>
+                </p>
+
+                <p><strong>LIS Comm.:</strong><br>
+                  {% if instrument.lis_status == 'connected' %}
+                    <span class="badge badge-success">Connected</span>
+                  {% else %}
+                    <span class="badge badge-secondary">Not Connected</span>
+                  {% endif %}
+                </p>
+                <p><strong>LIS Protocol:</strong><br>{{ instrument.lis_protocol or 'N/A' }}</p>
+              </div>
+            </div>
+
+            <div class="info-card qr-card">
+              <div class="info-header">
+                  <i class="fas fa-qrcode icon-enhanced icon-pulse"></i> QR Link
+              </div>
+              <div class="info-body text-center">
+                {% set code_url = url_for('instruments.logs', identifier=instrument.code, _external=True) %}
+                {% set alt_url = url_for('instruments.logs', identifier=name_serial_slug, _external=True) if name_serial_slug else None %}
+                <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={{ code_url | urlencode }}" alt="QR for code route" class="img-fluid rounded border">
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-8">
+            <div class="logs-card  mb-4">
+              <div class="logs-header">
+                  <i class="fas fa-clipboard-list icon-enhanced icon-pulse"></i> Service Logs
+              </div>
+              <div class="p-3">
+                <table id="logs-table" class="service-table table table-hover text-nowrap mb-0">
+                  <thead>
+                    <tr>
+                      <th>Log No.</th>
+                      <th>Type</th>
+                      <th>Engineer / IT</th>
+                      <th>Report Date</th>
+                      <th>Status After Service</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for log in logs %}
+                      <tr class="log-row"
+                        data-log-id="{{ log.id or '' }}"
+                        data-service-type="{{ log.service_type|upper|replace('-', ' ') }}"
+                        data-engineer="{{ log.engineer.full_name or log.engineer.username }}"
+                        data-visit-date="{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}"
+                        data-created="{{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '' }}"
+                        data-problem="{{ (log.problem_description or '')|replace('\n', '&#10;')|e }}"
+                        data-root-cause="{{ (log.root_cause or '')|replace('\n', '&#10;')|e }}"
+                        data-action="{{ (log.action_taken or '')|replace('\n', '&#10;')|e }}"
+                        data-recommendations="{{ (log.recommendations or '')|replace('\n', '&#10;')|e }}"
+                        data-confirmed-by="{{ log.confirmed_by or '' }}"
+                        data-confirmed-position="{{ log.confirmed_by_position or '' }}"
+                        data-status-after="{{ log.status_after or '' }}"
+                        data-monitor="{{ 'Yes' if log.is_monitor else 'No' }}"
+                        data-monitored-days="{{ log.monitored_days or 0 }}"
+                      >
+                        <td># {{ log.id or '' }}</td>
+                        <td>{{ log.service_type|capitalize|replace('-', ' ') }}</td>
+                        <td>{{ log.engineer.full_name or log.engineer.username }}</td>
+                        <td>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</td>
+                        <td>{{ log.status_after|capitalize or '' }}</td>
+                      </tr>
+                    {% else %}
+                      <tr>
+                        <td colspan="5" class="text-center text-muted">No service logs found for this instrument.</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="logs-card">
+              <div class="logs-header">
+                  <i class="fas fa-calendar-check icon-enhanced icon-pulse"></i> PM Schedules
+              </div>
+              <div class="p-3">
+                <table id="pm-logs-table" class="service-table table table-hover text-nowrap mb-0">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Doc No</th>
+                      <th>Schedule Date</th>
+                      <th>Assigned Engineer</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for pms in pm_logs %}
+                      <tr style="cursor:pointer;">
+                        <td>{{ loop.index }}</td>
+                        <td>{{ pms.doc_no }}</td>
+                        <td>{{ pms.date.strftime('%Y-%m-%d') if pms.date else '' }}</td>
+                        <!-- <td>{{ pms.task_duration or '-' }}</td> -->
+                        <td>{{ pms.assigned_engineer.full_name or pms.assigned_engineer.username if pms.assigned_engineer else '-' }}</td>
+                        
+                      </tr>
+                    {% else %}
+                      <tr>
+                        <td colspan="7" class="text-center text-muted">No schedules found.</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+    </div>
+  </div>
+
+  <div class="modal fade service-modal" id="logModal" tabindex="-1" role="dialog" aria-labelledby="logModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="logModalLabel">
+            <span class="icon-circle">
+              <i class="fas fa-tools"></i>
+            </span>
+            <span>Service Log <span class="font-weight-light">#<span id="modalLogId"></span></span></span>
+          </h5>
+          <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close" style="opacity:1;">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+
+        <div class="modal-body">
+          <div class="mb-3">
+            <span class="service-pill">
+              <i class="fas fa-tag"></i>
+              <span><strong>Service Type:</strong> <span id="modalType" class="text-primary"></span></span>
+            </span>
+            <span class="service-pill">
+              <i class="fas fa-user-cog"></i>
+              <span><strong>Engineer:</strong> <span id="modalEngineer" class="text-primary"></span></span>
+            </span>
+            <span class="service-pill">
+              <i class="far fa-calendar-check"></i>
+              <span><strong>Report Date:</strong> <span id="modalVisitDate" class="text-primary"></span></span>
+            </span>
+          </div>
+
+          <div class="row g-3 mt-1 align-items-stretch">
+            <div class="col-md-4 d-flex">
+              <div class="service-card h-100 w-100">
+                <div class="service-section-title text-primary"><i class="fas fa-triangle-exclamation mr-1"></i>Problem</div>
+                <p id="modalProblem" class="pre-wrap mb-0"></p>
+              </div>
+            </div>
+            <div class="col-md-4 d-flex">
+              <div class="service-card h-100 w-100">
+                <div class="service-section-title text-primary"><i class="fas fa-magnifying-glass-chart mr-1"></i>Root Cause</div>
+                <p id="modalRootCause" class="pre-wrap mb-0"></p>
+              </div>
+            </div>
+            <div class="col-md-4 d-flex">
+              <div class="service-card h-100 w-100">
+                <div class="service-section-title text-primary"><i class="fas fa-clipboard-check mr-1"></i>Action Taken</div>
+                <p id="modalAction" class="pre-wrap mb-0"></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-3">
+            <div class="service-card">
+              <div class="service-section-title text-primary"><i class="fas fa-lightbulb mr-1"></i>Recommendations</div>
+              <p id="modalRecommendations" class="pre-wrap mb-0"></p>
+            </div>
+          </div>
+          <div class="row g-3 mb-2 align-items-stretch">
+            <div class="col-md-4 d-flex">
+              <div class="service-card h-100 w-100">
+                <div class="service-section-title text-primary"><i class="fas fa-signal mr-1"></i>Status After Service</div>
+                <div class="fw-bold" id="modalStatusAfter"></div>
+              </div>
+            </div>
+            <div class="col-md-4 d-flex">
+              <div class="service-card h-100 w-100">
+                <div class="service-section-title text-primary"><i class="far fa-clock mr-1"></i>Monitoring</div>
+                <div class="fw-bold"><span id="modalMonitor"></span> (<span id="modalMonitoredDays"></span> days)</div>
+              </div>
+            </div>
+            <div class="col-md-4 d-flex">
+              <div class="service-card h-100 w-100">
+                <div class="service-section-title text-primary"><i class="fas fa-user-check mr-1"></i>Confirmed By</div>
+                <div class="fw-bold mb-1" id="modalConfirmedBy"></div>
+                <div class="service-label mb-0">Position</div>
+                <div class="fw-bold" id="modalConfirmedPosition"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">
+            <i class="fas fa-times mr-1"></i> Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap4.min.js"></script>
+  <script>
+  $(function() {
+    $('#logs-table, #pm-logs-table').DataTable({
+      "pageLength": 10,
+      "order": [[3, "desc"]]
+    });
+
+    $('.log-row').on('click', function() {
+      var row = $(this).data();
+      $('#modalLogId').text(row.logId || '');
+      $('#modalType').text(row.serviceType || '');
+      $('#modalEngineer').text(row.engineer || '');
+      $('#modalVisitDate').text(row.visitDate || '');
+      $('#modalCreated').text(row.created || '');
+      $('#modalStatusAfter').text(row.statusAfter || '');
+      $('#modalMonitor').text(row.monitor || '');
+      $('#modalMonitoredDays').text(row.monitoredDays || 0);
+      $('#modalConfirmedBy').text(row.confirmedBy || '');
+      $('#modalConfirmedPosition').text(row.confirmedPosition || '');
+      $('#modalProblem').text(row.problem || '');
+      $('#modalRootCause').text(row.rootCause || '');
+      $('#modalAction').text(row.action || '');
+      $('#modalRecommendations').text(row.recommendations || '');
+      $('#logModal').modal('show');
+    });
+  });
+
+  </script>
+</body>
+</html>

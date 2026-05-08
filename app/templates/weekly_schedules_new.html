@@ -1,0 +1,261 @@
+{% extends "base.html" %}
+{% block title %}New Weekly Schedule{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+.task-row td { vertical-align: middle; }
+.select2-container--default .select2-selection--single {
+  height: 34px;
+  padding: 4px 8px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow { height: 32px; }
+</style>
+{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-calendar-week text-primary mr-2"></i>New Weekly Schedule</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('weekly_schedules.index') }}" class="btn btn-secondary">Back</a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    <form method="post">
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="title">Title</label>
+          <input type="text" name="title" id="title" class="form-control" placeholder="Week name (optional)" value="{{ title or '' }}">
+        </div>
+        <div class="form-group col-md-3">
+          <label for="week_start">Week Start (Mon)</label>
+          <input type="date" name="week_start" id="week_start" class="form-control" value="{{ default_week_start }}">
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered" id="tasks-table">
+          <thead>
+            <tr>
+              <th style="width: 15%;">Subject</th>
+              <th style="width: 15%;">Client</th>
+              <th style="width: 10%;">For</th>
+              <th style="width: 10%;"><span id="ticketfor_label">Instrument</span></th>
+              <!-- <th style="width: 18%;">CDS Application</th> -->
+              <th style="width: 15%;">Engineer</th>
+              <th style="width: 15%;">Service Type</th>
+              <!-- <th style="width: 14%;">PM Schedule</th> -->
+              <th style="width: 10%;">Priority</th>
+              <th style="width: 18%;">Notes</th>
+              <th style="width: 10%;"></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <small class="text-muted d-block mb-2">For PM On-site tasks, link an open PM schedule (no service log yet). If left blank, one will be auto-created using the week start date.</small>
+      <button type="button" class="btn btn-outline-primary btn-sm" id="add-task">
+        <i class="fas fa-plus"></i> Add Task
+      </button>
+
+      <div class="mt-4">
+        <button type="submit" class="btn btn-primary">
+          <i class="fas fa-save"></i> Save & Create Tickets
+        </button>
+        <a href="{{ url_for('weekly_schedules.index') }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+(function() {
+  var taskTableBody = document.querySelector('#tasks-table tbody');
+  var addBtn = document.getElementById('add-task');
+  if (!taskTableBody || !addBtn) return;
+  var defaultTicketFor = "{{ 'app' if (current_user.user_type or '').lower() == 'it' else 'instrument' }}";
+
+  var clientOptions = `{% for c in clients %}<option value="{{ c.id }}" data-client-id="{{ c.id }}">{{ c.name }}</option>{% endfor %}`;
+  var instrumentOptions = `{% for ins in instruments %}<option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}">{{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}</option>{% endfor %}`;
+  var engineerOptions = `<option value="">-- choose --</option>{% for eng in engineers %}<option value="{{ eng.id }}">{{ eng.full_name or eng.username }}</option>{% endfor %}`;
+  var appOptions = `{% for app in apps %}<option value="{{ app.id }}">{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>{% endfor %}`;
+  var pmScheduleOptions = `<option value="">-- select --</option>{% for pm in pm_schedules %}<option value="{{ pm.id }}" data-client-id="{{ pm.client_id }}" data-instrument-id="{{ pm.instrument_id }}">{{ pm.doc_no }} ({{ pm.date.strftime('%Y-%m-%d') }})</option>{% endfor %}`;
+  var serviceTypeOptions = `
+    <option value="pm-onsite">PM On-site</option>
+    <option value="corrective-onsite">Corrective On-Site Support</option>
+    <option value="corrective-remote">Corrective Remote Support</option>
+    <option value="calibration-onsite">Calibration On-Site Support</option>
+    <option value="calibration-remote">Calibration Remote Support</option>
+    <option value="install-onsite">Installation</option>
+    <option value="pullout-onsite">Pull-out</option>
+    <option value="demo-onsite">Demo</option>
+  `;
+  var priorityOptions = `
+    <option value="critical">Critical</option>
+    <option value="high">High</option>
+    <option value="medium" selected>Medium</option>
+    <option value="low">Low</option>
+  `;
+
+  function filterInstruments(row) {
+    var clientId = row.querySelector('.task-client').value;
+    var insSelect = row.querySelector('.task-instrument');
+    Array.from(insSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !clientId || opt.getAttribute('data-client-id') === clientId;
+      opt.hidden = !match;
+    });
+    if (insSelect.selectedOptions.length && insSelect.selectedOptions[0].hidden) {
+      insSelect.value = '';
+    }
+  }
+
+  function syncPmSelect(row) {
+    var serviceType = row.querySelector('.task-service-type');
+    var pmSelect = row.querySelector('.task-pm-schedule');
+    var clientSelect = row.querySelector('.task-client');
+    var instrumentSelect = row.querySelector('.task-instrument');
+    if (!serviceType || !pmSelect) return;
+    var isPm = serviceType.value === 'pm-onsite';
+    pmSelect.disabled = !isPm;
+    pmSelect.parentElement.classList.toggle('text-muted', !isPm);
+    Array.from(pmSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var clientMatch = !clientSelect.value || opt.getAttribute('data-client-id') === clientSelect.value;
+      var instrumentMatch = !instrumentSelect.value || opt.getAttribute('data-instrument-id') === instrumentSelect.value;
+      opt.hidden = !(clientMatch && instrumentMatch);
+    });
+    if (pmSelect.selectedOptions.length && pmSelect.selectedOptions[0].hidden) {
+      pmSelect.value = '';
+    }
+  }
+  function toggleTargets(row, initial) {
+    var ticketFor = row.querySelector('.task-ticket-for');
+    var instrumentGrp = row.querySelector('.task-instrument');
+    var appGrp = row.querySelector('.task-app');
+    if (!ticketFor) return;
+    var target = ticketFor.value || defaultTicketFor || 'instrument';
+    if (initial && !ticketFor.value) {
+      ticketFor.value = target;
+    }
+    if (instrumentGrp) instrumentGrp.classList.toggle('d-none', target !== 'instrument');
+    if (appGrp) appGrp.classList.toggle('d-none', target !== 'app');
+    document.getElementById('ticketfor_label').innerText = target === 'instrument' ? 'Instrument' : 'Application';
+    adjustServiceTypes(row, target);
+  }
+  function adjustServiceTypes(row, target) {
+    var select = row.querySelector('.task-service-type');
+    if (!select) return;
+    var blocked = ['pm-onsite', 'calibration-onsite', 'calibration-remote', 'pullout-onsite'];
+    Array.from(select.options).forEach(function(opt) {
+      if (blocked.indexOf(opt.value) >= 0) {
+        opt.hidden = (target === 'app');
+      } else {
+        opt.hidden = false;
+      }
+    });
+    if (select.selectedOptions.length && select.selectedOptions[0].hidden) {
+      select.value = 'corrective-remote';
+    }
+  }
+
+  function addRow() {
+    var tr = document.createElement('tr');
+    tr.className = 'task-row';
+    tr.innerHTML = `
+      <td><input name="task_subjects[]" class="form-control form-control-sm" placeholder="Task subject"></td>
+      <td>
+        <select name="task_client_ids[]" class="form-control form-control-sm task-client">
+          <option value="">-- client --</option>
+          ${clientOptions}
+        </select>
+      </td>
+      <td>
+        <select name="task_ticket_for[]" class="form-control form-control-sm task-ticket-for">
+          <option value="instrument">Instrument</option>
+          <option value="app">CDS Application</option>
+        </select>
+      </td>
+      <td>
+        <select name="task_instrument_ids[]" class="form-control form-control-sm task-instrument">
+          <option value="">-- instrument --</option>
+          ${instrumentOptions}
+        </select>
+        <select name="task_app_ids[]" class="form-control form-control-sm task-app d-none">
+          <option value="">-- application --</option>
+          ${appOptions}
+        </select>
+      </td>
+      <!-- <td >
+        <select name="task_app_ids[]" class="form-control form-control-sm task-app d-none">
+          <option value="">-- application --</option>
+          ${appOptions}
+        </select>
+      </td> -->
+      <td>
+        <select name="task_engineer_ids[]" class="form-control form-control-sm">
+          ${engineerOptions}
+        </select>
+      </td>
+      <td>
+        <select name="task_service_types[]" class="form-control form-control-sm task-service-type">
+          ${serviceTypeOptions}
+        </select>
+      </td>
+      <!-- <td>
+        <select name="task_pm_schedule_ids[]" class="form-control form-control-sm task-pm-schedule">
+          ${pmScheduleOptions}
+        </select>
+      </td> -->
+      <td>
+        <select name="task_priorities[]" class="form-control form-control-sm">
+          ${priorityOptions}
+        </select>
+      </td>
+      <td>
+        <textarea name="task_descriptions[]" rows="1" class="form-control form-control-sm" placeholder="Notes"></textarea>
+      </td>
+      <td class="text-center">
+        <button type="button" class="btn btn-sm btn-outline-danger remove-task"><i class="fas fa-trash"></i></button>
+      </td>
+    `;
+    taskTableBody.appendChild(tr);
+    var clientSelect = tr.querySelector('.task-client');
+    if (clientSelect) clientSelect.addEventListener('change', function() { filterInstruments(tr); });
+    var serviceTypeSelect = tr.querySelector('.task-service-type');
+    if (serviceTypeSelect) serviceTypeSelect.addEventListener('change', function() { syncPmSelect(tr); });
+    var clientSelect = tr.querySelector('.task-client');
+    if (clientSelect) clientSelect.addEventListener('change', function() { filterInstruments(tr); syncPmSelect(tr); });
+    var instrumentSelect = tr.querySelector('.task-instrument');
+    if (instrumentSelect) instrumentSelect.addEventListener('change', function() { syncPmSelect(tr); });
+    var ticketForSelect = tr.querySelector('.task-ticket-for');
+    if (ticketForSelect) {
+      ticketForSelect.value = defaultTicketFor;
+      ticketForSelect.addEventListener('change', function() { toggleTargets(tr); });
+    }
+    var removeBtn = tr.querySelector('.remove-task');
+    if (removeBtn) removeBtn.addEventListener('click', function() { tr.remove(); });
+    syncPmSelect(tr);
+    toggleTargets(tr, true);
+    if (window.$) {
+      $(tr).find('.task-client').select2({ width: '100%', placeholder: '-- client --' }).on('change', function() {
+        filterInstruments(tr);
+        syncPmSelect(tr);
+      });
+    }
+  }
+
+  addBtn.addEventListener('click', addRow);
+  addRow();
+})();
+</script>
+{% endblock %}

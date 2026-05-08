@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Tickets Gantt - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-project-diagram text-primary mr-2"></i>Tickets Gantt</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('tickets.index') }}" class="btn btn-outline-secondary mr-2">
+      <i class="fas fa-list"></i> List
+    </a>
+    <a href="{{ url_for('tickets.calendar_view') }}" class="btn btn-outline-info mr-2">
+      <i class="fas fa-calendar-alt"></i> Calendar
+    </a>
+    <a href="{{ url_for('tickets.kanban') }}" class="btn btn-outline-primary mr-2">
+      <i class="fas fa-th-large"></i> Kanban
+    </a>
+    <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Ticket
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+{{ super() }}
+<style>
+.gantt-shell { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+.gantt-controls { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.gantt-controls .nav-btns .btn { margin-right: 6px; }
+.gantt-grid { --day-count: {{ day_headers|length }}; position: relative; }
+/*.gantt-months { display: grid; grid-template-columns: repeat({{ day_headers|length }}, 1fr); border-bottom: 1px solid #e5e7eb; margin-left: var(--info-width, 32%); }*/
+.gantt-months { display: grid; grid-template-columns: repeat({{ day_headers|length }}, 1fr); border-bottom: 1px solid #e5e7eb; }
+.gantt-month { text-align: center; font-weight: 700; padding: 6px 0; background: #f8fafc; border-right: 1px solid #e5e7eb; }
+/*.gantt-days { display: grid; grid-template-columns: repeat({{ day_headers|length }}, 1fr); font-size: 11px; color: #6b7280; margin-left: var(--info-width, 32%); border-bottom: 1px solid #e5e7eb; }*/
+.gantt-days { display: grid; grid-template-columns: repeat({{ day_headers|length }}, 1fr); font-size: 11px; color: #6b7280; border-bottom: 1px solid #e5e7eb; }
+.gantt-day { text-align: center; padding: 4px 0; border-right: 1px solid #f1f5f9; }
+.gantt-day.weekend { background: #fef3f2; color: #b91c1c; }
+.gantt-header-row { display: grid; grid-template-columns: var(--info-width, 32%) calc(100% - var(--info-width, 32%)); align-items: center; padding: 6px 0; border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #374151; }
+.info-head { display: grid; grid-template-columns: var(--info-cols, 20% 25% 25% 30%); column-gap: 6px; padding-left: 8px; }
+.gantt-group { margin-top: 8px; }
+.gantt-group-title { font-weight: 700; color: #111827; margin: 8px 0 4px; padding: 4px 8px; background: #f8fafc; border-left: 3px solid #2563eb; border-radius: 4px; }
+.gantt-row { display: grid; grid-template-columns: var(--info-width, 32%) calc(100% - var(--info-width, 32%)); align-items: center; min-height: 42px; border-bottom: 1px solid #f1f5f9; }
+.row-info { display: grid; grid-template-columns: var(--info-cols, 20% 25% 25% 30%); column-gap: 6px; padding: 10px 8px; font-size: 13px; margin-left: 25px; margin-right: 5px;}
+.row-info div { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.row-track { position: relative; height: 38px; background: #fafafa; }
+.row-track::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(to right, #e5e7eb 1px, transparent 1px); background-size: calc(100% / var(--day-count)) 100%; }
+.row-track[data-tooltip],
+.bar[data-tooltip] { position: relative; }
+.row-track[data-tooltip]:hover:after,
+.bar[data-tooltip]:hover:after {
+  content: attr(data-tooltip);
+  position: absolute;
+  /*top: -8px;
+  left: -50px;*/
+  transform: translateY(-100%);
+  background: #ffffff;
+  color: #111827;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid #d1d5db;
+  width: 200px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+  z-index: 10;
+  font-size: 13px;
+  line-height: 1.35;
+}
+.row-track[data-tooltip]:hover:before,
+.bar[data-tooltip]:hover:before {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 16px;
+  transform: translateY(-50%);
+  border: 10px solid transparent;
+  border-top-color: #ffffff;
+  filter: drop-shadow(0 -1px 0 #d1d5db);
+  z-index: 11;
+}
+.weekend-band { position: absolute; top: 0; bottom: 0; background: #fef3f2; opacity: 0.7; pointer-events: none; }
+.bar { position: absolute; top: 6px; height: 26px; border-radius: 6px; color: #111827; font-size: 12px; padding: 0 8px; display: flex; align-items: center; box-shadow: 0 1px 3px rgba(0,0,0,0.12); border: 1px solid rgba(0,0,0,0.05); background: #dbeafe; }
+.bar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.legend { font-size: 12px; color: #4b5563; }
+.legend .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; margin-right: 6px; color: #111827; }
+.btn-nav { padding: 6px 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set show_client = group_by != 'client' %}
+{% set show_instrument = group_by != 'instrument' %}
+{% set show_assignee = group_by != 'assignee' %}
+{% if show_client and show_instrument and show_assignee %}
+  {% set info_cols = '20% 25% 25% 30%' %}
+  {% set info_width = '36%' %}
+{% else %}
+  {% set info_cols = '30% 35% 35%' %}
+  {% set info_width = '34%' %}
+{% endif %}
+<div class="gantt-shell" style="--info-width: {{ info_width }}; --info-cols: {{ info_cols }};">
+  <div class="gantt-controls flex-column align-items-start">
+    
+    <div class="legend">
+      <span class="mr-2"><strong>Window:</strong> {{ window_start.strftime('%b %d, %Y') }} – {{ window_end.strftime('%b %d, %Y') }}</span>
+      <span class="pill" style="background:#f8d7da">Critical</span>
+      <span class="pill" style="background:#fff3cd">High</span>
+      <span class="pill" style="background:#e2f0fb">Medium</span>
+      <span class="pill" style="background:#f1f3f5">Low</span>
+    </div>
+
+    <div class="d-flex w-100 justify-content-between align-items-center mt-2">
+      <div class="nav-btns">
+        <a class="btn btn-light btn-sm btn-nav" href="{{ url_for('tickets.gantt_view', group_by=group_by, view_mode=view_mode, start=prev_start.isoformat(), date_from=range_start_raw, date_to=range_end_raw) }}"><i class="fas fa-chevron-left"></i></a>
+        <a class="btn btn-light btn-sm btn-nav" href="{{ url_for('tickets.gantt_view', group_by=group_by, view_mode=view_mode, start=next_start.isoformat(), date_from=range_start_raw, date_to=range_end_raw) }}"><i class="fas fa-chevron-right"></i></a>
+        <a class="btn btn-outline-primary btn-sm" href="{{ url_for('tickets.gantt_view', group_by=group_by, view_mode=view_mode, start=today_start.isoformat()) }}">Today</a>
+      </div>
+      <form class="form-inline" method="get" action="{{ url_for('tickets.gantt_view') }}">
+        <input type="hidden" name="start" value="{{ window_start.isoformat() }}">
+        <label class="mr-2 mb-0">Group by</label>
+        <select name="group_by" class="form-control form-control-sm mr-2" onchange="this.form.submit()">
+          <option value="client" {% if group_by == 'client' %}selected{% endif %}>Client</option>
+          <option value="instrument" {% if group_by == 'instrument' %}selected{% endif %}>Instrument</option>
+          <option value="assignee" {% if group_by == 'assignee' %}selected{% endif %}>Assignee</option>
+        </select>
+
+        <label class="mr-2 mb-0">View</label>
+        <select name="view_mode" class="form-control form-control-sm mr-2" onchange="this.form.submit()">
+          <option value="month" {% if view_mode == 'month' %}selected{% endif %}>Monthly</option>
+          <option value="biweekly" {% if view_mode == 'biweekly' %}selected{% endif %}>Bi-Weekly</option>
+          <option value="week" {% if view_mode == 'week' %}selected{% endif %}>Weekly</option>
+          <option value="range" {% if view_mode == 'range' %}selected{% endif %}>Date Range</option>
+        </select>
+        <div class="form-row align-items-center">
+          <div class="col-auto">
+            <input type="date" name="date_from" class="form-control form-control-sm mb-2 {% if view_mode != 'range' %}d-none{% endif %}" value="{{ range_start_raw or '' }}">
+          </div>
+          <div class="col-auto">
+            <input type="date" name="date_to" class="form-control form-control-sm mb-2 {% if view_mode != 'range' %}d-none{% endif %}" value="{{ range_end_raw or '' }}">
+          </div>
+          <div class="col-auto">
+            <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="gantt-header-row">
+    <div class="info-head">
+      <div>Ticket #</div>
+      {% if show_client %}<div>Client</div>{% endif %}
+      {% if show_instrument %}<div>Instrument/App</div>{% endif %}
+      {% if show_assignee %}<div>Assignee</div>{% endif %}
+    </div>
+    <div class="timeline-head">
+      <div class="gantt-months">
+        {% for span in month_spans %}
+          <div class="gantt-month" style="grid-column: span {{ span.days }};">{{ span.label }}</div>
+        {% endfor %}
+      </div>
+      <div class="gantt-days">
+        {% for d in day_headers %}
+          <div class="gantt-day {% if d.dow in ['Sat','Sun'] %}weekend{% endif %}">{{ d.day }} <br><small>{{ d.dow }}</small></div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% if grouped_tasks %}
+    {% for group in grouped_tasks %}
+      <div class="gantt-group">
+        <div class="gantt-group-title">{{ group.label }}</div>
+        {% for item in group.items_list %}
+          <div class="gantt-row" style="--day-count: {{ day_headers|length }};">
+            <div class="row-info" style="background: {{ item.bg_color }}; color: {{ item.text_color }};">
+              <div>{{ item.ticket.ticket_no }}</div>
+              {% if show_client %}
+                <div>{{ item.ticket.client.name if item.ticket.client else 'N/A' }}</div>
+              {% endif %}
+              {% if show_instrument %}
+                <div>
+                  {% if item.ticket.ticket_for == 'app' %}
+                    {{ item.ticket.app.name if item.ticket.app else 'CDS App' }}
+                  {% else %}
+                    {{ item.ticket.instrument.display_label() if item.ticket.instrument else 'N/A' }}
+                  {% endif %}
+                </div>
+              {% endif %}
+              {% if show_assignee %}
+                <div>{{ item.ticket.assigned_engineer.full_name or item.ticket.assigned_engineer.username if item.ticket.assigned_engineer else 'Unassigned' }}</div>
+              {% endif %}
+            </div>
+            <div class="row-track" >
+              {% for d in day_headers %}
+                {% if d.dow in ['Sat','Sun'] %}
+                  {% set left = (loop.index0 / day_headers|length * 100) %}
+                  {% set width = (1 / day_headers|length * 100) %}
+                  <div class="weekend-band" style="left: {{ left }}%; width: {{ width }}%;"></div>
+                {% endif %}
+              {% endfor %}
+              <div class="bar" data-tooltip="{{ item.ticket.subject }}{% if item.ticket.description %}&#10;{{ item.ticket.description|striptags|replace('\n','&#10;') }}{% endif %}" style="left: {{ item.left_pct }}%; width: {{ item.width_pct }}%; background: {{ item.bg_color }}; color: {{ item.text_color }};">
+                <span>{{ item.ticket.subject }}</span>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-muted mt-3 mb-0">No tickets to display in this window.</p>
+  {% endif %}
+</div>
+{% endblock %}

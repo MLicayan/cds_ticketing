@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Reports - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">Reports & Analytics</h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+
+<div class="row">
+  <div class="col-md-3 col-6">
+    <div class="small-box bg-primary">
+      <div class="inner">
+        <h3>{{ open_tickets }}</h3>
+        <p>Open / Active Tickets</p>
+      </div>
+      <div class="icon"><i class="fas fa-ticket-alt"></i></div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6">
+    <div class="small-box bg-success">
+      <div class="inner">
+        <h3>{{ total_tickets }}</h3>
+        <p>Total Tickets</p>
+      </div>
+      <div class="icon"><i class="fas fa-list"></i></div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6">
+    <div class="small-box bg-info">
+      <div class="inner">
+        <h3>{{ total_logs }}</h3>
+        <p>Total Service Logs</p>
+      </div>
+      <div class="icon"><i class="fas fa-tools"></i></div>
+    </div>
+  </div>
+  <div class="col-md-3 col-6">
+    <div class="small-box bg-warning">
+      <div class="inner">
+        <h3>
+          {% if avg_turnaround_hours is not none %}
+            {{ avg_turnaround_hours }} <small style="font-size:16px">hrs</small>
+          {% else %}
+            ---
+          {% endif %}
+        </h3>
+        <p>Avg. Ticket Turnaround</p>
+      </div>
+      <div class="icon"><i class="fas fa-hourglass-half"></i></div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card card-outline card-secondary">
+      <div class="card-header">
+        <h3 class="card-title">Most Visited Instruments (Service Logs)</h3>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Instrument</th>
+              <th>Visits</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ins, visits in top_instruments_visits %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ ins.display_label() }}</td>
+              <td>{{ visits }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="text-center text-muted">No data.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card card-outline card-secondary">
+      <div class="card-header">
+        <h3 class="card-title">Most Defective Instruments (Tickets)</h3>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Instrument</th>
+              <th>Tickets</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ins, issues in most_defective %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ ins.display_label() }}</td>
+              <td>{{ issues }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="text-center text-muted">No data.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6">
+    <div class="card card-outline card-secondary">
+      <div class="card-header">
+        <h3 class="card-title">Most Services Rendered (Engineer / IT)</h3>
+      </div>
+      <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>User</th>
+              <th>Service Logs</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for eng, logs in top_engineers_services %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>{{ eng.full_name or eng.username }}{% if eng.user_type %} <small class="text-muted">({{ eng.user_type }})</small>{% endif %}</td>
+              <td>{{ logs }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="text-center text-muted">No data.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

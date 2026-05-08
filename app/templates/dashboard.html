@@ -1,0 +1,645 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Instrument Monitoring{% endblock %}
+
+{% block extra_css %}
+<style>
+  .status-chip { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.85rem; }
+  .status-open, .status-new { background: rgba(13,110,253,0.12); color: #0d6efd; }
+  .status-in_progress, .status-inprocess { background: rgba(243,156,18,0.14); color: #c47a08; }
+  .status-resolved { background: rgba(40,167,69,0.14); color: #22863a; }
+  .status-closed { background: rgba(52,58,64,0.14); color: #343a40; }
+  .status-reopened, .status-on_hold, .status-backlog { background: rgba(108,117,125,0.16); color: #495057; }
+  .timeline-item { border-left: 3px solid var(--primary); padding-left: 12px; margin-bottom: 12px; }
+  .timeline-date { font-weight: 700; }
+  .list-unstyled li { margin-bottom: 8px; }
+  .card-header span.date-range { font-size: 0.9rem; color: #f8f9fa; }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-12 d-flex align-items-center justify-content-between flex-wrap">
+    <div class="page-title">
+      <i class="fas fa-chart-pie"></i>
+      <div>
+        <div>Dashboard</div>
+        <!-- <small class="text-muted">Role-focused snapshots for tickets, schedules, and logs.</small> -->
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% macro status_badge(status) -%}
+  {%- set sval = status.value if status is not none and status.value is not none else status or '' -%}
+  {%- set cls = 'status-open' -%}
+  {%- if sval in ['in_progress'] -%}{% set cls = 'status-in_progress' %}
+  {%- elif sval in ['resolved'] -%}{% set cls = 'status-resolved' %}
+  {%- elif sval in ['closed'] -%}{% set cls = 'status-closed' %}
+  {%- elif sval in ['reopened', 'on_hold', 'backlog'] -%}{% set cls = 'status-reopened' %}
+  {%- endif -%}
+  <span class="status-chip {{ cls }}">{{ sval.replace('_', ' ')|replace('inprogress','In Process')|replace('InProcess','In Process')|title }}</span>
+{%- endmacro %}
+
+{% macro priority_badge(priority) -%}
+  {%- set pval = priority.value if priority is not none and priority.value is not none else priority or '' -%}
+  {%- set cls = 'secondary' -%}
+  {%- if pval == 'critical' -%}{% set cls = 'danger' %}
+  {%- elif pval == 'high' -%}{% set cls = 'warning' %}
+  {%- elif pval == 'medium' -%}{% set cls = 'info' %}
+  {%- endif -%}
+  <span class="badge badge-{{ cls }}">{{ pval|upper }}</span>
+{%- endmacro %}
+
+{# Quick global KPIs #}
+<!-- 
+<div class="row">
+  <div class="col-lg-4 col-md-6 col-12">
+    <div class="small-box bg-primary">
+      <div class="inner">
+        <h3>{{ open_tickets }}</h3>
+        <p>Open Tickets</p>
+      </div>
+      <div class="icon">
+        <i class="fas fa-ticket-alt"></i>
+      </div>
+      <a href="{{ url_for('tickets.index') }}" class="small-box-footer">
+        View tickets <i class="fas fa-arrow-circle-right"></i>
+      </a>
+    </div>
+  </div>
+  <div class="col-lg-4 col-md-6 col-12">
+    <div class="small-box bg-secondary">
+      <div class="inner">
+        <h3>{{ total_tickets }}</h3>
+        <p>Total Tickets</p>
+      </div>
+      <div class="icon">
+        <i class="fas fa-list"></i>
+      </div>
+      <a href="{{ url_for('tickets.index') }}" class="small-box-footer">
+        Tickets list <i class="fas fa-arrow-circle-right"></i>
+      </a>
+    </div>
+  </div>
+  <div class="col-lg-4 col-md-6 col-12">
+    <div class="small-box bg-info">
+      <div class="inner">
+        <h3>{{ total_instruments }}</h3>
+        <p>Instruments</p>
+      </div>
+      <div class="icon">
+        <i class="fas fa-microscope"></i>
+      </div>
+      <a href="{{ url_for('instruments.index') }}" class="small-box-footer">
+        View instruments <i class="fas fa-arrow-circle-right"></i>
+      </a>
+    </div>
+  </div>
+</div>
+ -->
+
+{# Admin / Engineer dashboard #}
+{% if current_user.role.value in ['admin', 'engineer'] %}
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">Service Log Stats ({{ admin_data.current_year }})</h3>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th></th>
+            <th></th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Corrective</td>
+            <td>Onsite: {{ admin_data.service_log_stats.corrective.onsite }}</td>
+            <td>Remote: {{ admin_data.service_log_stats.corrective.remote }}</td>
+            <td>{{ admin_data.service_log_stats.corrective.total }}</td>
+          </tr>
+          <tr>
+            <td>Calibration</td>
+            <td>Onsite: {{ admin_data.service_log_stats.calibration.onsite }}</td>
+            <td>Remote: {{ admin_data.service_log_stats.calibration.remote }}</td>
+            <td>{{ admin_data.service_log_stats.calibration.total }}</td>
+          </tr>
+          <tr>
+            <td>Preventive Maintenance</td>
+            <td>Onsite: {{ admin_data.service_log_stats.pm.onsite }}</td>
+            <td></td>
+            <!-- <td>Remote: {{ admin_data.service_log_stats.pm.remote }}</td> -->
+            <td>{{ admin_data.service_log_stats.pm.total }}</td>
+          </tr>
+          <tr>
+            <td>Installation / Pull-out</td>
+            <td>Installation: {{ admin_data.service_log_stats.install_pullout.installation }}</td>
+            <td>Pull-out: {{ admin_data.service_log_stats.install_pullout.pullout }}</td>
+            <td>{{ admin_data.service_log_stats.install_pullout.total }}</td>
+          </tr>
+          <tr>
+            <td>Demo / Endorsement</td>
+            <td>Demo: {{ admin_data.service_log_stats.demo_endorsement.demo }}</td>
+            <td>Endorsement: {{ admin_data.service_log_stats.demo_endorsement.endorsement }}</td>
+            <td>{{ admin_data.service_log_stats.demo_endorsement.total }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title mb-0 d-flex justify-content-between align-items-center">
+          <span>This Week — PM Schedules &amp; Deadlines</span>
+          <!-- <span class="date-range text-sm">Date: {{ admin_data.week_range.start }} - {{ admin_data.week_range.end }}</span> -->
+        </h3>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table mb-0 table-sm">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client / Instrument</th>
+                <th>Task</th>
+                <th>Engineer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for s in admin_data.pm_week %}
+              <tr>
+                <td>{{ s.date.strftime('%Y-%m-%d') if s.date else '—' }}</td>
+                <td>{{ s.client.name if s.client else '' }}{% if s.instrument %} / {{ s.instrument.display_label() }}{% endif %}</td>
+                <td>{{ s.description or 'PM Schedule' }}</td>
+                <td>{{ s.assigned_engineer.full_name or s.assigned_engineer.username if s.assigned_engineer else '—' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center text-muted">No schedules due this week.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">Tickets – Approaching Deadlines / Overdue</h3>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table mb-0 table-sm">
+            <thead>
+              <tr>
+                <th>Ticket #</th>
+                <th>Client</th>
+                <th>Status</th>
+                <th>Target Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in admin_data.ticket_deadlines %}
+              <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+                <td>{{ t.ticket_no }}</td>
+                <td>{{ t.client.name }}</td>
+                <td>{{ status_badge(t.status) }}</td>
+                <td>{{ t.target_date.strftime('%Y-%m-%d') if t.target_date else '—' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center text-muted">No tickets nearing deadline.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">All Tickets Overview</h3>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table mb-0 table-sm">
+        <thead>
+          <tr>
+            <th>Ticket #</th>
+            <th>Client</th>
+            <th>Status</th>
+            <th>Priority</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in admin_data.ticket_overview %}
+          <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+            <td>{{ t.ticket_no }}</td>
+            <td>{{ t.client.name }}</td>
+            <td>{{ status_badge(t.status) }}</td>
+            <td>{{ priority_badge(t.priority) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="4" class="text-center text-muted">No tickets available.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title mb-0 d-flex justify-content-between align-items-center">
+          <span>Service Logs This Week</span>
+          <!-- <span class="date-range text-sm">Date: {{ admin_data.week_range.start }} - {{ admin_data.week_range.end }}</span> -->
+        </h3>
+      </div>
+      <div class="card-body">
+        <ul class="list-unstyled mb-0">
+          {% for log in admin_data.logs_week %}
+          <li>
+            <strong>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</strong> —
+            {{ log.client.name if log.client else '' }} /
+            {{ log.instrument.display_label() if log.instrument else '' }} —
+            {{ log.engineer.full_name or log.engineer.username if log.engineer else '' }}
+            {% if log.service_type %}<span class="text-muted">({{ log.service_type|capitalize }})</span>{% endif %}
+          </li>
+          {% else %}
+          <li class="text-muted">No service logs this week.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">PM Schedule Stats ({{ admin_data.current_year }})</h3>
+      </div>
+      <div class="card-body">
+        <p class="mb-1"><strong>Total PMs scheduled:</strong> {{ admin_data.pm_total or 0 }}</p>
+        <p class="mb-0 text-muted">Upcoming (7 days): {{ admin_data.pm_week|length }}</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{% if current_user.role.value == 'engineer' %}
+<div class="row">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">My Ticket Load</h3>
+      </div>
+      <div class="card-body">
+        <div class="row text-center">
+          <div class="col-6">
+            <h3>{{ engineer_stats.my_assigned_open or 0 }}</h3>
+            <p class="text-muted mb-0">Assigned to me (Open/In Progress)</p>
+          </div>
+          <div class="col-6">
+            <h3>{{ engineer_stats.my_reported_open or 0 }}</h3>
+            <p class="text-muted mb-0">Reported by me (Open)</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">My Recent Service Visits</h3>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Client</th>
+                <th>Instrument</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for log in engineer_stats.my_recent_logs %}
+              <tr onclick="window.location='{{ url_for('service_logs.detail', log_id=log.id) }}'" style="cursor:pointer;">
+                <td>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</td>
+                <td>{{ log.client.name }}</td>
+                <td>{{ log.instrument.display_label() }}</td>
+                <td>{{ log.service_type|capitalize }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted">No recent service logs.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- 
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">My Recent Tickets</h3>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Ticket No</th>
+            <th>Subject</th>
+            <th>Client</th>
+            <th>Instrument</th>
+            <th>Status</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in engineer_stats.my_recent_tickets %}
+          <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+            <td>{{ t.ticket_no }}</td>
+            <td>{{ t.subject }}</td>
+            <td>{{ t.client.name }}</td>
+            <td>
+              {% if t.ticket_for == 'app' %}
+                <span class="badge badge-primary">CDS App</span>
+                <div>{{ t.app.name if t.app else 'N/A' }}</div>
+              {% elif t.instrument %}
+                {{ t.instrument.display_label() }}
+              {% else %}
+                <span class="text-muted">N/A</span>
+              {% endif %}
+            </td>
+            <td>{{ status_badge(t.status) }}</td>
+            <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="text-center text-muted">No recent tickets assigned to you.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div> 
+-->
+
+{% endif %}
+
+{# Sales dashboard #}
+{% elif current_user.role.value == 'sales' %}
+<div class="row">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">This Week — Client Tickets Due</h3>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Ticket #</th>
+                <th>Client</th>
+                <th>Status</th>
+                <th>Target Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in sales_data.week_tickets %}
+              <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+                <td>{{ t.ticket_no }}</td>
+                <td>{{ t.client.name }}</td>
+                <td>{{ status_badge(t.status) }}</td>
+                <td>{{ t.target_date.strftime('%Y-%m-%d') if t.target_date else '—' }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center text-muted">No tickets due this week.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card h-100">
+      <div class="card-header">
+        <h3 class="card-title">Tickets Summary (Assigned Clients)</h3>
+      </div>
+      <div class="card-body d-flex align-items-center">
+        <div class="row w-100 text-center">
+          <div class="col-4">
+            <h3>{{ sales_data.summary.new }}</h3>
+            <p class="text-muted mb-0">New</p>
+          </div>
+          <div class="col-4">
+            <h3>{{ sales_data.summary.in_progress }}</h3>
+            <p class="text-muted mb-0">In Progress</p>
+          </div>
+          <div class="col-4">
+            <h3>{{ sales_data.summary.backlog }}</h3>
+            <p class="text-muted mb-0">Backlog</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">
+    <h3 class="card-title">Assigned Clients &amp; Active Ticket Count</h3>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Active Tickets</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in sales_data.client_active_counts %}
+          <tr>
+            <td>{{ row.client.name }}</td>
+            <td>{{ row.active_count }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="2" class="text-center text-muted">No assigned clients.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">All Tickets (Assigned Clients)</h3>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Ticket #</th>
+            <th>Status</th>
+            <th>Priority</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in sales_data.all_tickets %}
+          <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+            <td>{{ t.ticket_no }}</td>
+            <td>{{ status_badge(t.status) }}</td>
+            <td>{{ priority_badge(t.priority) }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-center text-muted">No tickets for assigned clients.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# Client dashboard #}
+{% elif current_user.role.value in ['client', 'client_admin'] %}
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">This Week — Tickets Due / New / Backlog</h3>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Ticket #</th>
+            <th>Status</th>
+            <th>Target Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in client_dash.week_tickets %}
+          <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+            <td>{{ t.ticket_no }}</td>
+            <td>{{ status_badge(t.status) }}</td>
+            <td>{{ t.target_date.strftime('%Y-%m-%d') if t.target_date else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-center text-muted">No tickets due this week.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-md-6 col-lg-5">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Ticket Status Summary</h3></div>
+      <div class="card-body">
+        <p class="mb-1">New/Open: <strong>{{ client_stats.my_open_tickets or 0 }}</strong></p>
+        <p class="mb-1">Total Tickets: <strong>{{ client_stats.my_total_tickets or 0 }}</strong></p>
+        <p class="mb-0">Resolved / Closed: <strong>{{ client_stats.my_closed_tickets or 0 }}</strong></p>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6 col-lg-7">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">My Tickets Timeline</h3></div>
+      <div class="card-body">
+        {% for t in client_dash.timeline_tickets %}
+        <div class="timeline-item">
+          <div class="timeline-date">{{ t.target_date.strftime('%Y-%m-%d') if t.target_date else t.created_at.strftime('%Y-%m-%d') }}</div>
+          <div>Ticket {{ t.ticket_no }} — {{ status_badge(t.status) }}</div>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No tickets to show.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Recent Service Logs (Read-only)</h3></div>
+      <div class="card-body">
+        <ul class="list-unstyled mb-0">
+          {% for log in client_dash.logs %}
+          <li>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }} — {{ log.instrument.display_label() if log.instrument else '' }} by {{ log.engineer.full_name or log.engineer.username if log.engineer else '' }}</li>
+          {% else %}
+          <li class="text-muted">No recent service logs.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row">
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">My Recent Tickets</h3></div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Ticket No</th>
+                <th>Subject</th>
+                <th>Status</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for t in client_stats.my_recent_tickets %}
+              <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+                <td>{{ t.ticket_no }}</td>
+                <td>{{ t.subject }}</td>
+                <td>{{ status_badge(t.status) }}</td>
+                <td>{{ t.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="4" class="text-center text-muted">No tickets yet.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

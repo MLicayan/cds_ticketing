@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}CDS Service Monitoring{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- AdminLTE & dependencies (CDN) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.4/css/all.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/overlayScrollbars/css/OverlayScrollbars.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap4.min.css">
+
+  {% block extra_css %}{% endblock %}
+  {% block extra_head_js %}{% endblock %}
+  <style>
+    :root {
+      --primary: #0d6efd;
+      --primary-dark: #003297;
+      --surface: #ffffff;
+      --surface-border: #e3e9f4;
+      --surface-shadow: 0 5px 20px rgba(15, 70, 140, 0.05);
+      --text-main: #1c2b4d;
+      --text-muted: #6c757d;
+      --bg: #f4f7fc;
+    }
+
+    body, .content-wrapper {
+      background: var(--bg);
+      color: var(--text-main);
+    }
+
+    .main-header.navbar {
+      background: linear-gradient(135deg, #0059dd, #0059dd);
+      color: #fff;
+    }
+    .main-header .nav-link, .main-header a {
+      color: #fff !important;
+    }
+
+    .main-sidebar {
+      /*background: #0d1f3c;*/
+      color: #dfe6f3;
+    }
+    .sidebar {
+      height: calc(100vh - (7.5rem + 1px)) !important;
+    }
+    .sidebar .nav-link {
+      color: #dfe6f3;
+      border-radius: 8px;
+    }
+    .sidebar .nav-link.active, .sidebar .nav-link:hover {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .sidebar .nav-icon { color: #0306b7; }
+
+    .content-header {
+      padding: 18px 10px 10px;
+    }
+
+    .page-title {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 1.9rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+    .page-title i {
+      background: var(--primary);
+      color: #fff;
+      padding: 10px;
+      border-radius: 10px;
+      font-size: 1.1rem;
+    }
+    .text-muted, .small-muted { color: var(--text-muted) !important; }
+
+    .card {
+      background: var(--surface);
+      border-radius: 12px;
+      border: 1px solid var(--surface-border);
+      box-shadow: var(--surface-shadow);
+      padding: 0;
+    }
+    .card-header {
+      /* background: linear-gradient(135deg, var(--primary), var(--primary-dark)); */
+      background: linear-gradient(135deg, #0d6efdeb, #0059dd);
+      color: #fff;
+      font-weight: 600;
+      border-bottom: 1px solid #dce5f6;
+    }
+    .card-body { padding: 1.2rem 1.4rem; }
+    .table thead {
+      /*background: #f0f4fa;*/
+      color: #1e2f54;
+    }
+    .dataTables_wrapper{
+      margin: 15px;
+    }
+    .table thead th {
+      border-bottom: 1px solid #d7e1ef !important;
+    }
+    .table tbody td {
+      border-bottom: 1px solid #eef2f7;
+    }
+    .table-hover tbody tr:hover {
+      background: #f8fbff;
+    }
+    .btn-primary {
+      background: var(--primary);
+      border-color: var(--primary);
+    }
+    .btn-primary:hover {
+      background: #0c5adf;
+      border-color: #0c5adf;
+    }
+    .badge-primary {
+      background: var(--primary);
+    }
+
+    .toolbar-stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+
+    .filter-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem 1rem;
+    }
+
+    .table-responsive {
+      border-radius: 0 0 12px 12px;
+    }
+
+    /* Floating alert stack bottom-right */
+    .alert-stack {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-end;
+      max-width: 360px;
+      z-index: 1080;
+      pointer-events: none;
+    }
+    .alert-stack .alert {
+      pointer-events: auto;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+    }
+
+    /* Subtle fade/slide for auto-dismissing alerts */
+    @keyframes alert-fade-up {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(-8px); }
+    }
+    .alert.alert-dismiss-anim {
+      animation: alert-fade-up 400ms ease forwards;
+    }
+
+    @media (max-width: 992px) {
+      .content-header, .content {
+        padding: 0 0.5rem;
+      }
+      .page-title {
+        font-size: 1.5rem;
+        flex-wrap: wrap;
+      }
+      .toolbar-stack {
+        justify-content: flex-start;
+      }
+      .main-header.navbar {
+        position: sticky;
+        top: 0;
+      }
+      .sidebar {
+        height: auto !important;
+      }
+    }
+
+  </style>
+</head>
+<body class="hold-transition sidebar-mini layout-fixed">
+<div class="wrapper">
+
+  <!-- Navbar -->
+  <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+    <ul class="navbar-nav">
+      <li class="nav-item">
+        <a class="nav-link" data-widget="pushmenu" href="#" role="button">
+          <i class="fas fa-bars"></i>
+        </a>
+      </li>
+      <li class="nav-item d-none d-sm-inline-block">
+        <a href="{{ url_for('main.dashboard') }}" class="nav-link">CDS Service Support</a>
+      </li>
+    </ul>
+
+    <ul class="navbar-nav ml-auto">
+      {% if current_user.is_authenticated %}
+      <li class="nav-item">
+        <span class="nav-link">{{ current_user.full_name or current_user.username }}</span>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="{{ url_for('auth.logout') }}">Logout</a>
+      </li>
+      {% endif %}
+    </ul>
+  </nav>
+
+  <!-- Sidebar -->
+  <aside class="main-sidebar sidebar-light-primary elevation-4">
+    <a href="{{ url_for('main.dashboard') }}" class="brand-link">
+      <span class="brand-text font-weight-light">
+        <img src="{{ url_for('static', filename='img/cds.png') }}" alt="Instrument Monitoring" style="max-height: 88px;">
+      </span>
+    </a>
+
+    <div class="sidebar">
+      
+      <nav class="mt-2">
+        <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu">
+          <li class="nav-item">
+            <a href="{{ url_for('main.dashboard') }}" class="nav-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}">
+              <i class="nav-icon fas fa-tachometer-alt"></i>
+              <p>Dashboard</p>
+            </a>
+          </li>
+
+          {% if current_user.is_authenticated and current_user.has_nav_access('tickets') %}
+          <li class="nav-item">
+            <a href="{{ url_for('tickets.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('tickets.') and request.endpoint != 'tickets.developer_tasks' %}active{% endif %}">
+              <i class="nav-icon fas fa-ticket-alt"></i>
+              <p>Tickets</p>
+            </a>
+          </li>
+          {% if current_user.is_authenticated and current_user.role.value == 'admin' and current_user.has_nav_access('app_monitoring') %}
+          <li class="nav-item">
+            <a href="{{ url_for('monitoring.apps') }}" target="_blank" rel="noopener" class="nav-link {% if request.endpoint in ['monitoring.apps', 'monitoring.apps_data'] %}active{% endif %}">
+              <i class="nav-icon fas fa-desktop"></i>
+              <p>App Monitoring</p>
+            </a>
+          </li>
+          {% endif %}
+          {% if current_user.is_authenticated and current_user.role.value == 'admin' and current_user.has_nav_access('daily_monitoring') %}
+          <li class="nav-item">
+            <a href="{{ url_for('monitoring.apps_daily') }}" target="_blank" rel="noopener" class="nav-link {% if request.endpoint in ['monitoring.apps_daily', 'monitoring.apps_daily_data'] %}active{% endif %}">
+              <i class="nav-icon fas fa-calendar-day"></i>
+              <p>Daily Monitoring</p>
+            </a>
+          </li>
+          {% endif %}
+          {% endif %}
+
+          {% if current_user.is_authenticated and current_user.has_nav_access('developer_tasks') %}
+          <li class="nav-item">
+            <a href="{{ url_for('tickets.developer_tasks') }}" class="nav-link {% if request.endpoint == 'tickets.developer_tasks' %}active{% endif %}">
+              <i class="nav-icon fas fa-tasks"></i>
+              <p>Developer Tasks</p>
+            </a>
+          </li>
+          {% endif %}
+
+          {% if current_user.is_authenticated and current_user.has_nav_access('service_logs') %}
+          <li class="nav-item">
+            <a href="{{ url_for('service_logs.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('service_logs.') %}active{% endif %}">
+              <i class="nav-icon fas fa-tools"></i>
+              <p>Service Logs</p>
+            </a>
+          </li>
+          {% endif %}
+          {% if current_user.is_authenticated and current_user.has_nav_access('weekly_schedules') %}
+          <li class="nav-item">
+            <a href="{{ url_for('weekly_schedules.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('weekly_schedules.') %}active{% endif %}">
+              <i class="nav-icon fas fa-calendar-week"></i>
+              <p>Weekly Schedule</p>
+            </a>
+          </li>
+          {% endif %}
+          {% if current_user.is_authenticated and current_user.has_nav_access('pm_schedules') %}
+          <li class="nav-item">
+            <a href="{{ url_for('pm_schedules.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('pm_schedules.') %}active{% endif %}">
+              <i class="nav-icon fas fa-calendar-check"></i>
+              <p>PM Schedule</p>
+            </a>
+          </li>
+          {% endif %}
+
+          {% if current_user.is_authenticated and current_user.has_nav_access('instruments') %}
+          <li class="nav-item">
+            <a href="{{ url_for('instruments.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('instruments.') %}active{% endif %}">
+              <i class="nav-icon fas fa-microscope"></i>
+              <p>Instruments</p>
+            </a>
+          </li>
+          {% endif %}
+
+          {% if current_user.is_authenticated and current_user.has_nav_access('reports') %}
+          <li class="nav-item">
+            <a href="{{ url_for('reports.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('reports.') %}active{% endif %}">
+              <i class="nav-icon fas fa-chart-line"></i>
+              <p>Reports</p>
+            </a>
+          </li>
+          {% endif %}
+
+          {% if current_user.is_authenticated and current_user.role.value == 'client_admin' %}
+          <li class="nav-item">
+            <a href="{{ url_for('profile.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('profile.') %}active{% endif %}">
+              <i class="nav-icon fas fa-user-cog"></i>
+              <p>Profile</p>
+            </a>
+          </li>
+          {% endif %}
+
+          {% if current_user.is_authenticated and current_user.role.value == 'admin' %}
+          <li class="nav-item has-treeview {% if request.endpoint and request.endpoint.startswith('admin.') %}menu-open{% endif %}">
+            <a href="#" class="nav-link {% if request.endpoint and request.endpoint.startswith('admin.') %}active{% endif %}">
+              <i class="nav-icon fas fa-cogs"></i>
+              <p>
+                Administrator
+                <i class="right fas fa-angle-left"></i>
+              </p>
+            </a>
+            <ul class="nav nav-treeview">
+              <li class="nav-item">
+                <a href="{{ url_for('admin.system_setup') }}" class="nav-link {% if request.endpoint == 'admin.system_setup' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>System Setup</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.admins_index') }}" class="nav-link {% if request.endpoint == 'admin.admins_index' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Admin</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.clients_index') }}" class="nav-link {% if request.endpoint == 'admin.clients_index' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Clients</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.instruments_index') }}" class="nav-link {% if request.endpoint == 'admin.instruments_index' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Instruments</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.instrument_models_index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('admin.instrument_models_') %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Instrument Models</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.engineers_index') }}" class="nav-link {% if request.endpoint == 'admin.engineers_index' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Engineers / IT</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.sales_index') }}" class="nav-link {% if request.endpoint == 'admin.sales_index' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Sales Users</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.parts_index') }}" class="nav-link {% if request.endpoint == 'admin.parts_index' %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Parts</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.apps_index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('admin.apps_') %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>CDS Application</p>
+                </a>
+              </li>
+              <li class="nav-item">
+                <a href="{{ url_for('admin.service_types_index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('admin.service_types_') %}active{% endif %}">
+                  <i class="far fa-circle nav-icon"></i>
+                  <p>Service Types</p>
+                </a>
+              </li>
+            </ul>
+          </li>
+          {% endif %}
+        </ul>
+      </nav>
+
+    </div>
+  </aside>
+
+  <!-- Content Wrapper -->
+  <div class="content-wrapper">
+    <div class="content-header">
+      <div class="container-fluid">
+       
+        {% block page_header %}{% endblock %}
+      </div>
+    </div>
+
+    <section class="content">
+      <div class="container-fluid">
+        {% block content %}{% endblock %}
+      </div>
+    </section>
+  </div>
+
+  <footer class="main-footer text-sm">
+    <div class="float-right d-none d-sm-inline">
+      Service Support System
+    </div>
+    <strong>Cerebro Diagnostics System &copy; {{ 2025 }} </strong> All rights reserved.
+  </footer>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="alert-stack">
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+          {{ message }}
+          <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/overlayScrollbars/js/jquery.overlayScrollbars.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap4.min.js"></script>
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach((alert) => {
+      setTimeout(() => {
+        alert.classList.add('alert-dismiss-anim');
+        alert.addEventListener('animationend', () => {
+          if (alert.classList.contains('show')) {
+            $(alert).alert('close');
+          } else {
+            alert.remove();
+          }
+        }, { once: true });
+      }, 5000);
+    });
+  });
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Instruments - Instrument Monitoring{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">   
+    <h1 class="m-0 text-dark">
+      <i class="fas fa-microscope text-primary mr-2"></i> Instrument 
+    </h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card card-outline card-secondary mb-3">
+  <div class="card-header d-flex ">
+    <button type="button" class="btn btn-tool left" data-card-widget="collapse" title="Toggle filters">
+      <i class="fas fa-minus"></i>
+    </button><h3 class="card-title mb-0 left">Filters</h3>
+  </div>
+  <div class="card-body">
+    <form method="get">
+      <div class="filter-grid">
+        <div class="form-group">
+          <label for="client_id">Client</label>
+          {% if current_user.role.value in ['client', 'client_admin'] %}
+            {% set my_client = clients[0] if clients else None %}
+            <input type="hidden" name="client_id" value="{{ my_client.id if my_client else '' }}">
+            <input class="form-control" value="{{ my_client.name if my_client else 'My Client' }}" readonly>
+          {% else %}
+            <select name="client_id" id="client_id" class="form-control">
+              <option value="">All</option>
+              {% for c in clients %}
+              <option value="{{ c.id }}" {% if selected_filters.client_id == c.id|string %}selected{% endif %}>
+                {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label for="name">Name</label>
+          <input type="text" class="form-control" name="name" id="name" placeholder="Instrument" value="{{ selected_filters.name }}">
+        </div>
+        <div class="form-group">
+          <label for="serial_number">Serial No.</label>
+          <input type="text" class="form-control" name="serial_number" id="serial_number" placeholder="Serial Number" value="{{ selected_filters.serial_number }}">
+        </div>
+        <div class="form-group">
+          <label for="model">Model</label>
+          <input type="text" class="form-control" name="model" id="model" placeholder="Model" value="{{ selected_filters.model }}">
+        </div>
+        
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Apply</button>
+      <a href="{{ url_for('instruments.index') }}" class="btn btn-secondary btn-sm">Reset</a>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Code</th>
+          <th>Name</th>
+          <th>Serial No.</th>
+          <th>Model</th>
+          <th>Client</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ins in instruments %}
+        <tr onclick="window.location='{{ url_for('instruments.detail', instrument_id=ins.id) }}'" style="cursor:pointer;">
+          <td>{{ loop.index }}</td>
+          <td>{{ ins.code }}</td>
+          <td>{{ ins.name }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}</td>
+          <td>{{ ins.serial_number }}</td>
+          <td>{{ ins.model.name if ins.model else '' }}</td>
+          <td>{{ ins.client.name }}</td>
+          <td>{{ ins.status|capitalize }}</td>
+          
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center text-muted">No instruments found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+{% block title %}New Ticket - Instrument Monitoring{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 24px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 36px;
+  }
+  .ticket-upload-list {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ticket-upload-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #fff;
+  }
+  .ticket-upload-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .ticket-upload-preview {
+    width: 46px;
+    height: 46px;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    overflow: hidden;
+    background: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 46px;
+  }
+  .ticket-upload-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .ticket-upload-fileicon {
+    color: #6c757d;
+    font-size: 18px;
+  }
+  .ticket-upload-text {
+    min-width: 0;
+  }
+  .ticket-upload-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 420px;
+  }
+  .ticket-upload-size {
+    font-size: 12px;
+    color: #6c757d;
+  }
+  .ticket-upload-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+  .ticket-upload-empty {
+    margin-top: 10px;
+    color: #6c757d;
+    font-size: 13px;
+  }
+  .subject-input-wrap {
+    position: relative;
+  }
+  .subject-input-wrap .form-control {
+    padding-right: 60px;
+  }
+  .subject-char-counter {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: #6c757d;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2 ml-3">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-ticket-alt text-primary mr-2"></i>New Ticket</h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post" enctype="multipart/form-data">
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group col-md-4">
+          <label for="client_id">Client</label>
+          {% if current_user.role.value in ['client', 'client_admin'] %}
+            {% set my_client = clients[0] if clients else None %}
+            <input type="hidden" name="client_id" value="{{ my_client.id if my_client else '' }}">
+            <input class="form-control" value="{{ my_client.name if my_client else 'My Client' }}" readonly>
+          {% else %}
+            <select name="client_id" id="client_id" class="form-control select2" required>
+              <option value="">-- select client --</option>
+              {% for c in clients %}
+              <option value="{{ c.id }}">{{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          {% endif %}
+        </div>
+        <div class="form-group col-md-4">
+          <label for="ticket_for">Ticket For</label>
+          <select name="ticket_for" id="ticket_for" class="form-control">
+            <option value="instrument" {% if default_ticket_for == 'instrument' %}selected{% endif %}>Instrument</option>
+            <option value="app" {% if default_ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
+          </select>
+        </div>
+        <div class="form-group col-md-4 ticket-target ticket-instrument">
+          <label for="instrument_id">Instrument</label>
+          <select name="instrument_id" id="instrument_id" class="form-control">
+            <option value="">-- select instrument --</option>
+            {% for ins in instruments %}
+            <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}">{{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group col-md-4 ticket-target ticket-app d-none">
+          <label for="app_id">CDS Application</label>
+          <select name="app_id" id="app_id" class="form-control">
+            <option value="">-- select application --</option>
+            {% for app in apps %}
+            <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}">{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {% if current_user.role.value not in ['client', 'client_admin'] %}
+        <div class="form-group col-md-4">
+          <label for="priority">Priority</label>
+          <select name="priority" id="priority" class="form-control">
+            <option value="NOT_SET" selected>Not set yet</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        {% endif %}
+        {% if current_user.role.value == 'admin' %}
+        <div class="form-group col-md-4">
+          <label for="target_date">Target Schedule</label>
+          <input type="date" name="target_date" id="target_date" class="form-control">
+        </div>
+        {% endif %}
+        <div class="form-group col-md-4">
+          <label for="date_needed">Date Needed</label>
+          <input type="date" name="date_needed" id="date_needed" class="form-control">
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="subject">Complaint</label>
+        <div class="subject-input-wrap">
+          <input name="subject" id="subject" class="form-control" required maxlength="255">
+          <span id="subject-char-remaining" class="subject-char-counter">100 left</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="description">Description</label>
+        <textarea name="description" id="description" class="form-control" rows="4"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Reported By</label>
+        <input class="form-control" value="{{ current_user.full_name or current_user.username }}" readonly>
+      </div>
+      <div class="form-group">
+        <label for="photo">Upload Photo (optional)</label>
+        <input type="file" name="photos" id="photos" class="form-control-file" multiple>
+        <small class="form-text text-muted">You can select multiple files.</small>
+        <div id="ticket-upload-empty" class="ticket-upload-empty">No files selected.</div>
+        <div id="ticket-upload-list" class="ticket-upload-list"></div>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-save"></i> Create Ticket
+      </button>
+      <a href="{{ url_for('tickets.index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+(function() {
+  function filterInstruments() {
+    var clientSelect = document.getElementById('client_id');
+    var insSelect = document.getElementById('instrument_id');
+    if (!clientSelect || !insSelect) return;
+    var cid = clientSelect.value;
+    Array.from(insSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !cid || opt.getAttribute('data-client-id') === cid;
+      opt.hidden = !match;
+    });
+    // reset selection if hidden
+    if (insSelect.selectedOptions.length && insSelect.selectedOptions[0].hidden) {
+      insSelect.value = '';
+    }
+  }
+
+  function filterApps() {
+    var clientSelect = document.getElementById('client_id');
+    var appSelect = document.getElementById('app_id');
+    if (!clientSelect || !appSelect) return;
+    var cid = clientSelect.value;
+    Array.from(appSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var ids = (opt.getAttribute('data-client-ids') || '').split(',').filter(Boolean);
+      var match = !cid || ids.indexOf(cid) >= 0 || ids.length === 0;
+      opt.hidden = !match;
+    });
+    if (appSelect.selectedOptions.length && appSelect.selectedOptions[0].hidden) {
+      appSelect.value = '';
+    }
+  }
+  
+  function toggleTargets() {
+    var ticketFor = document.getElementById('ticket_for');
+    var target = ticketFor ? ticketFor.value : 'instrument';
+    var instrumentGrp = document.querySelector('.ticket-instrument');
+    var appGrp = document.querySelector('.ticket-app');
+    if (instrumentGrp) instrumentGrp.classList.toggle('d-none', target !== 'instrument');
+    if (appGrp) appGrp.classList.toggle('d-none', target !== 'app');
+  }
+  var clientSelect = document.getElementById('client_id');
+  if (clientSelect) {
+    var onClientChange = function() { filterInstruments(); filterApps(); };
+    clientSelect.addEventListener('change', onClientChange);
+    if (window.$) {
+      $('#client_id').select2({ width: '100%', placeholder: '-- select client --' }).on('change', onClientChange);
+    }
+    filterInstruments();
+    filterApps();
+  }
+  var ticketFor = document.getElementById('ticket_for');
+  if (ticketFor) ticketFor.addEventListener('change', toggleTargets);
+  toggleTargets();
+
+  var subjectInput = document.getElementById('subject');
+  var subjectCharRemaining = document.getElementById('subject-char-remaining');
+
+  function updateSubjectCharRemaining() {
+    if (!subjectInput || !subjectCharRemaining) return;
+    var maxLength = Number(subjectInput.getAttribute('maxlength')) || 255;
+    var remaining = Math.max(maxLength - subjectInput.value.length, 0);
+    subjectCharRemaining.textContent = remaining + ' left';
+  }
+
+  if (subjectInput) {
+    subjectInput.addEventListener('input', updateSubjectCharRemaining);
+    updateSubjectCharRemaining();
+  }
+
+  var photosInput = document.getElementById('photos');
+  var uploadList = document.getElementById('ticket-upload-list');
+  var uploadEmpty = document.getElementById('ticket-upload-empty');
+  var selectedFiles = [];
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB'];
+    var size = bytes;
+    var unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size = size / 1024;
+      unitIndex += 1;
+    }
+    return (size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[unitIndex];
+  }
+
+  function syncFilesToInput() {
+    if (!photosInput || typeof DataTransfer === 'undefined') return;
+    var transfer = new DataTransfer();
+    selectedFiles.forEach(function(file) {
+      transfer.items.add(file);
+    });
+    photosInput.files = transfer.files;
+  }
+
+  function renderFilePreview(file) {
+    if (file.type && file.type.indexOf('image/') === 0) {
+      var img = document.createElement('img');
+      img.alt = file.name;
+      img.src = URL.createObjectURL(file);
+      img.onload = function() {
+        URL.revokeObjectURL(img.src);
+      };
+      return img;
+    }
+    var icon = document.createElement('i');
+    icon.className = 'fas fa-paperclip ticket-upload-fileicon';
+    icon.setAttribute('aria-hidden', 'true');
+    return icon;
+  }
+
+  function renderUploadList() {
+    if (!uploadList || !uploadEmpty) return;
+    uploadList.innerHTML = '';
+    uploadEmpty.style.display = selectedFiles.length ? 'none' : 'block';
+
+    selectedFiles.forEach(function(file, index) {
+      var row = document.createElement('div');
+      row.className = 'ticket-upload-item';
+
+      var meta = document.createElement('div');
+      meta.className = 'ticket-upload-meta';
+
+      var preview = document.createElement('div');
+      preview.className = 'ticket-upload-preview';
+      preview.appendChild(renderFilePreview(file));
+
+      var text = document.createElement('div');
+      text.className = 'ticket-upload-text';
+
+      var name = document.createElement('div');
+      name.className = 'ticket-upload-name';
+      name.textContent = file.name;
+
+      var size = document.createElement('div');
+      size.className = 'ticket-upload-size';
+      size.textContent = formatBytes(file.size);
+
+      text.appendChild(name);
+      text.appendChild(size);
+      meta.appendChild(preview);
+      meta.appendChild(text);
+
+      var actions = document.createElement('div');
+      actions.className = 'ticket-upload-actions';
+
+      var previewBtn = document.createElement('button');
+      previewBtn.type = 'button';
+      previewBtn.className = 'btn btn-sm btn-outline-primary';
+      previewBtn.textContent = 'Preview';
+      previewBtn.addEventListener('click', function() {
+        var previewUrl = URL.createObjectURL(file);
+        window.open(previewUrl, '_blank', 'noopener');
+        window.setTimeout(function() {
+          URL.revokeObjectURL(previewUrl);
+        }, 60000);
+      });
+
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn btn-sm btn-outline-danger';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', function() {
+        selectedFiles.splice(index, 1);
+        syncFilesToInput();
+        renderUploadList();
+      });
+
+      actions.appendChild(previewBtn);
+      actions.appendChild(removeBtn);
+      row.appendChild(meta);
+      row.appendChild(actions);
+      uploadList.appendChild(row);
+    });
+  }
+
+  if (photosInput) {
+    photosInput.addEventListener('change', function(event) {
+      var incoming = Array.from(event.target.files || []);
+      if (!incoming.length) {
+        syncFilesToInput();
+        renderUploadList();
+        return;
+      }
+
+      incoming.forEach(function(file) {
+        var exists = selectedFiles.some(function(existing) {
+          return existing.name === file.name &&
+            existing.size === file.size &&
+            existing.lastModified === file.lastModified;
+        });
+        if (!exists) {
+          selectedFiles.push(file);
+        }
+      });
+
+      syncFilesToInput();
+      renderUploadList();
+    });
+  }
+
+  renderUploadList();
+})();
+</script>
+{% endblock %}

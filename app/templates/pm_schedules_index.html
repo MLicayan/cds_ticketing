@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}PM Schedules{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
+</style>
+{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-calendar-check text-primary mr-2"></i>Preventive Maintenance</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('pm_schedules.create') }}" class="btn btn-primary">
+      <i class="fas fa-plus"></i> New Schedule
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+
+<div class="card card-outline card-secondary mb-3">
+  <div class="card-header d-flex ">
+    <button type="button" class="btn btn-tool left" data-card-widget="collapse" title="Toggle filters">
+      <i class="fas fa-minus"></i>
+    </button><h3 class="card-title mb-0 left">Filters</h3>
+  </div>
+  <div class="card-body">
+    <form method="get">
+      <div class="filter-grid">
+        <div class="form-group">
+          <label for="client_id">Client</label>
+          {% if current_user.role.value == 'client' %}
+            {% set my_client = clients[0] if clients else None %}
+            <input type="hidden" name="client_id" value="{{ my_client.id if my_client else '' }}">
+            <input class="form-control" value="{{ my_client.name if my_client else 'My Client' }}" readonly>
+          {% else %}
+            <select name="client_id" id="client_id" class="form-control select2">
+              <option value="">All</option>
+              {% for c in clients %}
+              <option value="{{ c.id }}" {% if selected_filters.client_id == c.id|string %}selected{% endif %}>
+                {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          {% endif %}
+        </div>
+        <div class="form-group">
+          <label for="instrument_id">Instrument</label>
+          <select name="instrument_id" id="instrument_id" class="form-control">
+            <option value="">All</option>
+            {% for ins in instruments %}
+            <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}" {% if selected_filters.instrument_id == ins.id|string %}selected{% endif %}>
+              {{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+     
+        <div class="form-group">
+          <label for="date_from">Schedule Date From</label>
+          <input type="date" name="date_from" id="date_from" class="form-control" value="{{ selected_filters.date_from or current_date }}">
+        </div>
+        <div class="form-group">
+          <label for="date_to">Schedule Date To</label>
+          <input type="date" name="date_to" id="date_to" class="form-control" value="{{ selected_filters.date_to or current_date }}">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i class="fas fa-filter"></i> Apply
+      </button>
+      <a href="{{ url_for('pm_schedules.index') }}" class="btn btn-secondary btn-sm">Reset</a>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table id="pm-sched-table" class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Doc No</th>
+          <th>Client</th>
+          <th>Instrument</th>
+          <th>Schedule Date</th>
+          <!-- <th>Task Duration (hrs)</th> -->
+          <th>Assigned Engineer</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in schedules %}
+        <tr onclick="window.location='{{ url_for('pm_schedules.detail', schedule_id=s.id) }}'" style="cursor:pointer;">
+          <td>{{ loop.index }}</td>
+          <td>{{ s.doc_no }}</td>
+          <td>{{ s.client.name if s.client else '-' }}</td>
+          <td>{{ s.instrument.display_label() if s.instrument else '' }}</td>
+          <td>{{ s.date.strftime('%Y-%m-%d') if s.date else '' }}</td>
+          <!-- <td>{{ s.task_duration or '-' }}</td> -->
+          <td>{{ s.assigned_engineer.full_name or s.assigned_engineer.username if s.assigned_engineer else '-' }}</td>
+          
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted">No schedules found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(function() {
+
+  function filterInstruments() {
+    var clientSelect = document.getElementById('client_id');
+    var insSelect = document.getElementById('instrument_id');
+    if (!clientSelect || !insSelect) return;
+    var cid = clientSelect.value;
+    Array.from(insSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !cid || opt.getAttribute('data-client-id') === cid;
+      opt.hidden = !match;
+    });
+    if (insSelect.selectedOptions.length && insSelect.selectedOptions[0].hidden) {
+      insSelect.value = '';
+    }
+  }
+  var clientSelect = document.getElementById('client_id');
+  if (clientSelect) {
+    clientSelect.addEventListener('change', filterInstruments);
+    filterInstruments();
+  }
+
+  if (window.$ && $('#client_id').length) {
+    $('#client_id').select2({ width: '100%', placeholder: 'All' }).on('change', filterInstruments);
+    filterInstruments();
+  }
+
+  $('#pm-sched-table').DataTable({
+    "pageLength": 25,
+    "order": [[1, "asc"]]
+  });
+});
+
+
+</script>
+{% endblock %}

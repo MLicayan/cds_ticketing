@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Part' if part else 'New Part' }} - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">{{ 'Edit Parts' if part else 'New Parts' }}</h1>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-body">
+      <div class="form-group">
+        <label for="name">Name</label>
+        <input name="name" id="name" class="form-control" required value="{{ part.name if part else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="description">Description</label>
+        <textarea name="description" id="description" class="form-control" rows="3">{{ part.description if part else '' }}</textarea>
+      </div>
+      <div class="form-group">
+        <label for="unit_cost">Unit Cost</label>
+        <input type="number" step="0.01" min="0" name="unit_cost" id="unit_cost" class="form-control" value="{{ part.unit_cost or '' }}">
+      </div>
+      <div class="form-group">
+        <label for="price">Price</label>
+        <input type="number" step="0.01" min="0" name="price" id="price" class="form-control" value="{{ part.price or '' }}">
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save</button>
+      <a href="{{ url_for('admin.parts_index') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+Single-database configuration for Flask.
+
+
+-- wipe requested tables + dependents
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE ticket_comments;
+TRUNCATE TABLE ticket_attachments;
+TRUNCATE TABLE service_log_parts;
+TRUNCATE TABLE service_log_attachments;
+TRUNCATE TABLE lis_logs;
+
+TRUNCATE TABLE weekly_schedule_tasks;
+TRUNCATE TABLE weekly_schedules;
+
+TRUNCATE TABLE pm_schedule_comments;
+TRUNCATE TABLE pm_schedule_attachments;
+
+TRUNCATE TABLE service_logs;
+TRUNCATE TABLE preventive_maintenance_schedules;
+TRUNCATE TABLE tickets;
+TRUNCATE TABLE instruments;
+TRUNCATE TABLE client_apps;          -- clients <-> apps link table
+
+UPDATE users SET client_id = NULL;   -- detach users before dropping clients
+TRUNCATE TABLE clients;
+
+SET FOREIGN_KEY_CHECKS = 1;

@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}System Setup - Admin{% endblock %}
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark">System Setup</h1>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+{{ super() }}
+<style>
+  .setup-filter-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .setup-filter-search-wrap {
+    position: relative;
+    flex: 1 1 260px;
+    min-width: 220px;
+  }
+  .setup-filter-search-wrap .fa-search {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6c757d;
+  }
+  .setup-filter-search {
+    padding-left: 34px;
+  }
+  .setup-filter-panel label {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #6c757d;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post">
+    <div class="card-header">
+      <h3 class="card-title mb-0">Navigation Access</h3>
+    </div>
+    <div class="card-body border-bottom">
+      <div class="setup-filter-toolbar">
+        <div class="setup-filter-search-wrap">
+          <i class="fas fa-search"></i>
+          <input type="text" id="system-setup-search" class="form-control setup-filter-search" placeholder="Search users, roles, types, or access...">
+        </div>
+        <button type="button" class="btn btn-outline-primary" data-toggle="collapse" data-target="#systemSetupFilters" aria-expanded="false">
+          <i class="fas fa-filter"></i> Filter
+        </button>
+        <div class="custom-control custom-checkbox ml-1">
+          <input type="checkbox" class="custom-control-input" id="system-setup-check-all">
+          <label class="custom-control-label" for="system-setup-check-all">Check all visible</label>
+        </div>
+        <button type="button" class="btn btn-secondary" id="system-setup-clear">Clear</button>
+      </div>
+      <div class="collapse mt-3 setup-filter-panel" id="systemSetupFilters">
+        <div class="form-row">
+          <div class="form-group col-md-4 mb-2">
+            <label for="system-setup-role">Role</label>
+            <select id="system-setup-role" class="form-control form-control-sm">
+              <option value="">All roles</option>
+              <option value="admin">Admin</option>
+              <option value="engineer">Engineer</option>
+              <option value="sales">Sales</option>
+              <option value="client">Client</option>
+            </select>
+          </div>
+          <div class="form-group col-md-4 mb-2">
+            <label for="system-setup-type">Type</label>
+            <select id="system-setup-type" class="form-control form-control-sm">
+              <option value="">All types</option>
+              <option value="administrator">Administrator</option>
+              <option value="engineer">Engineer</option>
+              <option value="it">IT</option>
+              <option value="sales">Sales</option>
+            </select>
+          </div>
+          <div class="form-group col-md-4 mb-2">
+            <label for="system-setup-access">Navigation Access</label>
+            <select id="system-setup-access" class="form-control form-control-sm">
+              <option value="">Any access</option>
+              {% for key, label in nav_access_options %}
+                <option value="{{ key }}">{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body table-responsive p-0">
+      <table class="table table-sm table-bordered mb-0" id="system-setup-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Type</th>
+            {% for key, label in nav_access_options %}
+              <th class="text-center">{{ label }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+            {% set selected_nav = user.nav_permission_keys() %}
+            <tr
+              class="system-setup-row"
+              data-name="{{ (user.full_name or user.username)|lower }} {{ user.username|lower }}"
+              data-role="{{ user.role.value|lower if user.role else '' }}"
+              data-type="{{ (user.user_type or '')|lower }}"
+              data-access="{{ selected_nav|join(' ')|lower }}"
+              data-access-labels="{% for key, label in nav_access_options %}{% if key in selected_nav %}{{ label|lower }} {% endif %}{% endfor %}"
+            >
+              <td>
+                {{ user.full_name or user.username }}
+                <br><small class="text-muted">{{ user.username }}</small>
+              </td>
+              <td>{{ user.role.value|capitalize if user.role else '' }}</td>
+              <td>{{ user.user_type or '' }}</td>
+              {% for key, label in nav_access_options %}
+                <td class="text-center">
+                  <input
+                    type="checkbox"
+                    name="nav_permissions_{{ user.id }}"
+                    value="{{ key }}"
+                    data-access-key="{{ key }}"
+                    data-access-label="{{ label|lower }}"
+                    {% if key in selected_nav %}checked{% endif %}
+                  >
+                </td>
+              {% endfor %}
+            </tr>
+          {% else %}
+            <tr>
+              <td colspan="{{ 3 + nav_access_options|length }}" class="text-center text-muted">No users found.</td>
+            </tr>
+          {% endfor %}
+          <tr id="system-setup-no-results" class="d-none">
+            <td colspan="{{ 3 + nav_access_options|length }}" class="text-center text-muted">No users match the current filter.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save Access</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+  var searchInput = document.getElementById('system-setup-search');
+  var roleFilter = document.getElementById('system-setup-role');
+  var typeFilter = document.getElementById('system-setup-type');
+  var accessFilter = document.getElementById('system-setup-access');
+  var checkAll = document.getElementById('system-setup-check-all');
+  var clearBtn = document.getElementById('system-setup-clear');
+  var rows = Array.from(document.querySelectorAll('.system-setup-row'));
+  var noResults = document.getElementById('system-setup-no-results');
+
+  function normalize(value) {
+    return (value || '').toString().toLowerCase().trim();
+  }
+
+  function applyFilters() {
+    var search = normalize(searchInput ? searchInput.value : '');
+    var role = normalize(roleFilter ? roleFilter.value : '');
+    var type = normalize(typeFilter ? typeFilter.value : '');
+    var access = normalize(accessFilter ? accessFilter.value : '');
+    var visibleCount = 0;
+
+    rows.forEach(function(row) {
+      var haystack = [
+        row.getAttribute('data-name'),
+        row.getAttribute('data-role'),
+        row.getAttribute('data-type'),
+        row.getAttribute('data-access'),
+        row.getAttribute('data-access-labels')
+      ].join(' ');
+
+      var matchesSearch = !search || haystack.indexOf(search) >= 0;
+      var matchesRole = !role || row.getAttribute('data-role') === role;
+      var matchesType = !type || row.getAttribute('data-type') === type;
+      var accessKeys = (row.getAttribute('data-access') || '').split(' ');
+      var matchesAccess = !access || accessKeys.indexOf(access) >= 0;
+      var visible = matchesSearch && matchesRole && matchesType && matchesAccess;
+
+      row.classList.toggle('d-none', !visible);
+      if (visible) visibleCount += 1;
+    });
+
+    if (noResults) {
+      noResults.classList.toggle('d-none', visibleCount !== 0);
+    }
+    updateCheckAllState();
+  }
+
+  function refreshRowAccess(row) {
+    var keys = [];
+    var labels = [];
+    row.querySelectorAll('input[type="checkbox"][data-access-key]').forEach(function(input) {
+      if (!input.checked) return;
+      keys.push(input.getAttribute('data-access-key'));
+      labels.push(input.getAttribute('data-access-label'));
+    });
+    row.setAttribute('data-access', keys.join(' '));
+    row.setAttribute('data-access-labels', labels.join(' '));
+  }
+
+  function visibleRows() {
+    return rows.filter(function(row) {
+      return !row.classList.contains('d-none');
+    });
+  }
+
+  function updateCheckAllState() {
+    if (!checkAll) return;
+    var inputs = [];
+    visibleRows().forEach(function(row) {
+      inputs = inputs.concat(Array.from(row.querySelectorAll('input[type="checkbox"][data-access-key]')));
+    });
+    if (!inputs.length) {
+      checkAll.checked = false;
+      checkAll.indeterminate = false;
+      return;
+    }
+    var checkedCount = inputs.filter(function(input) { return input.checked; }).length;
+    checkAll.checked = checkedCount === inputs.length;
+    checkAll.indeterminate = checkedCount > 0 && checkedCount < inputs.length;
+  }
+
+  function setVisibleAccessChecks(checked) {
+    visibleRows().forEach(function(row) {
+      row.querySelectorAll('input[type="checkbox"][data-access-key]').forEach(function(input) {
+        input.checked = checked;
+      });
+      refreshRowAccess(row);
+    });
+    applyFilters();
+  }
+
+  [searchInput, roleFilter, typeFilter, accessFilter].forEach(function(el) {
+    if (!el) return;
+    el.addEventListener('input', applyFilters);
+    el.addEventListener('change', applyFilters);
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function() {
+      if (searchInput) searchInput.value = '';
+      if (roleFilter) roleFilter.value = '';
+      if (typeFilter) typeFilter.value = '';
+      if (accessFilter) accessFilter.value = '';
+      applyFilters();
+    });
+  }
+
+  if (checkAll) {
+    checkAll.addEventListener('change', function() {
+      setVisibleAccessChecks(checkAll.checked);
+    });
+  }
+
+  rows.forEach(function(row) {
+    row.querySelectorAll('input[type="checkbox"][data-access-key]').forEach(function(input) {
+      input.addEventListener('change', function() {
+        refreshRowAccess(row);
+        applyFilters();
+        updateCheckAllState();
+      });
+    });
+  });
+
+  updateCheckAllState();
+})();
+</script>
+{% endblock %}

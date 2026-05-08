@@ -1,0 +1,1143 @@
+{% extends "base.html" %}
+{% block title %}Tickets - Instrument Monitoring{% endblock %}
+
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single,
+  .select2-container--default .select2-selection--multiple {
+    min-height: 38px;
+    padding: 4px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+
+  .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 36px;
+  }
+
+  /* Better multi-select container */
+  .select2-container--default .select2-selection--multiple {
+    min-height: 42px !important;
+    padding: 4px 8px !important;
+    border: 1px solid #ced4da !important;
+    border-radius: 8px !important;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Better chip look */
+  .select2-container--default .select2-selection--multiple .select2-selection__choice {
+    display: inline-flex !important;
+    align-items: center !important;
+    flex-direction: row-reverse !important;
+    background: #e9f2ff !important;
+    border: 1px solid #b8d4ff !important;
+    color: #0d6efd !important;
+    border-radius: 999px !important;
+    padding: 4px 10px !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+    font-size: 12px !important;
+  }
+
+  /* Cleaner remove X */
+  .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    position: static !important;
+    margin-left: 8px !important;
+    margin-right: 0 !important;
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    border: none !important;
+    background: #dbeafe !important;
+    color: #2563eb !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 16px !important;
+    text-align: center !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+  }
+
+  .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+    background: #fecaca !important;
+    color: #dc2626 !important;
+  }
+
+  .select2-container--default .select2-selection--multiple .select2-search--inline .select2-search__field {
+    margin-top: 0 !important;
+    height: 28px !important;
+  }
+
+  .ticket-toolbar-card .card-body {
+    padding: 14px;
+  }
+
+  .ticket-filter-toolbar {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .ticket-filter-search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 320px;
+    min-height: 54px;
+    border: 1px solid #ced4da;
+    border-radius: 10px;
+    background: #fff;
+    padding: 8px 44px 8px 38px;
+    font-size: 12px;
+  }
+
+  .ticket-filter-search-icon {
+    position: absolute;
+    left: 12px;
+    top: 13px;
+    color: #6c757d;
+  }
+
+  .ticket-filter-search {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0;
+    height: 24px;
+    margin-bottom: 6px;
+    background: transparent;
+  }
+
+  .ticket-filter-search:focus {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+
+  .ticket-filter-toggle-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: #6c757d;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .ticket-filter-toggle-btn:hover {
+    background: #f1f3f5;
+    color: #0d6efd;
+  }
+
+  .ticket-filter-toggle-btn:focus {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .ticket-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .ticket-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    background: #e9f2ff;
+    color: #0d6efd;
+    border: 1px solid #b8d4ff;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 1;
+    gap: 8px;
+  }
+
+  .ticket-filter-chip .remove-chip {
+    cursor: pointer;
+    font-weight: 700;
+    color: #0d6efd;
+  }
+
+  .ticket-filter-chip .remove-chip:hover {
+    color: #dc3545;
+  }
+
+  .ticket-advanced-filter .card-body {
+    background: #ffffff;
+    color: #3f4354;
+    border-radius: 0 0 8px 8px;
+  }
+
+  .ticket-advanced-filter label {
+    color: #3f4354;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .ticket-advanced-filter .form-control,
+  .ticket-advanced-filter .select2-container--default .select2-selection--single,
+  .ticket-advanced-filter .select2-container--default .select2-selection--multiple {
+    background: #ffffff;
+    color: #4a4f63;
+    border: 1px solid #ced4da;
+  }
+
+  .ticket-advanced-filter .form-control option {
+    color: #000;
+  }
+
+  .ticket-advanced-filter .card-header {
+    background: #ffffff;
+    color: #2f3342;
+  }
+
+  @media (max-width: 768px) {
+    .ticket-filter-toolbar {
+      flex-direction: column;
+    }
+
+    .ticket-filter-search-wrap {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-ticket-alt text-primary mr-2"></i>Tickets</h1>
+  </div>
+  <div class="col-sm-6">
+    <div class="toolbar-stack">
+      <a href="{{ url_for('tickets.export') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-file-export"></i> Export CSV
+      </a>
+      <a href="{{ url_for('tickets.gantt_view') }}" class="btn btn-outline-primary">
+        <i class="fas fa-project-diagram"></i> Gantt
+      </a>
+      <a href="{{ url_for('tickets.calendar_view') }}" class="btn btn-outline-info">
+        <i class="fas fa-calendar-alt"></i> Calendar
+      </a>
+      <a href="{{ url_for('tickets.kanban') }}" class="btn btn-outline-info">
+        <i class="fas fa-th-large"></i> Kanban
+      </a>
+      <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> New Ticket
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+
+<div class="card mb-3 ticket-toolbar-card">
+  <div class="card-body">
+    <form method="get" id="ticket-filter-form">
+      <div id="filter_client_ids_container">
+        {% if selected_filters.client_ids %}
+          {% for cid in selected_filters.client_ids %}
+            <input type="hidden" name="client_id" value="{{ cid }}">
+          {% endfor %}
+        {% endif %}
+      </div>
+      <div id="filter_status_container">
+        {% if selected_filters.status %}
+          {% for status in selected_filters.status %}
+            <input type="hidden" name="status" value="{{ status }}">
+          {% endfor %}
+        {% endif %}
+      </div>
+      <div id="filter_instrument_ids_container">
+        {% if selected_filters.instrument_ids %}
+          {% for iid in selected_filters.instrument_ids %}
+            <input type="hidden" name="instrument_id" value="{{ iid }}">
+          {% endfor %}
+        {% endif %}
+      </div>
+      <div id="filter_app_ids_container">
+        {% if selected_filters.app_ids %}
+          {% for aid in selected_filters.app_ids %}
+            <input type="hidden" name="app_id" value="{{ aid }}">
+          {% endfor %}
+        {% endif %}
+      </div>
+      {# Assigned Engineer/IT filter hidden per request.
+      <input type="hidden" name="assignee_id" id="filter_assignee_id" value="{{ selected_filters.assignee_id or '' }}">
+      #}
+      <div id="filter_reported_by_ids_container">
+        {% if selected_filters.reported_by_ids %}
+          {% for rid in selected_filters.reported_by_ids %}
+            <input type="hidden" name="reported_by_id" value="{{ rid }}">
+          {% endfor %}
+        {% endif %}
+      </div>
+      <div id="filter_priority_container">
+        {% if selected_filters.priority %}
+          {% for priority in selected_filters.priority %}
+            <input type="hidden" name="priority" value="{{ priority }}">
+          {% endfor %}
+        {% endif %}
+      </div>
+      <input type="hidden" name="date_from" id="filter_date_from" value="{{ selected_filters.date_from or '' }}">
+      <input type="hidden" name="date_to" id="filter_date_to" value="{{ selected_filters.date_to or '' }}">
+
+      <div class="ticket-filter-toolbar">
+        <div class="ticket-filter-search-wrap">
+          <i class="fas fa-search ticket-filter-search-icon"></i>
+
+          <input type="text" id="ticket-search-input" class="form-control ticket-filter-search" placeholder="Search tickets...">
+
+          <button
+            type="button"
+            class="ticket-filter-toggle-btn"
+            data-toggle="collapse"
+            data-target="#advancedFilterPanel"
+            aria-expanded="false"
+            aria-controls="advancedFilterPanel"
+            title="Filters">
+            <i class="fas fa-sliders-h"></i>
+          </button>
+
+          <div id="active-filter-chips" class="ticket-filter-chips"></div>
+        </div>
+
+        <a href="{{ url_for('tickets.index') }}" class="btn btn-secondary btn-sm">
+          <i class="fas fa-undo mr-1"></i> Reset
+        </a>
+      </div>
+
+      <div class="collapse mt-3 ticket-advanced-filter" id="advancedFilterPanel">
+        <div class="card mb-0">
+          <div class="card-header">
+            <strong>Advanced Filters</strong>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-12 mb-2">
+                <label for="picker_client_id">Client</label>
+                {% if current_user.role.value in ['client', 'client_admin'] %}
+                  {% set my_client = clients[0] if clients else None %}
+                  <input class="form-control form-control-sm" value="{{ my_client.name if my_client else 'My Client' }}" readonly>
+                {% else %}
+                  <select id="picker_client_id" class="form-control form-control-sm select2" multiple>
+                    {% for c in clients %}
+                    <option value="{{ c.id }}"
+                      {% if selected_filters.client_ids and c.id|string in selected_filters.client_ids %}selected{% endif %}>
+                      {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                {% endif %}
+              </div>
+
+              {% if current_user.role.value not in ['client', 'client_admin'] %}
+                <div class="col-md-3 mb-2">
+                  <label for="picker_instrument_id">Instrument</label>
+                  <select id="picker_instrument_id" class="form-control form-control-sm select2" multiple>
+                    {% for ins in instruments %}
+                    <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}" {% if selected_filters.instrument_ids and ins.id|string in selected_filters.instrument_ids %}selected{% endif %}>
+                      {{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                <div class="col-md-3 mb-2">
+                  <label for="picker_app_id">App</label>
+                  <select id="picker_app_id" class="form-control form-control-sm select2" multiple>
+                    {% for app in apps %}
+                    <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if selected_filters.app_ids and app.id|string in selected_filters.app_ids %}selected{% endif %}>
+                      {{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+
+                {# Assigned Engineer/IT filter hidden per request.
+                <div class="col-md-3 mb-2">
+                  <label for="picker_assignee_id">Assignee</label>
+                  <select id="picker_assignee_id" class="form-control form-control-sm">
+                    <option value="">All</option>
+                    <option value="unassigned" {% if selected_filters.assignee_id == 'unassigned' %}selected{% endif %}>Unassigned</option>
+                    {% for user in assignees %}
+                    <option value="{{ user.id }}" {% if selected_filters.assignee_id == user.id|string %}selected{% endif %}>
+                      {{ user.full_name or user.username }}{% if user.user_type %} ({{ user.user_type }}){% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                #}
+
+                <div class="col-md-3 mb-2">
+                  <label for="picker_reported_by_id">Reported By</label>
+                  <select id="picker_reported_by_id" class="form-control form-control-sm select2" multiple>
+                    {% for user in reporters %}
+                    <option value="{{ user.id }}" {% if selected_filters.reported_by_ids and user.id|string in selected_filters.reported_by_ids %}selected{% endif %}>
+                      {{ user.full_name or user.username }}{% if user.role %} ({{ user.role.value|capitalize }}){% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endif %}
+
+              {% if current_user.role.value not in ['client', 'client_admin'] %}
+                <div class="col-md-3 mb-2">
+                  <label for="picker_priority">Priority</label>
+                  <select id="picker_priority" class="form-control form-control-sm select2" multiple>
+                    {% for p, label in [('NOT_SET', 'Not Set'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')] %}
+                    <option value="{{ p }}" {% if selected_filters.priority and p in selected_filters.priority %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              {% endif %}
+
+              <div class="{{ 'col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-md-3' }} mb-2">
+                <label for="picker_status">Status</label>
+                <select id="picker_status" class="form-control form-control-sm select2" multiple>
+                  {% for s, label in status_labels.items() %}
+                  <option value="{{ s.value }}" {% if selected_filters.status and s.value in selected_filters.status %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-3' }} mb-2">
+                <label for="picker_date_from">Date From</label>
+                <input type="date" id="picker_date_from" class="form-control form-control-sm" value="{{ selected_filters.date_from or current_date }}">
+              </div>
+
+              <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-3' }} mb-2">
+                <label for="picker_date_to">Date To</label>
+                <input type="date" id="picker_date_to" class="form-control form-control-sm" value="{{ selected_filters.date_to or current_date }}">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body table-responsive p-0">
+    <table id="tickets-table" class="table table-hover text-nowrap">
+      <thead>
+        <tr>
+          <th>#</th>
+          {% if current_user.role.value not in ['client', 'client_admin'] %}
+            <th>Priority</th>
+          {% endif %}
+          <th>Status</th>
+          <th>Since</th>
+          <th>Ticket No</th>
+          <th>Complaint</th>
+          <th>Reported By</th>
+          <th>Instrument / App</th>
+          <th>Client</th>
+          <th>Date Needed</th>
+          <th>Turnaround (hrs)</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for t in tickets %}
+        {% set status_value = t.status.value if t.status is not none and t.status.value is not none else (t.status or '') %}
+        {% set badge = 'secondary' %}
+        {% if status_value in ['resolved'] %}
+          {% set badge = 'success' %}
+        {% elif status_value in ['closed'] %}
+          {% set badge = 'dark' %}
+        {% elif status_value in ['in_progress'] %}
+          {% set badge = 'primary' %}
+        {% elif status_value in ['reopened'] %}
+          {% set badge = 'warning' %}
+        {% endif %}
+        {% set priority_value = t.priority.value if t.priority else 'NOT_SET' %}
+        {% set priority_color = 'rgba(220,53,69,0.08)' if priority_value == 'critical' else
+                                 'rgba(255,193,7,0.10)' if priority_value == 'high' else
+                                 'rgba(23,162,184,0.10)' if priority_value == 'medium' else
+                                 'rgba(108,117,125,0.08)' if priority_value == 'low' else
+                                 '#ffffff' %}
+        {% set is_date_needed_overdue = t.date_needed and t.date_needed.date() < now.date() %}
+        <tr
+          onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'"
+          style="cursor:pointer; background-color: {{ priority_color }}; {% if is_date_needed_overdue %}box-shadow: inset 0 0 0 2px rgba(180, 0, 0, 0.45), 0 0 16px rgba(180, 0, 0, 0.38);{% endif %}"
+        >
+          <td>{{ loop.index }}</td>
+          {% if current_user.role.value not in ['client', 'client_admin'] %}
+            <td>
+              <span class="badge badge-{{ 'danger' if priority_value == 'critical' else 'warning' if priority_value == 'high' else 'info' if priority_value == 'medium' else 'secondary' }}">
+                {{ 'NOT SET' if priority_value == 'NOT_SET' else priority_value|upper }}
+              </span>
+            </td>
+          {% endif %}
+          <td>
+            <span class="badge badge-{{ badge }}">
+              {{ status_labels.get(t.status, status_value.replace('_', ' ')|title) }}
+            </span>
+          </td>
+          <td data-order="{{ 0 if status_value == 'closed' else (t.created_at.timestamp() if t.created_at else 0) }}">
+            {% if t.created_at %}
+              {% set created_local = to_localtime(t.created_at) %}
+              {% set delta = now - created_local %}
+              {% set seconds = delta.total_seconds() %}
+              {% if seconds < 60 %}
+                {{ seconds|int }}s ago
+              {% elif seconds < 3600 %}
+                {{ (seconds // 60)|int }}m ago
+              {% elif seconds < 86400 %}
+                {{ (seconds // 3600)|int }}h ago
+              {% elif seconds < 2592000 %}
+                {{ (seconds // 86400)|int }}d ago
+              {% elif seconds < 31536000 %}
+                {{ (seconds // 2592000)|int }}mo ago
+              {% else %}
+                {{ (seconds // 31536000)|int }}y ago
+              {% endif %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ t.ticket_no }}
+            {% if (t.category or '').startswith('task:') %}
+              <span class="badge badge-secondary ml-1">TASK</span>
+            {% endif %}
+          </td>
+          <td>{{ t.subject }}</td>
+          <td>{{ t.reported_by.full_name or t.reported_by.username }}</td>
+          <td>
+            {% if t.ticket_for == 'app' %}
+              <span class="badge badge-primary">CDS App</span>
+              <div>{{ t.app.name if t.app else 'N/A' }}</div>
+            {% else %}
+              {{ t.instrument.display_label() if t.instrument else 'N/A' }}
+            {% endif %}
+          </td>
+          <td>{{ t.client.name }}</td>
+          <td>
+            {% if t.date_needed %}
+              {{ t.date_needed.strftime('%Y-%m-%d') }}
+            {% else %}
+              <span class="text-muted">Not set</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if t.closed_at and t.created_at %}
+              {% set tat_hours = ((t.closed_at - t.created_at).total_seconds() / 3600) %}
+              {{ tat_hours|round(2) }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>{{ to_localtime(t.created_at).strftime('%Y-%m-%d %H:%M') if t.created_at else '' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td></td>
+          {% if current_user.role.value not in ['client', 'client_admin'] %}
+            <td></td>
+          {% endif %}
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+          <td></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(function() {
+  var table = $('#tickets-table').DataTable({
+    pageLength: 10,
+    order: [[0, "asc"]],
+    searching: true
+  });
+
+  $('#tickets-table_filter').hide();
+
+  let searchTimer = null;
+  $('#ticket-search-input').on('keyup', function() {
+    clearTimeout(searchTimer);
+    var value = this.value;
+    searchTimer = setTimeout(function() {
+      table.search(value).draw();
+    }, 250);
+  });
+});
+
+(function() {
+  var autoSubmitTimer = null;
+
+  function autoSubmitFilters() {
+    clearTimeout(autoSubmitTimer);
+    autoSubmitTimer = setTimeout(function() {
+      var form = document.getElementById('ticket-filter-form');
+      if (form) form.submit();
+    }, 250);
+  }
+
+  function syncClientHiddenInputs() {
+    var container = document.getElementById('filter_client_ids_container');
+    var picker = document.getElementById('picker_client_id');
+    if (!container || !picker) return;
+
+    container.innerHTML = '';
+
+    var values = Array.from(picker.selectedOptions).map(function(opt) {
+      return opt.value;
+    });
+
+    values.forEach(function(val) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'client_id';
+      input.value = val;
+      container.appendChild(input);
+    });
+  }
+
+  function syncStatusHiddenInputs() {
+    var container = document.getElementById('filter_status_container');
+    var picker = document.getElementById('picker_status');
+    if (!container || !picker) return;
+
+    container.innerHTML = '';
+
+    Array.from(picker.selectedOptions).forEach(function(opt) {
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'status';
+      input.value = opt.value;
+      container.appendChild(input);
+    });
+  }
+
+  function syncMultiHiddenInputs(containerId, inputName, pickerId) {
+    var container = document.getElementById(containerId);
+    var picker = document.getElementById(pickerId);
+    if (!container || !picker) return;
+
+    container.innerHTML = '';
+
+    Array.from(picker.selectedOptions).forEach(function(opt) {
+      if (!opt.value) return;
+      var input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = inputName;
+      input.value = opt.value;
+      container.appendChild(input);
+    });
+  }
+
+  function bindPicker(pickerId, hiddenId) {
+    var picker = document.getElementById(pickerId);
+    var hidden = document.getElementById(hiddenId);
+    if (!picker || !hidden) return;
+
+    picker.value = hidden.value;
+
+    picker.addEventListener('change', function() {
+      hidden.value = picker.value;
+      updateFilterChips();
+      if (pickerId === 'picker_client_id') {
+        filterInstruments();
+        filterApps();
+      }
+      autoSubmitFilters();
+    });
+  }
+
+  function bindMultiPicker(pickerId, containerId, inputName, onChange) {
+    var picker = document.getElementById(pickerId);
+    if (!picker) return;
+
+    picker.addEventListener('change', function() {
+      syncMultiHiddenInputs(containerId, inputName, pickerId);
+      updateFilterChips();
+      if (onChange) onChange();
+      autoSubmitFilters();
+    });
+  }
+
+  function getSelectedText(selectEl) {
+    if (!selectEl) return '';
+    var option = selectEl.options[selectEl.selectedIndex];
+    return option ? option.text : '';
+  }
+
+  function addChip(container, label, value, hiddenId, displayText) {
+    if (!value) return;
+
+    var chip = document.createElement('span');
+    chip.className = 'ticket-filter-chip';
+    chip.innerHTML =
+      '<span>' + label + ': ' + displayText + '</span>' +
+      '<span class="remove-chip" data-target="' + hiddenId + '">&times;</span>';
+    container.appendChild(chip);
+  }
+
+  function updateFilterChips() {
+    var chips = document.getElementById('active-filter-chips');
+    if (!chips) return;
+    chips.innerHTML = '';
+
+    var instrumentContainer = document.getElementById('filter_instrument_ids_container');
+    var appContainer = document.getElementById('filter_app_ids_container');
+    var hiddenAssignee = document.getElementById('filter_assignee_id');
+    var reportedByContainer = document.getElementById('filter_reported_by_ids_container');
+    var priorityContainer = document.getElementById('filter_priority_container');
+    var hiddenDateFrom = document.getElementById('filter_date_from');
+    var hiddenDateTo = document.getElementById('filter_date_to');
+
+    var pickerClient = document.getElementById('picker_client_id');
+    var pickerInstrument = document.getElementById('picker_instrument_id');
+    var pickerApp = document.getElementById('picker_app_id');
+    var pickerAssignee = document.getElementById('picker_assignee_id');
+    var pickerReportedBy = document.getElementById('picker_reported_by_id');
+    var pickerPriority = document.getElementById('picker_priority');
+    var pickerStatus = document.getElementById('picker_status');
+
+    if (pickerClient) {
+      Array.from(pickerClient.selectedOptions).forEach(function(opt) {
+        addChip(chips, 'Client', opt.value, 'client_multi_' + opt.value, opt.text);
+      });
+    }
+
+    if (pickerInstrument) {
+      Array.from(pickerInstrument.selectedOptions).forEach(function(opt) {
+        addChip(chips, 'Instrument', opt.value, 'instrument_multi_' + opt.value, opt.text);
+      });
+    }
+
+    if (pickerApp) {
+      Array.from(pickerApp.selectedOptions).forEach(function(opt) {
+        addChip(chips, 'App', opt.value, 'app_multi_' + opt.value, opt.text);
+      });
+    }
+
+    if (hiddenAssignee && hiddenAssignee.value) {
+      addChip(chips, 'Assignee', hiddenAssignee.value, 'filter_assignee_id', getSelectedText(pickerAssignee));
+    }
+
+    if (pickerReportedBy) {
+      Array.from(pickerReportedBy.selectedOptions).forEach(function(opt) {
+        addChip(chips, 'Reported By', opt.value, 'reported_by_multi_' + opt.value, opt.text);
+      });
+    }
+
+    if (pickerPriority) {
+      Array.from(pickerPriority.selectedOptions).forEach(function(opt) {
+        addChip(chips, 'Priority', opt.value, 'priority_multi_' + opt.value, opt.text);
+      });
+    }
+
+    if (pickerStatus) {
+      Array.from(pickerStatus.selectedOptions).forEach(function(opt) {
+        addChip(chips, 'Status', opt.value, 'status_multi_' + opt.value, opt.text);
+      });
+    }
+
+    if (hiddenDateFrom && hiddenDateFrom.value) {
+      addChip(chips, 'From', hiddenDateFrom.value, 'filter_date_from', hiddenDateFrom.value);
+    }
+
+    if (hiddenDateTo && hiddenDateTo.value) {
+      addChip(chips, 'To', hiddenDateTo.value, 'filter_date_to', hiddenDateTo.value);
+    }
+
+    chips.querySelectorAll('.remove-chip').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var target = this.getAttribute('data-target');
+
+        if (target.indexOf('client_multi_') === 0) {
+          var clientId = target.replace('client_multi_', '');
+          removeClientSelection(clientId);
+        } else if (target.indexOf('instrument_multi_') === 0) {
+          removeMultiSelection('picker_instrument_id', 'filter_instrument_ids_container', 'instrument_id', target.replace('instrument_multi_', ''));
+        } else if (target.indexOf('app_multi_') === 0) {
+          removeMultiSelection('picker_app_id', 'filter_app_ids_container', 'app_id', target.replace('app_multi_', ''));
+        } else if (target.indexOf('reported_by_multi_') === 0) {
+          removeMultiSelection('picker_reported_by_id', 'filter_reported_by_ids_container', 'reported_by_id', target.replace('reported_by_multi_', ''));
+        } else if (target.indexOf('priority_multi_') === 0) {
+          removeMultiSelection('picker_priority', 'filter_priority_container', 'priority', target.replace('priority_multi_', ''));
+        } else if (target.indexOf('status_multi_') === 0) {
+          var statusValue = target.replace('status_multi_', '');
+          removeStatusSelection(statusValue);
+        } else {
+          clearFilter(target);
+        }
+      });
+    });
+  }
+
+  function removeClientSelection(clientId) {
+    var picker = document.getElementById('picker_client_id');
+    if (!picker) return;
+
+    Array.from(picker.options).forEach(function(opt) {
+      if (opt.value === clientId) {
+        opt.selected = false;
+      }
+    });
+
+    if (window.$ && $(picker).hasClass('select2-hidden-accessible')) {
+      $(picker).trigger('change');
+    } else {
+      syncClientHiddenInputs();
+      filterInstruments();
+      filterApps();
+      updateFilterChips();
+      autoSubmitFilters();
+    }
+  }
+
+  function removeMultiSelection(pickerId, containerId, inputName, value) {
+    var picker = document.getElementById(pickerId);
+    if (!picker) return;
+
+    Array.from(picker.options).forEach(function(opt) {
+      if (opt.value === value) {
+        opt.selected = false;
+      }
+    });
+
+    if (window.$ && $(picker).hasClass('select2-hidden-accessible')) {
+      $(picker).trigger('change');
+    } else {
+      syncMultiHiddenInputs(containerId, inputName, pickerId);
+      updateFilterChips();
+      autoSubmitFilters();
+    }
+  }
+
+  function clearFilter(hiddenId) {
+    if (hiddenId === 'filter_status') {
+      clearAllStatusSelections();
+      return;
+    }
+
+    var hidden = document.getElementById(hiddenId);
+    if (!hidden) return;
+    hidden.value = '';
+
+    var mapping = {
+      filter_instrument_id: 'picker_instrument_id',
+      filter_app_id: 'picker_app_id',
+      filter_assignee_id: 'picker_assignee_id',
+      filter_reported_by_id: 'picker_reported_by_id',
+      filter_priority: 'picker_priority',
+      filter_date_from: 'picker_date_from',
+      filter_date_to: 'picker_date_to'
+    };
+
+    var pickerId = mapping[hiddenId];
+    var picker = document.getElementById(pickerId);
+    if (picker) {
+      picker.value = '';
+      if (window.$ && $(picker).hasClass('select2-hidden-accessible')) {
+        $(picker).val('').trigger('change');
+      }
+    }
+
+    updateFilterChips();
+    autoSubmitFilters();
+  }
+
+  function removeStatusSelection(statusValue) {
+    var picker = document.getElementById('picker_status');
+    if (!picker) return;
+
+    Array.from(picker.options).forEach(function(opt) {
+      if (opt.value === statusValue) {
+        opt.selected = false;
+      }
+    });
+
+    if (window.$ && $(picker).hasClass('select2-hidden-accessible')) {
+      $(picker).trigger('change');
+    } else {
+      syncStatusHiddenInputs();
+      updateFilterChips();
+      autoSubmitFilters();
+    }
+  }
+
+  function clearAllStatusSelections() {
+    var picker = document.getElementById('picker_status');
+    if (!picker) return;
+
+    Array.from(picker.options).forEach(function(opt) {
+      opt.selected = false;
+    });
+
+    if (window.$ && $(picker).hasClass('select2-hidden-accessible')) {
+      $(picker).val(null).trigger('change');
+    } else {
+      syncStatusHiddenInputs();
+      updateFilterChips();
+      autoSubmitFilters();
+    }
+  }
+
+  function filterInstruments() {
+    var clientSelect = document.getElementById('picker_client_id');
+    var insSelect = document.getElementById('picker_instrument_id');
+
+    if (!clientSelect || !insSelect) return;
+
+    var selectedClientIds = Array.from(clientSelect.selectedOptions).map(function(opt) {
+      return opt.value;
+    });
+
+    Array.from(insSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+
+      var instrumentClientId = opt.getAttribute('data-client-id');
+      var match = selectedClientIds.length === 0 || selectedClientIds.indexOf(instrumentClientId) >= 0;
+      opt.hidden = !match;
+    });
+
+    var changed = false;
+    Array.from(insSelect.selectedOptions).forEach(function(opt) {
+      if (opt.hidden) {
+        opt.selected = false;
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      syncMultiHiddenInputs('filter_instrument_ids_container', 'instrument_id', 'picker_instrument_id');
+    }
+  }
+
+  function filterApps() {
+    var clientSelect = document.getElementById('picker_client_id');
+    var appSelect = document.getElementById('picker_app_id');
+
+    if (!clientSelect || !appSelect) return;
+
+    var selectedClientIds = Array.from(clientSelect.selectedOptions).map(function(opt) {
+      return opt.value;
+    });
+
+    Array.from(appSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+
+      var appClientIds = (opt.getAttribute('data-client-ids') || '').split(',').filter(Boolean);
+      var match = selectedClientIds.length === 0 || appClientIds.some(function(clientId) {
+        return selectedClientIds.indexOf(clientId) >= 0;
+      });
+      opt.hidden = !match;
+    });
+
+    var changed = false;
+    Array.from(appSelect.selectedOptions).forEach(function(opt) {
+      if (opt.hidden) {
+        opt.selected = false;
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      syncMultiHiddenInputs('filter_app_ids_container', 'app_id', 'picker_app_id');
+    }
+  }
+
+  var advancedFilterPanel = document.getElementById('advancedFilterPanel');
+  var filterToggleBtn = document.querySelector('[data-target="#advancedFilterPanel"]');
+
+  if (advancedFilterPanel) {
+    if (localStorage.getItem('ticketsFilterPanelOpen') === '1') {
+      advancedFilterPanel.classList.add('show');
+      if (filterToggleBtn) {
+        filterToggleBtn.setAttribute('aria-expanded', 'true');
+      }
+    }
+
+    if (window.$) {
+      $('#advancedFilterPanel').on('shown.bs.collapse', function() {
+        localStorage.setItem('ticketsFilterPanelOpen', '1');
+      });
+
+      $('#advancedFilterPanel').on('hidden.bs.collapse', function() {
+        localStorage.setItem('ticketsFilterPanelOpen', '0');
+      });
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    bindMultiPicker('picker_instrument_id', 'filter_instrument_ids_container', 'instrument_id');
+    bindMultiPicker('picker_app_id', 'filter_app_ids_container', 'app_id');
+    bindPicker('picker_assignee_id', 'filter_assignee_id');
+    bindMultiPicker('picker_reported_by_id', 'filter_reported_by_ids_container', 'reported_by_id');
+    bindMultiPicker('picker_priority', 'filter_priority_container', 'priority');
+    bindPicker('picker_date_from', 'filter_date_from');
+    bindPicker('picker_date_to', 'filter_date_to');
+
+    if (window.$ && $('#picker_client_id').length) {
+      $('#picker_client_id').select2({
+        width: '100%',
+        placeholder: 'Select client(s)'
+      }).on('change', function() {
+        syncClientHiddenInputs();
+        filterInstruments();
+        filterApps();
+        updateFilterChips();
+        autoSubmitFilters();
+      });
+    }
+
+    if (window.$ && $('#picker_priority').length) {
+      $('#picker_priority').select2({
+        width: '100%',
+        placeholder: 'Select priority'
+      }).on('change', function() {
+        syncMultiHiddenInputs('filter_priority_container', 'priority', 'picker_priority');
+        updateFilterChips();
+        autoSubmitFilters();
+      });
+    }
+
+    if (window.$ && $('#picker_status').length) {
+      $('#picker_status').select2({
+        width: '100%',
+        placeholder: 'Select status'
+      }).on('change', function() {
+        syncStatusHiddenInputs();
+        updateFilterChips();
+        autoSubmitFilters();
+      });
+    }
+
+    if (window.$ && $('#picker_instrument_id').length) {
+      $('#picker_instrument_id').select2({
+        width: '100%',
+        placeholder: 'Select instrument(s)'
+      });
+    }
+
+    if (window.$ && $('#picker_app_id').length) {
+      $('#picker_app_id').select2({
+        width: '100%',
+        placeholder: 'Select app(s)'
+      });
+    }
+
+    if (window.$ && $('#picker_reported_by_id').length) {
+      $('#picker_reported_by_id').select2({
+        width: '100%',
+        placeholder: 'Select reporter(s)'
+      });
+    }
+
+    filterInstruments();
+    filterApps();
+    syncMultiHiddenInputs('filter_instrument_ids_container', 'instrument_id', 'picker_instrument_id');
+    syncMultiHiddenInputs('filter_app_ids_container', 'app_id', 'picker_app_id');
+    syncMultiHiddenInputs('filter_reported_by_ids_container', 'reported_by_id', 'picker_reported_by_id');
+    syncMultiHiddenInputs('filter_priority_container', 'priority', 'picker_priority');
+    syncStatusHiddenInputs();
+    updateFilterChips();
+  });
+})();
+</script>
+<script>
+(function() {
+  if (!window.io) return;
+  var socket = io();
+  var reloadTimer = null;
+  var isAdmin = {{ 'true' if current_user.role.value == 'admin' else 'false' }};
+
+  function playTicketCreatedChime() {
+    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    try {
+      var context = new AudioContextClass();
+      var now = context.currentTime;
+
+      function playTone(frequency, start, duration, volume) {
+        var oscillator = context.createOscillator();
+        var gain = context.createGain();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, start);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(volume, start + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+
+        oscillator.start(start);
+        oscillator.stop(start + duration + 0.02);
+      }
+
+      if (context.state === 'suspended') {
+        context.resume().catch(function() {});
+      }
+
+      playTone(1318.51, now, 0.16, 0.05);
+      playTone(1760.00, now + 0.12, 0.22, 0.04);
+    } catch (err) {
+      // Ignore audio playback failures and keep realtime reload working.
+    }
+  }
+
+  socket.on('connect', function() {
+    socket.emit('join_ticket_list');
+  });
+
+  socket.on('ticket_changed', function(payload) {
+    if (isAdmin && payload && payload.action === 'created') {
+      playTicketCreatedChime();
+    }
+
+    clearTimeout(reloadTimer);
+    reloadTimer = setTimeout(function() {
+      window.location.reload();
+    }, 700);
+  });
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% block title %}Profile - CDS Service Monitoring{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-user-cog text-primary mr-2"></i>Profile</h1>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" action="{{ url_for('profile.index') }}">
+  <div class="card">
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="nav-item">
+        <a class="nav-link active" data-toggle="tab" href="#tab-info" role="tab">
+          <i class="fas fa-info-circle mr-1"></i> Info
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-toggle="tab" href="#tab-instruments" role="tab">
+          <i class="fas fa-microscope mr-1"></i> Instruments
+        </a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" data-toggle="tab" href="#tab-apps" role="tab">
+          <i class="fas fa-layer-group mr-1"></i> CDS Applications
+        </a>
+      </li>
+    </ul>
+
+    <div class="card-body">
+      <div class="tab-content">
+        <div class="tab-pane fade show active" id="tab-info" role="tabpanel">
+          <div class="row">
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>Hospital Name</label>
+                <input name="name" class="form-control" required value="{{ client.name or '' }}">
+              </div>
+              <div class="form-group">
+                <label>Code</label>
+                <input name="client_code" class="form-control" value="{{ client.client_code or '' }}">
+              </div>
+              <div class="form-group">
+                <label>Address</label>
+                <input name="address" class="form-control" value="{{ client.address or '' }}">
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>Contact Person</label>
+                <input name="contact_person" class="form-control" value="{{ client.contact_person or '' }}">
+              </div>
+              <div class="form-group">
+                <label>Contact Number</label>
+                <input name="contact_number" class="form-control" value="{{ client.contact_number or '' }}">
+              </div>
+              <div class="form-group">
+                <label>Email</label>
+                <input name="email" type="email" class="form-control" value="{{ client.email or '' }}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-instruments" role="tabpanel">
+          <table class="table table-sm table-bordered">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Serial</th>
+                <th>Model</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for instrument in instruments or [] %}
+              <tr>
+                <td>{{ instrument.name }}</td>
+                <td>{{ instrument.serial_number or '-' }}</td>
+                <td>{{ instrument.model.name if instrument.model else '-' }}</td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="3" class="text-muted text-center">No instruments assigned.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <div class="tab-pane fade" id="tab-apps" role="tabpanel">
+          <div class="form-group">
+            <label class="font-weight-bold mb-2">Application List</label>
+            <div class="row">
+              {% for app in apps or [] %}
+                {% set checked = (client and app in client.apps) or (app.id|string in request.form.getlist('app_ids')) %}
+                <div class="col-md-6">
+                  <div class="custom-control custom-checkbox mb-2">
+                    <input
+                      type="checkbox"
+                      class="custom-control-input"
+                      id="app_{{ app.id }}"
+                      name="app_ids"
+                      value="{{ app.id }}"
+                      {% if checked %}checked{% endif %}
+                    >
+                    <label class="custom-control-label" for="app_{{ app.id }}">
+                      {{ app.name }}
+                      {% if app.code %}
+                        <span class="text-muted">({{ app.code }})</span>
+                      {% endif %}
+                    </label>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+            <small class="text-muted">Select all applications enabled for this hospital.</small>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">Save Profile</button>
+    </div>
+  </div>
+</form>
+
+<div class="card card-outline card-secondary">
+  <div class="card-header">
+    <h3 class="card-title">Users</h3>
+  </div>
+  <div class="card-body">
+    <h5>Add User</h5>
+    <form method="post" action="{{ url_for('profile.add_user') }}" class="mb-3">
+      <div class="form-row">
+        <div class="form-group col-md-2">
+          <input name="username" class="form-control" placeholder="Username" required>
+        </div>
+        <div class="form-group col-md-3">
+          <input name="full_name" class="form-control" placeholder="Full name" required>
+        </div>
+        <div class="form-group col-md-2">
+          <input name="contact_number" class="form-control" placeholder="Contact number" required>
+        </div>
+        <div class="form-group col-md-2">
+          <input type="password" name="password" class="form-control" placeholder="Password" required>
+        </div>
+        <div class="form-group col-md-3">
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </div>
+    </form>
+
+    <hr>
+    <h5>Existing Users</h5>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr>
+            <th>Full Name</th>
+            <th>Username</th>
+            <th>Contact Number</th>
+            <th>Password</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in client_users %}
+          <tr>
+            <form method="post" action="{{ url_for('profile.update_user', user_id=u.id) }}">
+              <td><input name="full_name" class="form-control form-control-sm" value="{{ u.full_name or '' }}"></td>
+              <td><input name="username" class="form-control form-control-sm" value="{{ u.username }}" required></td>
+              <td><input name="contact_number" class="form-control form-control-sm" value="{{ u.contact_number or '' }}"></td>
+              <td><input type="password" name="password" class="form-control form-control-sm" placeholder="New password (optional)"></td>
+              <td class="text-right">
+                <div class="d-flex">
+                  <button type="submit" class="btn btn-sm btn-outline-primary mr-1">Save</button>
+                  <button type="submit"
+                          formaction="{{ url_for('profile.delete_user', user_id=u.id) }}"
+                          formmethod="post"
+                          class="btn btn-sm btn-outline-danger"
+                          onclick="return confirm('Delete this user?');">
+                    Delete
+                  </button>
+                </div>
+              </td>
+            </form>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="text-muted">No users yet.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
