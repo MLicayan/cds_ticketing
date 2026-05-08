@@ -27,7 +27,7 @@
           <input type="password" name="password" id="password" class="form-control" {% if not admin_user %}required{% endif %} placeholder="{% if admin_user %}Leave blank to keep{% endif %}">
         </div>
       </div>
-      {% with access_user=admin_user, default_nav_keys=['tickets', 'developer_tasks', 'service_logs', 'weekly_schedules', 'pm_schedules', 'instruments', 'reports', 'app_monitoring', 'daily_monitoring'] %}
+      {% with access_user=admin_user, default_nav_keys=['tickets', 'my_tickets', 'developer_tasks', 'service_logs', 'weekly_schedules', 'pm_schedules', 'instruments', 'reports', 'app_monitoring', 'daily_monitoring'] %}
         {% include "admin/_nav_permissions.html" %}
       {% endwith %}
     </div>

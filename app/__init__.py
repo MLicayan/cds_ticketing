@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask
+from flask_login import current_user
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
@@ -42,6 +43,73 @@ def create_app(config_class=Config):
 
     from . import models  # noqa: F401
     from . import realtime  # noqa: F401
+
+    @app.context_processor
+    def inject_header_notifications():
+        if not current_user.is_authenticated:
+            return {
+                "client_comment_notifications": [],
+                "client_comment_notification_count": 0,
+            }
+
+        from .models import Ticket, TicketComment, User, UserRole
+
+        change_prefixes = (
+            "Status changed",
+            "Priority changed",
+            "Target schedule changed",
+            "Date needed changed",
+            "Complaint/details updated",
+            "Engineer/IT assigned",
+            "Engineer/IT assignment cleared",
+            "Work status changed",
+        )
+
+        query = (
+            db.session.query(TicketComment)
+            .join(Ticket, TicketComment.ticket_id == Ticket.id)
+            .join(User, TicketComment.user_id == User.id)
+            .filter(TicketComment.is_internal.is_(False))
+        )
+
+        if current_user.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN):
+            query = query.filter(~User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
+            query = query.filter(
+                Ticket.client_id == current_user.client_id,
+                Ticket.reported_by_id == current_user.id,
+            )
+        else:
+            query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
+
+        if current_user.role == UserRole.ENGINEER:
+            query = query.filter(Ticket.assigned_engineer_id == current_user.id)
+        elif current_user.role == UserRole.SALES:
+            query = query.join(
+                models.Client,
+                Ticket.client_id == models.Client.id,
+            ).filter(models.Client.assigned_sales_id == current_user.id)
+
+        comments = query.order_by(TicketComment.created_at.desc()).limit(100).all()
+        by_ticket = {}
+        total = 0
+        for comment in comments:
+            if any((comment.comment_text or "").startswith(prefix) for prefix in change_prefixes):
+                continue
+            if comment.reaction_state_map().get(str(current_user.id), {}).get("acknowledge"):
+                continue
+            total += 1
+            if comment.ticket_id not in by_ticket:
+                by_ticket[comment.ticket_id] = {
+                    "ticket": comment.ticket,
+                    "latest_comment": comment,
+                    "count": 0,
+                }
+            by_ticket[comment.ticket_id]["count"] += 1
+
+        return {
+            "client_comment_notifications": list(by_ticket.values())[:8],
+            "client_comment_notification_count": total,
+        }
 
     from .auth import auth_bp
     from .main import main_bp

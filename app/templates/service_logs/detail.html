@@ -4,7 +4,13 @@
 <div class="row mb-2">
   <div class="col-sm-6">
     <h1 class="m-0 text-dark"><i class="fas fa-tools text-primary mr-2"></i>Service Log #{{ log.id }}</h1>
-    <p class="text-muted mb-0">{{ log.instrument.display_label() }}</p>
+    <p class="text-muted mb-0">
+      {% if log.service_for == 'app' %}
+        {{ log.app.name if log.app else 'CDS Application' }}
+      {% else %}
+        {{ log.instrument.display_label() if log.instrument else 'No Instrument' }}
+      {% endif %}
+    </p>
   </div>
 </div>
 {% endblock %}

@@ -119,8 +119,8 @@
     <table>
         <tr>
            
-            <td><strong class="uppercase">Equipment &amp; Model:</strong> 
-                <br/><strong class="uppercase">S/N:</strong> <span style="padding-left: 15px">{{ log.instrument.display_label() if log.instrument else '' }}</span>
+            <td><strong class="uppercase">{% if log.service_for == 'app' %}Application{% else %}Equipment &amp; Model{% endif %}:</strong> 
+                <br/><strong class="uppercase">S/N:</strong> <span style="padding-left: 15px">{% if log.service_for == 'app' %}{{ log.app.name if log.app else 'CDS Application' }}{% else %}{{ log.instrument.display_label() if log.instrument else '' }}{% endif %}</span>
             </td>
             <td><strong class="uppercase">Engineer:</strong>  <br/><br/>
                 <span style="padding-left: 15px">{{ log.engineer.full_name or log.engineer.username }}</span>

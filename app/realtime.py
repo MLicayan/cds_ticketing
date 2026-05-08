@@ -17,3 +17,9 @@ def join_ticket_detail(data):
     ticket_id = (data or {}).get("ticket_id")
     if ticket_id:
         join_room(f"ticket:{ticket_id}")
+
+
+@socketio.on("join_header_notifications")
+def join_header_notifications():
+    if current_user.is_authenticated:
+        join_room(f"user_notifications:{current_user.id}")

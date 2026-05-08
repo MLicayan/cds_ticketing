@@ -304,9 +304,15 @@ def create():
         if pm_schedule:
             client_id = pm_schedule.client_id
             instrument_id = pm_schedule.instrument_id
+            app_id = None
+            service_for = "instrument"
         else:
             client_id = request.form.get("client_id")
-            instrument_id = request.form.get("instrument_id")
+            service_for = (request.form.get("service_for") or "instrument").strip().lower()
+            if service_for not in ("instrument", "app"):
+                service_for = "instrument"
+            instrument_id = request.form.get("instrument_id") if service_for == "instrument" else None
+            app_id = request.form.get("app_id") if service_for == "app" else None
             
         engineer_id = current_user.id if current_user.role == UserRole.ENGINEER else (request.form.get("engineer_id") or current_user.id)
         
@@ -352,15 +358,16 @@ def create():
         signature_required = service_type not in remote_service_types
 
         errors = []
-        if not (client_id and instrument_id and engineer_id):
-            errors.append("Client, instrument and engineer are required.")
+        if not (client_id and engineer_id):
+            errors.append("Client and engineer are required.")
+        if service_for == "instrument" and not instrument_id:
+            errors.append("Instrument is required.")
+        if service_for == "app" and not app_id:
+            errors.append("CDS Application is required.")
         if not confirmed_by:
             errors.append("Confirm By is required.")
         if not confirmed_by_position:
             errors.append("Position is required.")
-        if not photo or not photo.filename:
-            errors.append("A confirmation photo is required.")
-
         if is_monitor and monitored_days <= 0:
             errors.append("Please enter monitored days when monitoring is enabled.")
             
@@ -380,13 +387,28 @@ def create():
                 ticket=ticket,
                 pm_schedule=pm_schedule,
                 default_visit_date=visit_date_raw or today_str,
+                apps=apps,
+                default_service_for=service_for,
             )
             
-        try:
-            sig_stripped = signature_data.split(",", 1)[1] if "," in signature_data else signature_data
-            signature_bytes = base64.b64decode(sig_stripped)
-        except Exception:
-            errors.append("Invalid signature data. Please recapture.")
+        if signature_data:
+            try:
+                sig_stripped = signature_data.split(",", 1)[1] if "," in signature_data else signature_data
+                signature_bytes = base64.b64decode(sig_stripped)
+            except Exception:
+                flash("Invalid signature data. Please recapture.", "danger")
+                return render_template(
+                    "service_logs/new.html",
+                    clients=clients,
+                    instruments=instruments,
+                    engineers=engineers,
+                    parts=parts,
+                    ticket=ticket,
+                    pm_schedule=pm_schedule,
+                    default_visit_date=visit_date_raw or today_str,
+                    apps=apps,
+                    default_service_for=service_for,
+                )
 
 
         try:
@@ -408,6 +430,8 @@ def create():
             pm_schedule_id=pm_schedule.id if pm_schedule else None,
             client_id=client_id,
             instrument_id=instrument_id,
+            app_id=app_id,
+            service_for=service_for,
             engineer_id=engineer_id,
             service_type=service_type,
             visit_date=visit_date,
@@ -495,22 +519,23 @@ def create():
 
         upload_folder = current_app.config.get("UPLOAD_FOLDER_SERVICE_LOGS")
         os.makedirs(upload_folder, exist_ok=True)
-        safe_name = secure_filename(photo.filename)
-        stored_name = f"{log.id}_{int(datetime.utcnow().timestamp())}_{safe_name}"
-        filepath = os.path.join(upload_folder, stored_name)
-        photo.save(filepath)
+        if photo and photo.filename:
+            safe_name = secure_filename(photo.filename)
+            stored_name = f"{log.id}_{int(datetime.utcnow().timestamp())}_{safe_name}"
+            filepath = os.path.join(upload_folder, stored_name)
+            photo.save(filepath)
 
-        log.confirm_photo_name = stored_name
+            log.confirm_photo_name = stored_name
 
-        att = ServiceLogAttachment(
-            service_log_id=log.id,
-            user_id=current_user.id,
-            stored_filename=stored_name,
-            original_filename=photo.filename,
-            content_type=photo.mimetype,
-            file_size=os.path.getsize(filepath),
-        )
-        db.session.add(att)
+            att = ServiceLogAttachment(
+                service_log_id=log.id,
+                user_id=current_user.id,
+                stored_filename=stored_name,
+                original_filename=photo.filename,
+                content_type=photo.mimetype,
+                file_size=os.path.getsize(filepath),
+            )
+            db.session.add(att)
 
         if signature_bytes:
             sig_name = f"{log.id}_{int(datetime.utcnow().timestamp())}_signature.png"

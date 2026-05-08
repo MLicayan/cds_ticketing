@@ -34,7 +34,7 @@
           {% endfor %}
         </select>
       </div> -->
-      {% with access_user=sales_user, default_nav_keys=['tickets', 'instruments'] %}
+      {% with access_user=sales_user, default_nav_keys=['tickets', 'my_tickets', 'instruments'] %}
         {% include "admin/_nav_permissions.html" %}
       {% endwith %}
       

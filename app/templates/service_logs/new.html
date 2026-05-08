@@ -17,6 +17,27 @@
 {{ super() }}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
 <style>
+.select2-container {
+  width: 100% !important;
+  display: block;
+}
+.select2-container--default .select2-selection--single {
+  height: 38px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+  width: 100%;
+  line-height: normal;
+  padding: 0 32px 0 12px !important;
+  text-align: left;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+  height: 36px;
+  top: 1px;
+}
 .select2-container--default .select2-selection--multiple {
   font-size: 14px;
   min-height: 38px;
@@ -71,8 +92,9 @@
         <div class="form-group col-md-2">
           <label for="service_for">Service For</label>
           <select name="service_for" id="service_for" class="form-control">
-            <option value="instrument" {% if ticket.ticket_for == 'instrument' %}selected{% endif %}>Instrument</option>
-            <option value="app" {% if ticket.ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
+            {% set selected_service_for = request.form.get('service_for') or (ticket.ticket_for if ticket else default_service_for) or 'instrument' %}
+            <option value="instrument" {% if selected_service_for == 'instrument' %}selected{% endif %}>Instrument</option>
+            <option value="app" {% if selected_service_for == 'app' %}selected{% endif %}>CDS Application</option>
           </select>
         </div>
         {% endif %}
@@ -83,6 +105,7 @@
             {% for ins in instruments %}
             <option value="{{ ins.id }}"
               data-client-id="{{ ins.client_id }}"
+              {% if request.form.get('instrument_id') == ins.id|string %}selected{% endif %}
               {% if ticket and ticket.instrument_id == ins.id %}selected{% endif %}
               {% if pm_schedule and pm_schedule.instrument_id == ins.id %}selected{% endif %}>
               {{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}
@@ -95,7 +118,7 @@
           <select name="app_id" id="app_id" class="form-control">
             <option value="">-- select application --</option>
             {% for app in apps %}
-            <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}">{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
+            <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if request.form.get('app_id') == app.id|string %}selected{% endif %}{% if ticket and ticket.app_id == app.id %}selected{% endif %}>{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
             {% endfor %}
           </select>
         </div>
@@ -206,9 +229,9 @@
       </div>
       <div class="form-row">
         <div class="form-group col-md-12 mt-4">
-          <label for="photo">Confirmation Photo (required)</label>
+          <label for="photo">Confirmation Photo (optional)</label>
           <input type="file" name="photo" id="photo" class="form-control-file">
-          <small class="text-muted">Attach photo evidence confirmed by the client personnel.</small>
+          <small class="text-muted">Attach photo evidence if available.</small>
         </div>
       </div>
     </div>
@@ -287,14 +310,31 @@
       insSelect.value = '';
     }
   }
+
+  function filterApps() {
+    var clientSelect = document.getElementById('client_id');
+    var appSelect = document.getElementById('app_id');
+    if (!clientSelect || !appSelect) return;
+    var cid = clientSelect.value;
+    Array.from(appSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var clientIds = (opt.getAttribute('data-client-ids') || '').split(',');
+      var match = !cid || clientIds.indexOf(cid) !== -1;
+      opt.hidden = !match;
+    });
+    if (appSelect.selectedOptions.length && appSelect.selectedOptions[0].hidden) {
+      appSelect.value = '';
+    }
+  }
   var clientSelect = document.getElementById('client_id');
   if (clientSelect) {
-    var onClientChange = function() { filterInstruments(); };
+    var onClientChange = function() { filterInstruments(); filterApps(); };
     clientSelect.addEventListener('change', onClientChange);
     if (window.$) {
       $('#client_id').select2({ width: '100%', placeholder: '-- select client --' }).on('change', onClientChange);
     }
     filterInstruments();
+    filterApps();
   }
 
   // Parts table
@@ -544,8 +584,18 @@
     var target = serviceFor ? serviceFor.value : 'instrument';
     var instrumentGrp = document.querySelector('.service-instrument');
     var appGrp = document.querySelector('.service-app');
+    var instrumentSelect = document.getElementById('instrument_id');
+    var appSelect = document.getElementById('app_id');
     if (instrumentGrp) instrumentGrp.classList.toggle('d-none', target !== 'instrument');
     if (appGrp) appGrp.classList.toggle('d-none', target !== 'app');
+    if (instrumentSelect) {
+      instrumentSelect.required = target === 'instrument';
+      instrumentSelect.disabled = target !== 'instrument';
+    }
+    if (appSelect) {
+      appSelect.required = target === 'app';
+      appSelect.disabled = target !== 'app';
+    }
   }
 
   var serviceFor = document.getElementById('service_for');

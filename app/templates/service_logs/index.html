@@ -125,7 +125,7 @@
       <thead>
         <tr>
           <th>#</th>
-          <th>Instrument</th>
+          <th>Service Item</th>
           <th>Client</th>
           <th>Engineer / IT</th>
           <th>Type</th>
@@ -137,7 +137,13 @@
         {% for log in logs %}
         <tr onclick="window.location='{{ url_for('service_logs.detail', log_id=log.id) }}'" style="cursor:pointer;">
           <td>{{ loop.index }}</td>
-          <td>{{ log.instrument.display_label() }}</td>
+          <td>
+            {% if log.service_for == 'app' %}
+              {{ log.app.name if log.app else 'CDS Application' }}
+            {% else %}
+              {{ log.instrument.display_label() if log.instrument else 'No Instrument' }}
+            {% endif %}
+          </td>
           <td>{{ log.client.name }}</td>
           <td>{{ log.engineer.full_name or log.engineer.username }}</td>
           <td>{{ log.service_type|capitalize }}</td>

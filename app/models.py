@@ -74,7 +74,8 @@ class UserRole(str, Enum):
 
 
 NAV_ACCESS_OPTIONS = [
-    ("tickets", "Tickets"),
+    ("tickets", "All Tickets"),
+    ("my_tickets", "My Task"),
     ("developer_tasks", "Developer Tasks"),
     ("service_logs", "Service Logs"),
     ("weekly_schedules", "Weekly Schedule"),
@@ -140,14 +141,14 @@ class User(UserMixin, db.Model):
             return [key for key, _ in NAV_ACCESS_OPTIONS]
         if role_value == UserRole.ENGINEER.value:
             if (self.user_type or "").lower() == "it":
-                return ["tickets", "service_logs"]
-            return ["tickets", "service_logs", "weekly_schedules", "pm_schedules", "instruments", "reports"]
+                return ["tickets", "my_tickets", "service_logs"]
+            return ["tickets", "my_tickets", "service_logs", "weekly_schedules", "pm_schedules", "instruments", "reports"]
         if role_value == UserRole.SALES.value:
-            return ["tickets", "instruments"]
+            return ["tickets", "my_tickets", "instruments"]
         if role_value == UserRole.CLIENT.value:
-            return ["tickets", "instruments"]
+            return ["tickets", "my_tickets", "instruments"]
         if role_value == UserRole.CLIENT_ADMIN.value:
-            return ["tickets"]
+            return ["tickets", "my_tickets"]
         return []
 
     @property
@@ -435,7 +436,7 @@ class ServiceLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=True)
     pm_schedule_id = db.Column(db.Integer, db.ForeignKey("preventive_maintenance_schedules.id"), nullable=True)
-    instrument_id = db.Column(db.Integer, db.ForeignKey("instruments.id"), nullable=False)
+    instrument_id = db.Column(db.Integer, db.ForeignKey("instruments.id"), nullable=True)
     app_id = db.Column(db.Integer, db.ForeignKey("apps.id"), nullable=True)
     service_for = db.Column(db.String(20), default="instrument", nullable=True)  # instrument or app
     

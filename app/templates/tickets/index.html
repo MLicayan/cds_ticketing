@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Tickets - Instrument Monitoring{% endblock %}
+{% block title %}{{ ticket_list_title or 'Tickets' }} - Instrument Monitoring{% endblock %}
 
 {% block extra_css %}
 {{ super() }}
@@ -95,70 +95,47 @@
     flex-wrap: wrap;
   }
 
-  .ticket-filter-search-wrap {
-    position: relative;
+  .ticket-filter-search-group {
     flex: 1;
     min-width: 320px;
-    min-height: 54px;
-    border: 1px solid #ced4da;
-    border-radius: 10px;
-    background: #fff;
-    padding: 8px 44px 8px 38px;
-    font-size: 12px;
   }
 
-  .ticket-filter-search-icon {
-    position: absolute;
-    left: 12px;
-    top: 13px;
-    color: #6c757d;
+  .ticket-filter-search-group .input-group-text,
+  .ticket-filter-search-group .form-control,
+  .ticket-filter-search-group .btn {
+    height: 38px;
   }
 
   .ticket-filter-search {
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0;
-    height: 24px;
-    margin-bottom: 6px;
-    background: transparent;
+    height: 38px;
+    margin-bottom: 0;
   }
 
-  .ticket-filter-search:focus {
-    border: none !important;
-    box-shadow: none !important;
-    outline: none !important;
-  }
-
-  .ticket-filter-toggle-btn {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 28px;
-    height: 28px;
-    border: none;
-    background: transparent;
-    color: #6c757d;
-    border-radius: 6px;
-    display: flex;
+  .ticket-filter-reset-btn {
+    height: 38px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
+    white-space: nowrap;
   }
 
-  .ticket-filter-toggle-btn:hover {
-    background: #f1f3f5;
-    color: #0d6efd;
-  }
-
-  .ticket-filter-toggle-btn:focus {
-    outline: none;
-    box-shadow: none;
+  .ticket-filter-search:focus,
+  .ticket-filter-search-group .form-control:focus,
+  .ticket-filter-search-group .btn:focus,
+  .ticket-advanced-filter .form-control:focus,
+  .ticket-advanced-filter .btn:focus,
+  .ticket-advanced-filter .select2-search__field:focus,
+  .ticket-advanced-filter .select2-container--default.select2-container--focus .select2-selection--multiple,
+  .ticket-advanced-filter .select2-container--default.select2-container--focus .select2-selection--single {
+    outline: none !important;
+    box-shadow: none !important;
   }
 
   .ticket-filter-chips {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+    margin-top: 10px;
   }
 
   .ticket-filter-chip {
@@ -194,6 +171,7 @@
     color: #3f4354;
     font-size: 12px;
     font-weight: 600;
+    margin-bottom: 0.35rem;
   }
 
   .ticket-advanced-filter .form-control,
@@ -202,6 +180,35 @@
     background: #ffffff;
     color: #4a4f63;
     border: 1px solid #ced4da;
+    min-height: 38px;
+  }
+
+  .ticket-advanced-filter .input-group-text {
+    height: 38px;
+    background: #ffffff;
+    border-color: #ced4da;
+  }
+
+  .ticket-advanced-filter .select2-container {
+    width: 100% !important;
+    display: block;
+  }
+
+  .ticket-advanced-filter .select2-container--default .select2-selection--multiple {
+    border-radius: 4px !important;
+    padding: 3px 8px !important;
+    align-items: center;
+  }
+
+  .ticket-advanced-filter .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+    min-height: 28px;
+    align-items: center;
+  }
+
+  .ticket-advanced-filter .select2-container--default .select2-search--inline .select2-search__field {
+    height: 28px !important;
+    margin-top: 0 !important;
+    line-height: 28px;
   }
 
   .ticket-advanced-filter .form-control option {
@@ -228,7 +235,7 @@
 {% block page_header %}
 <div class="row mb-2">
   <div class="col-sm-6">
-    <h1 class="m-0 text-dark"><i class="fas fa-ticket-alt text-primary mr-2"></i>Tickets</h1>
+    <h1 class="m-0 text-dark"><i class="fas fa-ticket-alt text-primary mr-2"></i>{{ ticket_list_title or 'Tickets' }}</h1>
   </div>
   <div class="col-sm-6">
     <div class="toolbar-stack">
@@ -306,26 +313,31 @@
       <input type="hidden" name="date_to" id="filter_date_to" value="{{ selected_filters.date_to or '' }}">
 
       <div class="ticket-filter-toolbar">
-        <div class="ticket-filter-search-wrap">
-          <i class="fas fa-search ticket-filter-search-icon"></i>
-
-          <input type="text" id="ticket-search-input" class="form-control ticket-filter-search" placeholder="Search tickets...">
-
-          <button
-            type="button"
-            class="ticket-filter-toggle-btn"
-            data-toggle="collapse"
-            data-target="#advancedFilterPanel"
-            aria-expanded="false"
-            aria-controls="advancedFilterPanel"
-            title="Filters">
-            <i class="fas fa-sliders-h"></i>
-          </button>
-
+        <div class="ticket-filter-search-group">
+          <div class="input-group">
+            <div class="input-group-prepend">
+              <span class="input-group-text bg-white">
+                <i class="fas fa-search text-muted"></i>
+              </span>
+            </div>
+            <input type="text" id="ticket-search-input" class="form-control ticket-filter-search" placeholder="Search tickets...">
+            <div class="input-group-append">
+              <button
+                type="button"
+                class="btn btn-default"
+                data-toggle="collapse"
+                data-target="#advancedFilterPanel"
+                aria-expanded="false"
+                aria-controls="advancedFilterPanel"
+                title="Filters">
+                <i class="fas fa-sliders-h"></i>
+              </button>
+            </div>
+          </div>
           <div id="active-filter-chips" class="ticket-filter-chips"></div>
         </div>
 
-        <a href="{{ url_for('tickets.index') }}" class="btn btn-secondary btn-sm">
+        <a href="{{ url_for(ticket_list_endpoint or 'tickets.index') }}" class="btn btn-secondary ticket-filter-reset-btn">
           <i class="fas fa-undo mr-1"></i> Reset
         </a>
       </div>
@@ -341,9 +353,9 @@
                 <label for="picker_client_id">Client</label>
                 {% if current_user.role.value in ['client', 'client_admin'] %}
                   {% set my_client = clients[0] if clients else None %}
-                  <input class="form-control form-control-sm" value="{{ my_client.name if my_client else 'My Client' }}" readonly>
+                  <input class="form-control" value="{{ my_client.name if my_client else 'My Client' }}" readonly>
                 {% else %}
-                  <select id="picker_client_id" class="form-control form-control-sm select2" multiple>
+                  <select id="picker_client_id" class="form-control select2" multiple>
                     {% for c in clients %}
                     <option value="{{ c.id }}"
                       {% if selected_filters.client_ids and c.id|string in selected_filters.client_ids %}selected{% endif %}>
@@ -357,7 +369,7 @@
               {% if current_user.role.value not in ['client', 'client_admin'] %}
                 <div class="col-md-3 mb-2">
                   <label for="picker_instrument_id">Instrument</label>
-                  <select id="picker_instrument_id" class="form-control form-control-sm select2" multiple>
+                  <select id="picker_instrument_id" class="form-control select2" multiple>
                     {% for ins in instruments %}
                     <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}" {% if selected_filters.instrument_ids and ins.id|string in selected_filters.instrument_ids %}selected{% endif %}>
                       {{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}
@@ -368,7 +380,7 @@
 
                 <div class="col-md-3 mb-2">
                   <label for="picker_app_id">App</label>
-                  <select id="picker_app_id" class="form-control form-control-sm select2" multiple>
+                  <select id="picker_app_id" class="form-control select2" multiple>
                     {% for app in apps %}
                     <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if selected_filters.app_ids and app.id|string in selected_filters.app_ids %}selected{% endif %}>
                       {{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}
@@ -380,7 +392,7 @@
                 {# Assigned Engineer/IT filter hidden per request.
                 <div class="col-md-3 mb-2">
                   <label for="picker_assignee_id">Assignee</label>
-                  <select id="picker_assignee_id" class="form-control form-control-sm">
+                  <select id="picker_assignee_id" class="form-control">
                     <option value="">All</option>
                     <option value="unassigned" {% if selected_filters.assignee_id == 'unassigned' %}selected{% endif %}>Unassigned</option>
                     {% for user in assignees %}
@@ -394,7 +406,7 @@
 
                 <div class="col-md-3 mb-2">
                   <label for="picker_reported_by_id">Reported By</label>
-                  <select id="picker_reported_by_id" class="form-control form-control-sm select2" multiple>
+                  <select id="picker_reported_by_id" class="form-control select2" multiple>
                     {% for user in reporters %}
                     <option value="{{ user.id }}" {% if selected_filters.reported_by_ids and user.id|string in selected_filters.reported_by_ids %}selected{% endif %}>
                       {{ user.full_name or user.username }}{% if user.role %} ({{ user.role.value|capitalize }}){% endif %}
@@ -407,7 +419,7 @@
               {% if current_user.role.value not in ['client', 'client_admin'] %}
                 <div class="col-md-3 mb-2">
                   <label for="picker_priority">Priority</label>
-                  <select id="picker_priority" class="form-control form-control-sm select2" multiple>
+                  <select id="picker_priority" class="form-control select2" multiple>
                     {% for p, label in [('NOT_SET', 'Not Set'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')] %}
                     <option value="{{ p }}" {% if selected_filters.priority and p in selected_filters.priority %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
@@ -417,7 +429,7 @@
 
               <div class="{{ 'col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-md-3' }} mb-2">
                 <label for="picker_status">Status</label>
-                <select id="picker_status" class="form-control form-control-sm select2" multiple>
+                <select id="picker_status" class="form-control select2" multiple>
                   {% for s, label in status_labels.items() %}
                   <option value="{{ s.value }}" {% if selected_filters.status and s.value in selected_filters.status %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}
@@ -426,12 +438,22 @@
 
               <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-3' }} mb-2">
                 <label for="picker_date_from">Date From</label>
-                <input type="date" id="picker_date_from" class="form-control form-control-sm" value="{{ selected_filters.date_from or current_date }}">
+                <div class="input-group">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="far fa-calendar-alt text-muted"></i></span>
+                  </div>
+                  <input type="date" id="picker_date_from" class="form-control" value="{{ selected_filters.date_from or current_date }}">
+                </div>
               </div>
 
               <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-3' }} mb-2">
                 <label for="picker_date_to">Date To</label>
-                <input type="date" id="picker_date_to" class="form-control form-control-sm" value="{{ selected_filters.date_to or current_date }}">
+                <div class="input-group">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="far fa-calendar-alt text-muted"></i></span>
+                  </div>
+                  <input type="date" id="picker_date_to" class="form-control" value="{{ selected_filters.date_to or current_date }}">
+                </div>
               </div>
             </div>
           </div>
