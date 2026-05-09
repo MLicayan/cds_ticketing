@@ -134,6 +134,18 @@ class User(UserMixin, db.Model):
         backref="assigned_engineer",
         lazy=True,
     )
+    ticket_tasks_reported = db.relationship(
+        "TicketTask",
+        foreign_keys="TicketTask.reported_by_id",
+        backref="reported_by",
+        lazy=True,
+    )
+    ticket_tasks_assigned = db.relationship(
+        "TicketTask",
+        foreign_keys="TicketTask.assigned_engineer_id",
+        backref="assigned_engineer",
+        lazy=True,
+    )
 
     def default_nav_permissions(self):
         role_value = self.role.value if self.role else ""
@@ -430,6 +442,102 @@ class TicketComment(db.Model):
         return f"<TicketComment {self.id}>"
 
 
+class TicketTask(db.Model):
+    __tablename__ = "ticket_tasks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    task_no = db.Column(db.String(32), unique=True, nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False)
+    instrument_id = db.Column(db.Integer, db.ForeignKey("instruments.id"), nullable=True)
+    app_id = db.Column(db.Integer, db.ForeignKey("apps.id"), nullable=True)
+    ticket_for = db.Column(db.String(20), default="instrument")
+    reported_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    assigned_engineer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    assigned_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    priority = db.Column(
+        db.Enum(TicketPriority, values_callable=lambda enum_cls: [item.value for item in enum_cls]),
+        default=TicketPriority.NOT_SET,
+        nullable=False,
+    )
+    subject = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text)
+    status = db.Column(
+        db.Enum(TicketStatus, values_callable=lambda enum_cls: [item.value for item in enum_cls]),
+        default=TicketStatus.OPEN,
+    )
+    kanban_bucket = db.Column(db.String(20), nullable=True)
+
+    created_at = db.Column(db.DateTime, default=_local_now_naive)
+    updated_at = db.Column(db.DateTime, default=_local_now_naive, onupdate=_local_now_naive)
+    closed_at = db.Column(db.DateTime, nullable=True)
+    started_date = db.Column(db.Date, default=datetime.utcnow, nullable=True)
+    is_working = db.Column(db.Boolean, default=False, nullable=True)
+    date_needed = db.Column(db.DateTime, nullable=True)
+    target_date = db.Column(db.Date, nullable=True)
+
+    parent_ticket = db.relationship("Ticket", backref=db.backref("tasks", lazy=True))
+    client = db.relationship("Client")
+    instrument = db.relationship("Instrument")
+    app = db.relationship("App")
+    assigned_by = db.relationship("User", foreign_keys=[assigned_by_id])
+    comments = db.relationship("TicketTaskComment", backref="task", lazy=True, cascade="all, delete-orphan")
+    attachments = db.relationship("TicketTaskAttachment", backref="task", lazy=True, cascade="all, delete-orphan")
+
+    @property
+    def ticket_no(self):
+        return self.task_no
+
+    @ticket_no.setter
+    def ticket_no(self, value):
+        self.task_no = value
+
+    @property
+    def service_logs(self):
+        return []
+
+    @property
+    def signature_attachment(self):
+        if not self.attachments:
+            return None
+        for att in self.attachments:
+            stored = (att.stored_filename or "").lower()
+            original = (att.original_filename or "").lower()
+            if "signature" in stored or "signature" in original:
+                return att
+        return None
+
+    def __repr__(self):
+        return f"<TicketTask {self.task_no}>"
+
+
+class TicketTaskComment(db.Model):
+    __tablename__ = "ticket_task_comments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_task_id = db.Column(db.Integer, db.ForeignKey("ticket_tasks.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    comment_text = db.Column(db.Text, nullable=False)
+    is_internal = db.Column(db.Boolean, default=False)
+    reactions_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User")
+
+    def reaction_state_map(self):
+        return TicketComment.reaction_state_map(self)
+
+    def reaction_map(self):
+        return TicketComment.reaction_map(self)
+
+    def reaction_summary(self):
+        return TicketComment.reaction_summary(self)
+
+    def __repr__(self):
+        return f"<TicketTaskComment {self.id}>"
+
+
 class ServiceLog(db.Model):
     __tablename__ = "service_logs"
 
@@ -617,6 +725,25 @@ class TicketAttachment(db.Model):
 
     def __repr__(self):
         return f"<TicketAttachment {self.id}>"
+
+
+class TicketTaskAttachment(db.Model):
+    __tablename__ = "ticket_task_attachments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_task_id = db.Column(db.Integer, db.ForeignKey("ticket_tasks.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    stored_filename = db.Column(db.String(255), nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
+    content_type = db.Column(db.String(128))
+    file_size = db.Column(db.Integer)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User")
+
+    def __repr__(self):
+        return f"<TicketTaskAttachment {self.id}>"
 
 
 class ServiceLogAttachment(db.Model):

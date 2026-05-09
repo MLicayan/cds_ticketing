@@ -2,7 +2,7 @@ import os
 from flask import Blueprint, current_app, send_from_directory, abort
 from flask_login import login_required, current_user
 
-from .models import TicketAttachment, ServiceLogAttachment, PMScheduleAttachment, UserRole
+from .models import TicketAttachment, TicketTaskAttachment, ServiceLogAttachment, PMScheduleAttachment, UserRole
 
 uploads_bp = Blueprint("uploads", __name__)
 CLIENT_SCOPED_ROLES = (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
@@ -19,6 +19,21 @@ def ticket_file(filename):
         abort(404)
     if current_user.role in CLIENT_SCOPED_ROLES:
         if not attachment.ticket or attachment.ticket.client_id != current_user.client_id:
+            abort(403)
+    return send_from_directory(upload_folder, filename, as_attachment=False)
+
+
+@uploads_bp.route("/ticket-tasks/<path:filename>")
+@login_required
+def task_file(filename):
+    upload_folder = current_app.config.get("UPLOAD_FOLDER_TICKETS")
+    if not upload_folder:
+        abort(404)
+    attachment = TicketTaskAttachment.query.filter_by(stored_filename=filename).first()
+    if not attachment:
+        abort(404)
+    if current_user.role in CLIENT_SCOPED_ROLES:
+        if not attachment.task or attachment.task.client_id != current_user.client_id:
             abort(403)
     return send_from_directory(upload_folder, filename, as_attachment=False)
 

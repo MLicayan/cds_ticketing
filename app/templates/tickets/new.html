@@ -100,6 +100,43 @@
     pointer-events: none;
     white-space: nowrap;
   }
+  .attachment-preview-modal .modal-dialog {
+    max-width: min(1100px, calc(100vw - 2rem));
+  }
+  .attachment-preview-modal .modal-content {
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .attachment-preview-body {
+    min-height: 60vh;
+    padding: 1rem;
+    background: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .attachment-preview-image {
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+  }
+  .attachment-preview-frame {
+    width: 100%;
+    height: 70vh;
+    border: 0;
+    background: #fff;
+  }
+  .attachment-preview-unavailable {
+    max-width: 520px;
+    text-align: center;
+    color: #6c757d;
+  }
+  .attachment-preview-unavailable i {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 42px;
+    color: #adb5bd;
+  }
 </style>
 {% endblock %}
 
@@ -209,6 +246,22 @@
     </div>
   </form>
 </div>
+<div class="modal fade attachment-preview-modal" id="newTicketAttachmentPreviewModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="newTicketAttachmentPreviewTitle">Attachment Preview</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body attachment-preview-body" id="newTicketAttachmentPreviewBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 {% block extra_js %}
 {{ super() }}
@@ -287,6 +340,9 @@
   var photosInput = document.getElementById('photos');
   var uploadList = document.getElementById('ticket-upload-list');
   var uploadEmpty = document.getElementById('ticket-upload-empty');
+  var attachmentPreviewBody = document.getElementById('newTicketAttachmentPreviewBody');
+  var attachmentPreviewTitle = document.getElementById('newTicketAttachmentPreviewTitle');
+  var activePreviewUrl = null;
   var selectedFiles = [];
 
   function formatBytes(bytes) {
@@ -324,6 +380,54 @@
     icon.className = 'fas fa-paperclip ticket-upload-fileicon';
     icon.setAttribute('aria-hidden', 'true');
     return icon;
+  }
+
+  function clearAttachmentPreview() {
+    if (attachmentPreviewBody) {
+      attachmentPreviewBody.innerHTML = '';
+    }
+    if (activePreviewUrl) {
+      URL.revokeObjectURL(activePreviewUrl);
+      activePreviewUrl = null;
+    }
+  }
+
+  function openAttachmentPreview(file) {
+    if (!file || !attachmentPreviewBody) return;
+    clearAttachmentPreview();
+    activePreviewUrl = URL.createObjectURL(file);
+    if (attachmentPreviewTitle) {
+      attachmentPreviewTitle.textContent = file.name || 'Attachment Preview';
+    }
+
+    var fileType = file.type || '';
+    if (fileType.indexOf('image/') === 0) {
+      var image = document.createElement('img');
+      image.src = activePreviewUrl;
+      image.alt = file.name || 'Attachment';
+      image.className = 'attachment-preview-image';
+      attachmentPreviewBody.appendChild(image);
+    } else if (fileType === 'application/pdf' || fileType.indexOf('text/') === 0) {
+      var frame = document.createElement('iframe');
+      frame.src = activePreviewUrl;
+      frame.className = 'attachment-preview-frame';
+      frame.setAttribute('title', file.name || 'Attachment preview');
+      attachmentPreviewBody.appendChild(frame);
+    } else {
+      var unavailable = document.createElement('div');
+      unavailable.className = 'attachment-preview-unavailable';
+      unavailable.innerHTML = '<i class="fas fa-file" aria-hidden="true"></i><div class="font-weight-bold mb-1"></div><div>Preview is not available for this file type.</div>';
+      unavailable.querySelector('.font-weight-bold').textContent = file.name || 'Attachment';
+      attachmentPreviewBody.appendChild(unavailable);
+    }
+
+    if (window.$) {
+      $('#newTicketAttachmentPreviewModal').modal('show');
+    }
+  }
+
+  if (window.$) {
+    $('#newTicketAttachmentPreviewModal').on('hidden.bs.modal', clearAttachmentPreview);
   }
 
   function renderUploadList() {
@@ -366,11 +470,7 @@
       previewBtn.className = 'btn btn-sm btn-outline-primary';
       previewBtn.textContent = 'Preview';
       previewBtn.addEventListener('click', function() {
-        var previewUrl = URL.createObjectURL(file);
-        window.open(previewUrl, '_blank', 'noopener');
-        window.setTimeout(function() {
-          URL.revokeObjectURL(previewUrl);
-        }, 60000);
+        openAttachmentPreview(file);
       });
 
       var removeBtn = document.createElement('button');

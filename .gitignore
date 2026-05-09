@@ -68,6 +68,7 @@ venv/
 *.exe
 
 # Misc
+scripts/
 uploads/
 instance/
 misc_files/

@@ -463,7 +463,7 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card" id="tickets-table-card">
   <div class="card-body table-responsive p-0">
     <table id="tickets-table" class="table table-hover text-nowrap">
       <thead>
@@ -506,7 +506,7 @@
                                  '#ffffff' %}
         {% set is_date_needed_overdue = t.date_needed and t.date_needed.date() < now.date() %}
         <tr
-          onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'"
+          onclick="window.location='{{ url_for('tickets.task_detail', task_id=t.id) if is_task_list else url_for('tickets.detail', ticket_id=t.id) }}'"
           style="cursor:pointer; background-color: {{ priority_color }}; {% if is_date_needed_overdue %}box-shadow: inset 0 0 0 2px rgba(180, 0, 0, 0.45), 0 0 16px rgba(180, 0, 0, 0.38);{% endif %}"
         >
           <td>{{ loop.index }}</td>
@@ -524,8 +524,7 @@
           </td>
           <td data-order="{{ 0 if status_value == 'closed' else (t.created_at.timestamp() if t.created_at else 0) }}">
             {% if t.created_at %}
-              {% set created_local = to_localtime(t.created_at) %}
-              {% set delta = now - created_local %}
+              {% set delta = now.replace(tzinfo=None) - t.created_at %}
               {% set seconds = delta.total_seconds() %}
               {% if seconds < 60 %}
                 {{ seconds|int }}s ago
@@ -546,7 +545,7 @@
           </td>
           <td>
             {{ t.ticket_no }}
-            {% if (t.category or '').startswith('task:') %}
+            {% if is_task_list %}
               <span class="badge badge-secondary ml-1">TASK</span>
             {% endif %}
           </td>
@@ -607,21 +606,31 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
-$(function() {
-  var table = $('#tickets-table').DataTable({
+function initTicketsTable() {
+  if (!window.$ || !$.fn.DataTable || !$('#tickets-table').length) return null;
+  if ($.fn.DataTable.isDataTable('#tickets-table')) {
+    $('#tickets-table').DataTable().destroy();
+  }
+  window.ticketsDataTable = $('#tickets-table').DataTable({
     pageLength: 10,
     order: [[0, "asc"]],
     searching: true
   });
 
   $('#tickets-table_filter').hide();
+  return window.ticketsDataTable;
+}
 
+$(function() {
+  initTicketsTable();
   let searchTimer = null;
   $('#ticket-search-input').on('keyup', function() {
     clearTimeout(searchTimer);
     var value = this.value;
     searchTimer = setTimeout(function() {
-      table.search(value).draw();
+      if (window.ticketsDataTable) {
+        window.ticketsDataTable.search(value).draw();
+      }
     }, 250);
   });
 });
@@ -633,9 +642,57 @@ $(function() {
     clearTimeout(autoSubmitTimer);
     autoSubmitTimer = setTimeout(function() {
       var form = document.getElementById('ticket-filter-form');
-      if (form) form.submit();
+      if (!form) return;
+      var params = new URLSearchParams(new FormData(form));
+      var url = form.getAttribute('action') || window.location.pathname;
+      var query = params.toString();
+      refreshTicketsTable(query ? url + '?' + query : url, true);
     }, 250);
   }
+
+  function refreshTicketsTable(url, pushState) {
+    var card = document.getElementById('tickets-table-card');
+    if (!card) return;
+
+    card.classList.add('opacity-75');
+    fetch(url, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+      .then(function(response) {
+        if (!response.ok) throw new Error('Filter request failed');
+        return response.text();
+      })
+      .then(function(html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var nextCard = doc.getElementById('tickets-table-card');
+        if (!nextCard) throw new Error('Ticket table was not found');
+
+        if (window.$ && $.fn.DataTable && $.fn.DataTable.isDataTable('#tickets-table')) {
+          $('#tickets-table').DataTable().destroy();
+        }
+
+        card.replaceWith(nextCard);
+        initTicketsTable();
+
+        var currentSearch = document.getElementById('ticket-search-input');
+        if (currentSearch && currentSearch.value && window.ticketsDataTable) {
+          window.ticketsDataTable.search(currentSearch.value).draw();
+        }
+
+        if (pushState) {
+          window.history.replaceState({}, '', url);
+        }
+      })
+      .catch(function() {
+        window.location.href = url;
+      })
+      .finally(function() {
+        var updatedCard = document.getElementById('tickets-table-card');
+        if (updatedCard) updatedCard.classList.remove('opacity-75');
+      });
+  }
+
+  window.refreshTicketsTable = refreshTicketsTable;
 
   function syncClientHiddenInputs() {
     var container = document.getElementById('filter_client_ids_container');
@@ -1074,6 +1131,10 @@ $(function() {
       $('#picker_instrument_id').select2({
         width: '100%',
         placeholder: 'Select instrument(s)'
+      }).on('change', function() {
+        syncMultiHiddenInputs('filter_instrument_ids_container', 'instrument_id', 'picker_instrument_id');
+        updateFilterChips();
+        autoSubmitFilters();
       });
     }
 
@@ -1081,6 +1142,10 @@ $(function() {
       $('#picker_app_id').select2({
         width: '100%',
         placeholder: 'Select app(s)'
+      }).on('change', function() {
+        syncMultiHiddenInputs('filter_app_ids_container', 'app_id', 'picker_app_id');
+        updateFilterChips();
+        autoSubmitFilters();
       });
     }
 
@@ -1088,6 +1153,10 @@ $(function() {
       $('#picker_reported_by_id').select2({
         width: '100%',
         placeholder: 'Select reporter(s)'
+      }).on('change', function() {
+        syncMultiHiddenInputs('filter_reported_by_ids_container', 'reported_by_id', 'picker_reported_by_id');
+        updateFilterChips();
+        autoSubmitFilters();
       });
     }
 
@@ -1157,7 +1226,11 @@ $(function() {
 
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(function() {
-      window.location.reload();
+      if (window.refreshTicketsTable) {
+        window.refreshTicketsTable(window.location.href, false);
+      } else {
+        window.location.reload();
+      }
     }, 700);
   });
 })();

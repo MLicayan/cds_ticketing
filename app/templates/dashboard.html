@@ -52,6 +52,30 @@
   <span class="badge badge-{{ cls }}">{{ pval|upper }}</span>
 {%- endmacro %}
 
+{% macro service_item(log) -%}
+  {%- if not log -%}
+    No Instrument
+  {%- elif log.service_for == 'app' -%}
+    {{ log.app.name if log.app else 'CDS Application' }}
+  {%- elif log.instrument is not none -%}
+    {{ log.instrument.name or log.instrument.code or 'Instrument' }}{% if log.instrument.serial_number %} (SN: {{ log.instrument.serial_number }}){% endif %}
+  {%- else -%}
+    No Instrument
+  {%- endif -%}
+{%- endmacro %}
+
+{% macro ticket_item(ticket) -%}
+  {%- if not ticket -%}
+    No Instrument
+  {%- elif ticket.ticket_for == 'app' -%}
+    {{ ticket.app.name if ticket.app else 'CDS Application' }}
+  {%- elif ticket.instrument is not none -%}
+    {{ ticket.instrument.name or ticket.instrument.code or 'Instrument' }}{% if ticket.instrument.serial_number %} (SN: {{ ticket.instrument.serial_number }}){% endif %}
+  {%- else -%}
+    No Instrument
+  {%- endif -%}
+{%- endmacro %}
+
 {# Quick global KPIs #}
 <!-- 
 <div class="row">
@@ -156,78 +180,6 @@
   </div>
 </div>
 
-<div class="row">
-  <div class="col-lg-6">
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title mb-0 d-flex justify-content-between align-items-center">
-          <span>This Week — PM Schedules &amp; Deadlines</span>
-          <!-- <span class="date-range text-sm">Date: {{ admin_data.week_range.start }} - {{ admin_data.week_range.end }}</span> -->
-        </h3>
-      </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table mb-0 table-sm">
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Client / Instrument</th>
-                <th>Task</th>
-                <th>Engineer</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for s in admin_data.pm_week %}
-              <tr>
-                <td>{{ s.date.strftime('%Y-%m-%d') if s.date else '—' }}</td>
-                <td>{{ s.client.name if s.client else '' }}{% if s.instrument %} / {{ s.instrument.display_label() }}{% endif %}</td>
-                <td>{{ s.description or 'PM Schedule' }}</td>
-                <td>{{ s.assigned_engineer.full_name or s.assigned_engineer.username if s.assigned_engineer else '—' }}</td>
-              </tr>
-              {% else %}
-              <tr><td colspan="4" class="text-center text-muted">No schedules due this week.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="col-lg-6">
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title">Tickets – Approaching Deadlines / Overdue</h3>
-      </div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table mb-0 table-sm">
-            <thead>
-              <tr>
-                <th>Ticket #</th>
-                <th>Client</th>
-                <th>Status</th>
-                <th>Target Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for t in admin_data.ticket_deadlines %}
-              <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
-                <td>{{ t.ticket_no }}</td>
-                <td>{{ t.client.name }}</td>
-                <td>{{ status_badge(t.status) }}</td>
-                <td>{{ t.target_date.strftime('%Y-%m-%d') if t.target_date else '—' }}</td>
-              </tr>
-              {% else %}
-              <tr><td colspan="4" class="text-center text-muted">No tickets nearing deadline.</td></tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
 <div class="card">
   <div class="card-header">
     <h3 class="card-title">All Tickets Overview</h3>
@@ -261,39 +213,30 @@
 </div>
 
 <div class="row">
-  <div class="col-lg-7">
+  <div class="col-lg-12">
     <div class="card">
       <div class="card-header">
         <h3 class="card-title mb-0 d-flex justify-content-between align-items-center">
           <span>Service Logs This Week</span>
-          <!-- <span class="date-range text-sm">Date: {{ admin_data.week_range.start }} - {{ admin_data.week_range.end }}</span> -->
         </h3>
       </div>
+
       <div class="card-body">
         <ul class="list-unstyled mb-0">
           {% for log in admin_data.logs_week %}
-          <li>
+          <li class="mb-2">
             <strong>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</strong> —
             {{ log.client.name if log.client else '' }} /
-            {{ log.instrument.display_label() if log.instrument else '' }} —
+            {{ service_item(log) }} —
             {{ log.engineer.full_name or log.engineer.username if log.engineer else '' }}
-            {% if log.service_type %}<span class="text-muted">({{ log.service_type|capitalize }})</span>{% endif %}
+            {% if log.service_type %}
+              <span class="text-muted">({{ log.service_type|capitalize }})</span>
+            {% endif %}
           </li>
           {% else %}
           <li class="text-muted">No service logs this week.</li>
           {% endfor %}
         </ul>
-      </div>
-    </div>
-  </div>
-  <div class="col-lg-5">
-    <div class="card">
-      <div class="card-header">
-        <h3 class="card-title">PM Schedule Stats ({{ admin_data.current_year }})</h3>
-      </div>
-      <div class="card-body">
-        <p class="mb-1"><strong>Total PMs scheduled:</strong> {{ admin_data.pm_total or 0 }}</p>
-        <p class="mb-0 text-muted">Upcoming (7 days): {{ admin_data.pm_week|length }}</p>
       </div>
     </div>
   </div>
@@ -343,7 +286,7 @@
               <tr onclick="window.location='{{ url_for('service_logs.detail', log_id=log.id) }}'" style="cursor:pointer;">
                 <td>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }}</td>
                 <td>{{ log.client.name }}</td>
-                <td>{{ log.instrument.display_label() }}</td>
+                <td>{{ service_item(log) }}</td>
                 <td>{{ log.service_type|capitalize }}</td>
               </tr>
               {% else %}
@@ -387,7 +330,7 @@
                 <span class="badge badge-primary">CDS App</span>
                 <div>{{ t.app.name if t.app else 'N/A' }}</div>
               {% elif t.instrument %}
-                {{ t.instrument.display_label() }}
+                {{ ticket_item(t) }}
               {% else %}
                 <span class="text-muted">N/A</span>
               {% endif %}
@@ -595,7 +538,7 @@
       <div class="card-body">
         <ul class="list-unstyled mb-0">
           {% for log in client_dash.logs %}
-          <li>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }} — {{ log.instrument.display_label() if log.instrument else '' }} by {{ log.engineer.full_name or log.engineer.username if log.engineer else '' }}</li>
+          <li>{{ log.visit_date.strftime('%Y-%m-%d') if log.visit_date else '' }} — {{ service_item(log) }} by {{ log.engineer.full_name or log.engineer.username if log.engineer else '' }}</li>
           {% else %}
           <li class="text-muted">No recent service logs.</li>
           {% endfor %}

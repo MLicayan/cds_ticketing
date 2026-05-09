@@ -20,8 +20,6 @@ def _scoped_ticket_query():
     query = _exclude_task_tickets(Ticket.query)
     if current_user.role in CLIENT_SCOPED_ROLES:
         query = query.filter(Ticket.client_id == current_user.client_id)
-    elif current_user.role == UserRole.ENGINEER:
-        query = query.filter(Ticket.assigned_engineer_id == current_user.id)
     return query
 
 
@@ -96,20 +94,24 @@ def _hospital_monitoring_rows(daily_only: bool = False):
             }
 
         row = grouped[client_id]
-        row["total"] += 1
         row["last_updated_at"] = max(
             row["last_updated_at"] or datetime.min,
             ticket.updated_at or ticket.created_at or datetime.min,
         )
 
         if ticket.status == TicketStatus.OPEN:
+            row["total"] += 1
             row["open"] += 1
         elif ticket.status == TicketStatus.IN_PROGRESS:
+            row["total"] += 1
             row["in_progress"] += 1
         elif ticket.status == TicketStatus.RESOLVED:
+            row["total"] += 1
             row["resolved"] += 1
         elif ticket.status == TicketStatus.CLOSED:
             row["closed"] += 1
+        else:
+            row["total"] += 1
 
     rows = list(grouped.values())
     rows.sort(key=lambda row: (-row["total"], (row["client_name"] or "").lower()))
@@ -120,8 +122,6 @@ def _hospital_monitoring_rows(daily_only: bool = False):
 def require_monitoring_access():
     if not current_user.is_authenticated:
         return
-    if current_user.role != UserRole.ADMIN:
-        abort(403)
     endpoint = request.endpoint or ""
     if endpoint in ("monitoring.apps", "monitoring.apps_data"):
         if not current_user.has_nav_access("app_monitoring"):

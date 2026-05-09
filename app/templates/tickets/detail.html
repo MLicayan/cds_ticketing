@@ -12,7 +12,7 @@
           <i class="fas fa-tasks"></i> Create Task
         </button>
       {% endif %}
-      {% if current_user.has_nav_access('service_logs') and ticket.status != TicketStatus.CLOSED %}
+      {% if current_user.has_nav_access('service_logs') and ticket.status != TicketStatus.CLOSED and not is_task_ticket %}
         <a href="{{ url_for('service_logs.create', ticket_id=ticket.id) }}" class="btn btn-primary">
           <i class="fas fa-tools"></i> New Service Log
         </a>
@@ -620,7 +620,7 @@
                 {% set is_assigned_it = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() == 'it' %}
 
                 {% if is_assigned_it and ticket.status != TicketStatus.CLOSED %}
-                  <form method="post" action="{{ url_for('tickets.toggle_work_state', ticket_id=ticket.id) }}">
+                  <form method="post" action="{{ url_for('tickets.toggle_task_work_state', task_id=ticket.id) if is_task_ticket else url_for('tickets.toggle_work_state', ticket_id=ticket.id) }}">
                     <input type="hidden" name="action" value="{{ 'stop' if ticket.is_working else 'start' }}">
                     <button type="submit" class="btn btn-{{ 'danger' if ticket.is_working else 'success' }} btn-sm btn-block">
                       {{ 'Stop Work' if ticket.is_working else 'Start Work' }}
@@ -676,21 +676,21 @@
               <div class="comment-attachment">
                 {% if is_image %}
                 <a
-                  href="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  href="{{ url_for('uploads.task_file', filename=att.stored_filename) if is_task_ticket else url_for('uploads.ticket_file', filename=att.stored_filename) }}"
                   class="attachment-preview-trigger"
-                  data-preview-url="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  data-preview-url="{{ url_for('uploads.task_file', filename=att.stored_filename) if is_task_ticket else url_for('uploads.ticket_file', filename=att.stored_filename) }}"
                   data-preview-name="{{ att.original_filename }}"
                   data-preview-type="{{ att.content_type or '' }}">
                   <img
-                    src="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                    src="{{ url_for('uploads.task_file', filename=att.stored_filename) if is_task_ticket else url_for('uploads.ticket_file', filename=att.stored_filename) }}"
                     alt="{{ att.original_filename }}"
                     class="comment-attachment-thumb">
                 </a>
                 {% else %}
                 <a
-                  href="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  href="{{ url_for('uploads.task_file', filename=att.stored_filename) if is_task_ticket else url_for('uploads.ticket_file', filename=att.stored_filename) }}"
                   class="comment-attachment-link attachment-preview-trigger"
-                  data-preview-url="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+                  data-preview-url="{{ url_for('uploads.task_file', filename=att.stored_filename) if is_task_ticket else url_for('uploads.ticket_file', filename=att.stored_filename) }}"
                   data-preview-name="{{ att.original_filename }}"
                   data-preview-type="{{ att.content_type or '' }}">
                   <i class="fas {{ 'fa-image' if is_image else 'fa-paperclip' }}"></i>
@@ -859,7 +859,7 @@
           </thead>
           <tbody>
             {% for task in ticket_tasks %}
-            <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=task.id) }}'" style="cursor:pointer;">
+            <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=task.id) }}'" style="cursor:pointer;">
               <td>{{ task.ticket_no }}</td>
               <td>
                 {{ task.subject }}
@@ -907,9 +907,9 @@
           <li data-attachment-id="{{ att.id }}">
             <i class="fas fa-paperclip mr-1"></i>
             <a
-              href="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+              href="{{ url_for('uploads.task_file', filename=att.stored_filename) if is_task_ticket else url_for('uploads.ticket_file', filename=att.stored_filename) }}"
               class="attachment-preview-trigger"
-              data-preview-url="{{ url_for('uploads.ticket_file', filename=att.stored_filename) }}"
+              data-preview-url="{{ url_for('uploads.task_file', filename=att.stored_filename) if is_task_ticket else url_for('uploads.ticket_file', filename=att.stored_filename) }}"
               data-preview-name="{{ att.original_filename }}"
               data-preview-type="{{ att.content_type or '' }}">
               {{ att.original_filename }}
@@ -961,7 +961,7 @@
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
-      <form method="post" action="{{ url_for('tickets.update_ticket_info', ticket_id=ticket.id) }}" id="update-ticket-info-form">
+      <form method="post" action="{{ url_for('tickets.update_task_info', task_id=ticket.id) if is_task_ticket else url_for('tickets.update_ticket_info', ticket_id=ticket.id) }}" id="update-ticket-info-form">
         <div class="modal-body">
           <div class="ticket-edit-panel">
             <div class="row">
@@ -1412,7 +1412,7 @@
     function submitReaction(commentId, reactionCode) {
       var formData = new FormData();
       formData.append('emoji', reactionCode || '');
-      return fetch('{{ url_for("tickets.react_comment", comment_id=0) }}'.replace('0', commentId), {
+      return fetch('{{ url_for("tickets.react_task_comment", comment_id=0) if is_task_ticket else url_for("tickets.react_comment", comment_id=0) }}'.replace('0', commentId), {
         method: 'POST',
         body: formData,
         credentials: 'same-origin'

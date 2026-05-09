@@ -21,6 +21,9 @@ from .models import (
     TicketPriority,
     TicketComment,
     TicketAttachment,
+    TicketTask,
+    TicketTaskAttachment,
+    TicketTaskComment,
     UserRole,
     User,
     App,
@@ -45,8 +48,15 @@ REACTION_OPTIONS = [
 def require_ticket_nav_access():
     if not current_user.is_authenticated:
         return
-    if request.endpoint == "tickets.developer_tasks":
-        if not current_user.has_nav_access("developer_tasks"):
+    task_endpoints = {
+        "tickets.developer_tasks",
+        "tickets.task_detail",
+        "tickets.update_task_info",
+        "tickets.toggle_task_work_state",
+        "tickets.react_task_comment",
+    }
+    if request.endpoint in task_endpoints:
+        if not (current_user.has_nav_access("developer_tasks") or current_user.has_nav_access("my_tickets")):
             abort(403)
         return
     if request.endpoint == "tickets.index":
@@ -75,6 +85,8 @@ def _task_category(parent_ticket_id: int) -> str:
 
 
 def _is_task_ticket(ticket: Ticket) -> bool:
+    if isinstance(ticket, TicketTask):
+        return True
     return bool((ticket.category or "").startswith(TASK_CATEGORY_PREFIX))
 
 
@@ -109,6 +121,13 @@ def _ensure_ticket_not_closed(ticket: Ticket):
     return None
 
 
+def _ensure_task_not_closed(task: TicketTask):
+    if task.status == TicketStatus.CLOSED:
+        flash("Closed tasks are read-only.", "warning")
+        return redirect(url_for("tickets.task_detail", task_id=task.id))
+    return None
+
+
 def _update_ticket_status_value(ticket: Ticket, new_status, actor_name: str) -> bool:
     old_status = ticket.status
     if old_status == new_status:
@@ -133,7 +152,7 @@ def _close_child_tasks(parent_ticket: Ticket, actor_name: str):
 
     closed_tasks = []
     closed_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-    child_tasks = Ticket.query.filter(Ticket.category == _task_category(parent_ticket.id)).all()
+    child_tasks = TicketTask.query.filter(TicketTask.ticket_id == parent_ticket.id).all()
     for child_task in child_tasks:
         if child_task.status == TicketStatus.CLOSED:
             continue
@@ -142,7 +161,7 @@ def _close_child_tasks(parent_ticket: Ticket, actor_name: str):
         child_task.closed_at = closed_at
         child_task.is_working = False
         child_task.kanban_bucket = None
-        _record_ticket_change(
+        _record_task_change(
             child_task,
             f"Status changed from {_enum_label(old_status)} to Closed by {actor_name}.",
         )
@@ -151,7 +170,7 @@ def _close_child_tasks(parent_ticket: Ticket, actor_name: str):
 
 
 def _scoped_ticket_query():
-    query = Ticket.query if current_user.role == UserRole.ENGINEER else _exclude_task_tickets(Ticket.query)
+    query = _exclude_task_tickets(Ticket.query)
     if current_user.role in CLIENT_SCOPED_ROLES:
         query = _apply_client_ticket_scope(query)
     elif current_user.role == UserRole.ENGINEER:
@@ -196,7 +215,8 @@ def _app_monitoring_rows():
     return rows
 
 
-def _ticket_event_payload(ticket: Ticket) -> dict:
+def _ticket_event_payload(ticket) -> dict:
+    is_task = isinstance(ticket, TicketTask)
     payload = {
         "id": ticket.id,
         "ticket_no": ticket.ticket_no,
@@ -206,7 +226,9 @@ def _ticket_event_payload(ticket: Ticket) -> dict:
         "client": ticket.client.name if ticket.client else "",
         "updated_at": ticket.updated_at.strftime("%Y-%m-%d %H:%M:%S") if ticket.updated_at else "",
     }
-    if _is_task_ticket(ticket):
+    if is_task:
+        payload["parent_ticket_id"] = ticket.ticket_id
+    elif _is_task_ticket(ticket):
         try:
             payload["parent_ticket_id"] = int((ticket.category or "").replace(TASK_CATEGORY_PREFIX, "", 1))
         except ValueError:
@@ -226,16 +248,17 @@ def _emit_ticket_changed(ticket: Ticket, action: str = "updated") -> None:
 
 
 def _ticket_attachment_payload(attachment: TicketAttachment) -> dict:
+    endpoint = "uploads.task_file" if isinstance(attachment, TicketTaskAttachment) else "uploads.ticket_file"
     return {
         "id": attachment.id,
         "name": attachment.original_filename,
-        "url": url_for("uploads.ticket_file", filename=attachment.stored_filename),
+        "url": url_for(endpoint, filename=attachment.stored_filename),
         "content_type": attachment.content_type or "",
         "is_image": bool(attachment.content_type and attachment.content_type.startswith("image/")),
     }
 
 
-def _clone_ticket_attachments(source_ticket: Ticket, target_ticket: Ticket, uploaded_at=None) -> None:
+def _clone_ticket_attachments(source_ticket: Ticket, target_ticket, uploaded_at=None) -> None:
     upload_folder = current_app.config.get("UPLOAD_FOLDER_TICKETS")
     if not upload_folder:
         return
@@ -252,20 +275,21 @@ def _clone_ticket_attachments(source_ticket: Ticket, target_ticket: Ticket, uplo
         target_path = os.path.join(upload_folder, stored_name)
         shutil.copyfile(source_path, target_path)
 
-        db.session.add(
-            TicketAttachment(
-                ticket_id=target_ticket.id,
-                user_id=source_attachment.user_id,
-                stored_filename=stored_name,
-                original_filename=source_attachment.original_filename,
-                content_type=source_attachment.content_type,
-                file_size=os.path.getsize(target_path),
-                uploaded_at=uploaded_at or source_attachment.uploaded_at,
-            )
-        )
+        attachment_kwargs = {
+            "user_id": source_attachment.user_id,
+            "stored_filename": stored_name,
+            "original_filename": source_attachment.original_filename,
+            "content_type": source_attachment.content_type,
+            "file_size": os.path.getsize(target_path),
+            "uploaded_at": uploaded_at or source_attachment.uploaded_at,
+        }
+        if isinstance(target_ticket, TicketTask):
+            db.session.add(TicketTaskAttachment(ticket_task_id=target_ticket.id, **attachment_kwargs))
+        else:
+            db.session.add(TicketAttachment(ticket_id=target_ticket.id, **attachment_kwargs))
 
 
-def _clone_attachment_records(source_attachments, target_ticket: Ticket, uploaded_at=None) -> None:
+def _clone_attachment_records(source_attachments, target_ticket, uploaded_at=None) -> None:
     upload_folder = current_app.config.get("UPLOAD_FOLDER_TICKETS")
     if not upload_folder:
         return
@@ -282,17 +306,18 @@ def _clone_attachment_records(source_attachments, target_ticket: Ticket, uploade
         target_path = os.path.join(upload_folder, stored_name)
         shutil.copyfile(source_path, target_path)
 
-        db.session.add(
-            TicketAttachment(
-                ticket_id=target_ticket.id,
-                user_id=source_attachment.user_id,
-                stored_filename=stored_name,
-                original_filename=source_attachment.original_filename,
-                content_type=source_attachment.content_type,
-                file_size=os.path.getsize(target_path),
-                uploaded_at=uploaded_at or source_attachment.uploaded_at,
-            )
-        )
+        attachment_kwargs = {
+            "user_id": source_attachment.user_id,
+            "stored_filename": stored_name,
+            "original_filename": source_attachment.original_filename,
+            "content_type": source_attachment.content_type,
+            "file_size": os.path.getsize(target_path),
+            "uploaded_at": uploaded_at or source_attachment.uploaded_at,
+        }
+        if isinstance(target_ticket, TicketTask):
+            db.session.add(TicketTaskAttachment(ticket_task_id=target_ticket.id, **attachment_kwargs))
+        else:
+            db.session.add(TicketAttachment(ticket_id=target_ticket.id, **attachment_kwargs))
 
 
 def _emit_ticket_comment(ticket: Ticket, comment: TicketComment, attachments=None) -> None:
@@ -319,11 +344,38 @@ def _ticket_comment_payload(comment: TicketComment, attachments=None) -> dict:
     }
 
 
+def _task_comment_payload(comment: TicketTaskComment, attachments=None) -> dict:
+    return {
+        "ticket_id": comment.ticket_task_id,
+        "comment_id": comment.id,
+        "user_id": comment.user_id,
+        "user": comment.user.full_name or comment.user.username if comment.user else "",
+        "comment_text": comment.comment_text,
+        "is_internal": bool(comment.is_internal),
+        "user_is_client": bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES),
+        "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
+        "reactions": comment.reaction_summary(),
+        "attachments": [_ticket_attachment_payload(att) for att in (attachments or [])],
+    }
+
+
 def _comment_reaction_payload(comment: TicketComment) -> dict:
     reaction_state_map = comment.reaction_state_map()
     my_state = reaction_state_map.get(str(current_user.id), {})
     return {
         "ticket_id": comment.ticket_id,
+        "comment_id": comment.id,
+        "reactions": comment.reaction_summary(),
+        "my_reaction": my_state.get("reaction", ""),
+        "my_acknowledged": bool(my_state.get("acknowledge")),
+    }
+
+
+def _task_comment_reaction_payload(comment: TicketTaskComment) -> dict:
+    reaction_state_map = comment.reaction_state_map()
+    my_state = reaction_state_map.get(str(current_user.id), {})
+    return {
+        "ticket_id": comment.ticket_task_id,
         "comment_id": comment.id,
         "reactions": comment.reaction_summary(),
         "my_reaction": my_state.get("reaction", ""),
@@ -477,6 +529,16 @@ def _record_ticket_change(ticket: Ticket, message: str, is_internal: bool = Fals
     db.session.add(comment)
 
 
+def _record_task_change(task: TicketTask, message: str, is_internal: bool = False) -> None:
+    comment = TicketTaskComment(
+        ticket_task_id=task.id,
+        user_id=current_user.id,
+        comment_text=message,
+        is_internal=is_internal,
+    )
+    db.session.add(comment)
+
+
 def _enum_label(value) -> str:
     return value.value.replace("_", " ").title() if value else "N/A"
 
@@ -538,6 +600,20 @@ def _apply_my_ticket_scope(query):
     )
 
 
+def _apply_my_task_scope(query):
+    if current_user.role == UserRole.ENGINEER:
+        return query.filter(TicketTask.assigned_engineer_id == current_user.id)
+    if current_user.role == UserRole.ADMIN:
+        return query
+    return query.filter(
+        db.or_(
+            TicketTask.reported_by_id == current_user.id,
+            TicketTask.assigned_engineer_id == current_user.id,
+            TicketTask.assigned_by_id == current_user.id,
+        )
+    )
+
+
 def _render_ticket_index(my_tickets_only=False):
     status_labels = {
         TicketStatus.OPEN: "Open",
@@ -555,7 +631,9 @@ def _render_ticket_index(my_tickets_only=False):
     assignees = User.query.filter(User.role == UserRole.ENGINEER).order_by(User.full_name.asc(), User.username.asc()).all()
     reporters = User.query.order_by(User.full_name.asc(), User.username.asc()).all()
 
-    query = Ticket.query if current_user.role == UserRole.ENGINEER else _exclude_task_tickets(Ticket.query)
+    list_model = TicketTask if my_tickets_only and current_user.role not in CLIENT_SCOPED_ROLES else Ticket
+    is_task_list = list_model is TicketTask
+    query = TicketTask.query if is_task_list else _exclude_task_tickets(Ticket.query)
 
     client_ids = request.args.getlist("client_id")
     client_ids = [cid.strip() for cid in client_ids if cid.strip()]
@@ -571,6 +649,7 @@ def _render_ticket_index(my_tickets_only=False):
     date_to_raw = request.args.get("date_to") or ""
     using_default_open_not_set_scope = (
         current_user.role not in CLIENT_SCOPED_ROLES
+        and not my_tickets_only
         and not priority_values
         and not status_values
     )
@@ -604,7 +683,7 @@ def _render_ticket_index(my_tickets_only=False):
     elif client_ids:
         try:
             client_ids_int = [int(cid) for cid in client_ids]
-            query = query.filter(Ticket.client_id.in_(client_ids_int))
+            query = query.filter(list_model.client_id.in_(client_ids_int))
             instruments = Instrument.query.filter(
                 Instrument.client_id.in_(client_ids_int)
             ).order_by(Instrument.name.asc()).all()
@@ -618,17 +697,17 @@ def _render_ticket_index(my_tickets_only=False):
             pass
 
     if my_tickets_only:
-        query = _apply_my_ticket_scope(query)
+        query = _apply_my_task_scope(query) if is_task_list else _apply_my_ticket_scope(query)
 
     if instrument_ids:
         try:
-            query = query.filter(Ticket.instrument_id.in_([int(iid) for iid in instrument_ids]))
+            query = query.filter(list_model.instrument_id.in_([int(iid) for iid in instrument_ids]))
         except ValueError:
             pass
 
     if app_ids:
         try:
-            query = query.filter(Ticket.app_id.in_([int(aid) for aid in app_ids]))
+            query = query.filter(list_model.app_id.in_([int(aid) for aid in app_ids]))
         except ValueError:
             pass
 
@@ -641,7 +720,7 @@ def _render_ticket_index(my_tickets_only=False):
 
     if reported_by_ids:
         try:
-            query = query.filter(Ticket.reported_by_id.in_([int(rid) for rid in reported_by_ids]))
+            query = query.filter(list_model.reported_by_id.in_([int(rid) for rid in reported_by_ids]))
         except ValueError:
             pass
 
@@ -660,34 +739,23 @@ def _render_ticket_index(my_tickets_only=False):
             continue
 
     if using_default_open_not_set_scope:
-        if current_user.role == UserRole.ENGINEER:
-            query = query.filter(
-                db.or_(
-                    Ticket.category.like(f"{TASK_CATEGORY_PREFIX}%"),
-                    db.and_(
-                        Ticket.priority == TicketPriority.NOT_SET,
-                        Ticket.status == TicketStatus.OPEN,
-                    ),
-                )
-            )
-        else:
-            query = query.filter(
-                Ticket.priority == TicketPriority.NOT_SET,
-                Ticket.status == TicketStatus.OPEN,
-            )
+        query = query.filter(
+            list_model.priority == TicketPriority.NOT_SET,
+            list_model.status == TicketStatus.OPEN,
+        )
     else:
         if valid_priority_values:
-            query = query.filter(Ticket.priority.in_(valid_priority_values))
+            query = query.filter(list_model.priority.in_(valid_priority_values))
 
         if valid_status_values:
-            query = query.filter(Ticket.status.in_(valid_status_values))
+            query = query.filter(list_model.status.in_(valid_status_values))
         else:
-            query = query.filter(Ticket.status != TicketStatus.CLOSED)
+            query = query.filter(list_model.status != TicketStatus.CLOSED)
 
     if date_from_raw:
         try:
             date_from = datetime.strptime(date_from_raw, "%Y-%m-%d")
-            query = query.filter(Ticket.created_at >= date_from)
+            query = query.filter(list_model.created_at >= date_from)
         except ValueError:
             pass
 
@@ -695,11 +763,11 @@ def _render_ticket_index(my_tickets_only=False):
         try:
             date_to = datetime.strptime(date_to_raw, "%Y-%m-%d")
             date_to = date_to + timedelta(days=1)
-            query = query.filter(Ticket.created_at < date_to)
+            query = query.filter(list_model.created_at < date_to)
         except ValueError:
             pass
 
-    tickets = query.order_by(Ticket.created_at.desc()).all()
+    tickets = query.order_by(list_model.created_at.desc()).all()
     now = datetime.now(APP_TIMEZONE)
     current_date = now.strftime("%Y-%m-%d")
 
@@ -716,6 +784,7 @@ def _render_ticket_index(my_tickets_only=False):
         reporters=reporters,
         ticket_list_title="My Task" if my_tickets_only else "All Tickets",
         ticket_list_endpoint="tickets.my_tickets" if my_tickets_only else "tickets.index",
+        is_task_list=is_task_list,
         selected_filters={
             "client_ids": client_ids,
             "instrument_ids": instrument_ids,
@@ -1386,16 +1455,71 @@ def developer_tasks():
         TicketStatus.CANCELLED: "Cancelled",
     }
 
-    query = Ticket.query.filter(Ticket.category.like(f"{TASK_CATEGORY_PREFIX}%"))
+    clients = Client.query.order_by(Client.name.asc()).all()
+    assignees = User.query.filter(
+        User.role == UserRole.ENGINEER,
+        User.user_type == "IT",
+    ).order_by(User.full_name.asc(), User.username.asc()).all()
+
+    query = TicketTask.query
     if current_user.role == UserRole.ENGINEER:
-        query = query.filter(Ticket.assigned_engineer_id == current_user.id)
-    tasks = query.order_by(Ticket.created_at.desc()).all()
-    parent_ids = []
-    for task in tasks:
+        query = query.filter(TicketTask.assigned_engineer_id == current_user.id)
+
+    client_ids = [cid.strip() for cid in request.args.getlist("client_id") if cid.strip()]
+    assignee_ids = [aid.strip() for aid in request.args.getlist("assignee_id") if aid.strip()]
+    priority_values = [priority.strip() for priority in request.args.getlist("priority") if priority.strip()]
+    status_values = [status.strip() for status in request.args.getlist("status") if status.strip()]
+    date_from_raw = request.args.get("date_from") or ""
+    date_to_raw = request.args.get("date_to") or ""
+
+    if client_ids:
         try:
-            parent_ids.append(int((task.category or "").replace(TASK_CATEGORY_PREFIX, "", 1)))
+            query = query.filter(TicketTask.client_id.in_([int(cid) for cid in client_ids]))
         except ValueError:
             pass
+
+    if assignee_ids and current_user.role != UserRole.ENGINEER:
+        try:
+            query = query.filter(TicketTask.assigned_engineer_id.in_([int(aid) for aid in assignee_ids]))
+        except ValueError:
+            pass
+
+    valid_priority_values = []
+    for priority_raw in priority_values:
+        try:
+            valid_priority_values.append(TicketPriority(priority_raw))
+        except ValueError:
+            continue
+    if valid_priority_values:
+        query = query.filter(TicketTask.priority.in_(valid_priority_values))
+
+    valid_status_values = []
+    for status_raw in status_values:
+        try:
+            valid_status_values.append(TicketStatus(status_raw))
+        except ValueError:
+            continue
+    if valid_status_values:
+        query = query.filter(TicketTask.status.in_(valid_status_values))
+    else:
+        query = query.filter(TicketTask.status != TicketStatus.CLOSED)
+
+    if date_from_raw:
+        try:
+            date_from = datetime.strptime(date_from_raw, "%Y-%m-%d")
+            query = query.filter(TicketTask.created_at >= date_from)
+        except ValueError:
+            pass
+
+    if date_to_raw:
+        try:
+            date_to = datetime.strptime(date_to_raw, "%Y-%m-%d") + timedelta(days=1)
+            query = query.filter(TicketTask.created_at < date_to)
+        except ValueError:
+            pass
+
+    tasks = query.order_by(TicketTask.created_at.desc()).all()
+    parent_ids = [task.ticket_id for task in tasks if task.ticket_id]
 
     parents = {}
     if parent_ids:
@@ -1406,6 +1530,17 @@ def developer_tasks():
         tasks=tasks,
         parents=parents,
         status_labels=status_labels,
+        clients=clients,
+        assignees=assignees,
+        current_date=datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d"),
+        selected_filters={
+            "client_ids": client_ids,
+            "assignee_ids": assignee_ids,
+            "priority": priority_values,
+            "status": [status.value for status in valid_status_values],
+            "date_from": date_from_raw,
+            "date_to": date_to_raw,
+        },
     )
 
 
@@ -1413,6 +1548,10 @@ def developer_tasks():
 @login_required
 def detail(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
+    if _is_task_ticket(ticket):
+        migrated_task = TicketTask.query.filter_by(task_no=ticket.ticket_no).first()
+        if migrated_task:
+            return redirect(url_for("tickets.task_detail", task_id=migrated_task.id))
 
     _ensure_client_ticket_access(ticket)
     if current_user.role in READ_ONLY_ROLES and _is_task_ticket(ticket):
@@ -1460,9 +1599,9 @@ def detail(ticket_id):
             User.user_type == "IT"
         ).order_by(User.full_name.asc(), User.username.asc()).all()
 
-    ticket_tasks = Ticket.query.filter(Ticket.category == _task_category(ticket.id)).order_by(
-        Ticket.created_at.desc(),
-        Ticket.id.desc()
+    ticket_tasks = TicketTask.query.filter(TicketTask.ticket_id == ticket.id).order_by(
+        TicketTask.created_at.desc(),
+        TicketTask.id.desc()
     ).all()
 
     timeline_events = []
@@ -1541,7 +1680,7 @@ def detail(ticket_id):
             and current_user.role in CLIENT_SCOPED_ROLES
             and not _is_task_ticket(ticket)
         ):
-            child_tasks = Ticket.query.filter(Ticket.category == _task_category(ticket.id)).all()
+            child_tasks = TicketTask.query.filter(TicketTask.ticket_id == ticket.id).all()
             cloned_uploaded_at = new_comment.created_at if new_comment and new_comment.created_at else None
             for child_task in child_tasks:
                 _clone_attachment_records(added_attachments, child_task, uploaded_at=cloned_uploaded_at)
@@ -1667,6 +1806,178 @@ def detail(ticket_id):
     )
 
 
+@tickets_bp.route("/tasks/<int:task_id>", methods=["GET", "POST"])
+@login_required
+def task_detail(task_id):
+    task = TicketTask.query.get_or_404(task_id)
+    parent_ticket = task.parent_ticket
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+    if current_user.role == UserRole.ENGINEER and task.assigned_engineer_id != current_user.id:
+        abort(403)
+
+    if request.method == "POST":
+        closed_redirect = _ensure_task_not_closed(task)
+        if closed_redirect:
+            return closed_redirect
+
+        comment_text = (request.form.get("comment_text") or "").strip()
+        is_internal = bool(request.form.get("is_internal"))
+        files = request.files.getlist("attachment")
+        has_uploaded_files = any(file and file.filename for file in files)
+        wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        did_something = False
+        new_comment = None
+        added_attachments = []
+
+        if comment_text or has_uploaded_files:
+            new_comment = TicketTaskComment(
+                ticket_task_id=task.id,
+                user_id=current_user.id,
+                comment_text=comment_text,
+                is_internal=is_internal,
+            )
+            db.session.add(new_comment)
+            did_something = True
+
+        upload_folder = current_app.config.get("UPLOAD_FOLDER_TICKETS")
+        if upload_folder:
+            os.makedirs(upload_folder, exist_ok=True)
+
+        for file in files:
+            if file and file.filename:
+                safe_name = secure_filename(file.filename)
+                stored_name = f"task_{task.id}_{int(datetime.utcnow().timestamp() * 1000)}_{safe_name}"
+                filepath = os.path.join(upload_folder, stored_name)
+                file.save(filepath)
+                att = TicketTaskAttachment(
+                    ticket_task_id=task.id,
+                    user_id=current_user.id,
+                    stored_filename=stored_name,
+                    original_filename=file.filename,
+                    content_type=file.mimetype,
+                    file_size=os.path.getsize(filepath),
+                )
+                db.session.add(att)
+                added_attachments.append(att)
+                did_something = True
+
+        if did_something:
+            db.session.commit()
+            _emit_ticket_changed(task, "commented" if new_comment else "updated")
+            if wants_json and new_comment:
+                return jsonify({"ok": True, "comment": _task_comment_payload(new_comment, attachments=added_attachments)})
+            if wants_json:
+                return jsonify({"ok": True, "reload": True})
+            flash("Update saved.", "success")
+        else:
+            if wants_json:
+                return jsonify({"ok": False, "message": "Nothing to save."}), 400
+            flash("Nothing to save.", "warning")
+
+        return redirect(f"{url_for('tickets.task_detail', task_id=task.id)}#ticket-comments-card")
+
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    comments_raw = task.comments
+    comments = [c for c in comments_raw if not _is_change_comment(c.comment_text)]
+
+    task_engineers = User.query.filter(
+        User.role == UserRole.ENGINEER,
+        User.user_type == "IT"
+    ).order_by(User.full_name.asc(), User.username.asc()).all()
+    engineers = task_engineers
+
+    timeline_events = []
+
+    def add_event(timestamp, title, description, kind="update"):
+        if not timestamp:
+            return
+        timeline_events.append({"timestamp": timestamp, "title": title, "description": description, "type": kind})
+
+    def _is_initial_attachment(att: TicketTaskAttachment) -> bool:
+        if not task.created_at or not att.uploaded_at:
+            return False
+        return abs((att.uploaded_at - task.created_at).total_seconds()) <= 5
+
+    def _is_comment_attachment(att: TicketTaskAttachment, comment: TicketTaskComment) -> bool:
+        if not att.uploaded_at or not comment.created_at:
+            return False
+        if att.user_id != comment.user_id:
+            return False
+        return abs((att.uploaded_at - comment.created_at).total_seconds()) <= 10
+
+    reported_by_name = task.reported_by.full_name or task.reported_by.username
+    add_event(task.created_at, "Task created", f"Created by {reported_by_name}.", "created")
+
+    for c in comments_raw:
+        if not _is_change_comment(c.comment_text):
+            continue
+        commenter = c.user.full_name or c.user.username
+        add_event(c.created_at, f"Updated by {commenter}", c.comment_text, "update")
+
+    for att in task.attachments:
+        if _is_initial_attachment(att):
+            continue
+        sender = att.user.full_name or att.user.username if att.user else "Unknown"
+        add_event(att.uploaded_at, f"Attachment added by {sender}", att.original_filename, "attachment")
+
+    if task.status == TicketStatus.CLOSED:
+        add_event(task.closed_at, "Task closed", "Marked as closed.", "closed")
+    elif task.status == TicketStatus.RESOLVED:
+        add_event(task.updated_at, "Task resolved", "Awaiting confirmation.", "resolved")
+
+    timeline_events.sort(key=lambda e: e["timestamp"] or datetime.min, reverse=True)
+
+    comment_attachments = {}
+    assigned_attachment_ids = set()
+    non_initial_attachments = [att for att in task.attachments if not _is_initial_attachment(att)]
+    for comment in comments:
+        matched = []
+        for att in non_initial_attachments:
+            if att.id in assigned_attachment_ids:
+                continue
+            if _is_comment_attachment(att, comment):
+                matched.append(att)
+                assigned_attachment_ids.add(att.id)
+        comment_attachments[comment.id] = matched
+
+    remaining_attachments = [att for att in task.attachments if att.id not in assigned_attachment_ids]
+    status_options = [
+        (TicketStatus.OPEN, "Open"),
+        (TicketStatus.IN_PROGRESS, "In-Process"),
+        (TicketStatus.RESOLVED, "Fix/Completed"),
+        (TicketStatus.REOPENED, "Re-Open"),
+        (TicketStatus.CLOSED, "Closed"),
+    ]
+    priority_options = [
+        (TicketPriority.NOT_SET, "Not Set"),
+        (TicketPriority.CRITICAL, "Critical"),
+        (TicketPriority.HIGH, "High"),
+        (TicketPriority.MEDIUM, "Medium"),
+        (TicketPriority.LOW, "Low"),
+    ]
+
+    return render_template(
+        "tickets/detail.html",
+        ticket=task,
+        comments=comments,
+        reaction_options=REACTION_OPTIONS,
+        status_options=status_options,
+        status_labels={k: v for k, v in status_options},
+        priority_options=priority_options,
+        engineers=engineers,
+        task_engineers=task_engineers,
+        ticket_tasks=[],
+        is_task_ticket=True,
+        parent_ticket=parent_ticket,
+        TicketStatus=TicketStatus,
+        default_target_date=today_str,
+        timeline_events=timeline_events,
+        comment_attachments=comment_attachments,
+        remaining_attachments=remaining_attachments,
+    )
+
+
 @tickets_bp.route("/comments/<int:comment_id>/react", methods=["POST"])
 @login_required
 def react_comment(comment_id):
@@ -1713,6 +2024,50 @@ def react_comment(comment_id):
     db.session.commit()
     _emit_comment_reaction(comment)
     return jsonify(_comment_reaction_payload(comment))
+
+
+@tickets_bp.route("/task-comments/<int:comment_id>/react", methods=["POST"])
+@login_required
+def react_task_comment(comment_id):
+    comment = TicketTaskComment.query.get_or_404(comment_id)
+    task = comment.task
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+    if task.status == TicketStatus.CLOSED:
+        return jsonify({"error": "Closed tasks are read-only."}), 403
+    if comment.is_internal and current_user.role in READ_ONLY_ROLES:
+        abort(403)
+
+    emoji = (request.form.get("emoji") or "").strip()
+    allowed_reactions = {item["code"] for item in REACTION_OPTIONS} | {"acknowledge"}
+    if emoji and emoji not in allowed_reactions:
+        return jsonify({"error": "Invalid reaction."}), 400
+
+    reaction_state_map = comment.reaction_state_map()
+    user_key = str(current_user.id)
+    state = reaction_state_map.get(user_key, {"reaction": "", "acknowledge": False})
+    if emoji == "acknowledge":
+        state["acknowledge"] = not bool(state.get("acknowledge"))
+    else:
+        state["reaction"] = "" if state.get("reaction") == emoji else emoji
+
+    if state.get("reaction") or state.get("acknowledge"):
+        reaction_state_map[user_key] = state
+    else:
+        reaction_state_map.pop(user_key, None)
+
+    comment.reactions_json = json.dumps(reaction_state_map, ensure_ascii=False) if reaction_state_map else None
+    db.session.commit()
+    socketio.emit(
+        "ticket_comment_reacted",
+        {
+            "ticket_id": comment.ticket_task_id,
+            "comment_id": comment.id,
+            "reactions": comment.reaction_summary(),
+        },
+        room=f"ticket:{task.ticket_id}",
+    )
+    return jsonify(_task_comment_reaction_payload(comment))
 
 
 @tickets_bp.route("/<int:ticket_id>/tasks", methods=["POST"])
@@ -1785,8 +2140,9 @@ def create_tasks(ticket_id):
 
     created_task_tickets = []
     for payload in task_payloads:
-        task_ticket = Ticket(
-            ticket_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
+        task_ticket = TicketTask(
+            task_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
+            ticket_id=ticket.id,
             client_id=ticket.client_id,
             instrument_id=ticket.instrument_id if ticket.ticket_for == "instrument" else None,
             app_id=ticket.app_id if ticket.ticket_for == "app" else None,
@@ -1794,7 +2150,6 @@ def create_tasks(ticket_id):
             reported_by_id=current_user.id,
             assigned_engineer_id=payload["engineer"].id,
             assigned_by_id=current_user.id,
-            category=_task_category(ticket.id),
             priority=payload["priority"],
             subject=payload["subject"],
             description=(
@@ -1809,7 +2164,8 @@ def create_tasks(ticket_id):
         )
         db.session.add(task_ticket)
         db.session.flush()
-        task_ticket.ticket_no = generate_task_ticket_no(task_ticket.id)
+        task_ticket.task_no = generate_task_ticket_no(task_ticket.id)
+        _clone_ticket_attachments(ticket, task_ticket, uploaded_at=task_ticket.created_at)
         created_task_tickets.append(task_ticket)
 
     db.session.commit()
@@ -2160,9 +2516,9 @@ def resolve_decision(ticket_id):
 
     if action == "deny":
         closed_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-        old_ticket_tasks = Ticket.query.filter(Ticket.category == _task_category(ticket.id)).order_by(
-            Ticket.created_at.asc(),
-            Ticket.id.asc(),
+        old_ticket_tasks = TicketTask.query.filter(TicketTask.ticket_id == ticket.id).order_by(
+            TicketTask.created_at.asc(),
+            TicketTask.id.asc(),
         ).all()
 
         # Close current ticket
@@ -2200,8 +2556,9 @@ def resolve_decision(ticket_id):
             old_task.is_working = False
             old_task.kanban_bucket = None
 
-            new_task = Ticket(
-                ticket_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
+            new_task = TicketTask(
+                task_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
+                ticket_id=new_ticket.id,
                 client_id=old_task.client_id,
                 instrument_id=old_task.instrument_id,
                 app_id=old_task.app_id,
@@ -2209,7 +2566,6 @@ def resolve_decision(ticket_id):
                 reported_by_id=old_task.reported_by_id,
                 assigned_engineer_id=old_task.assigned_engineer_id,
                 assigned_by_id=old_task.assigned_by_id,
-                category=_task_category(new_ticket.id),
                 priority=old_task.priority,
                 subject=old_task.subject,
                 description=f"Previous Task Ticket No: {old_task.ticket_no}\n\n{old_task.description or ''}",
@@ -2221,7 +2577,7 @@ def resolve_decision(ticket_id):
             )
             db.session.add(new_task)
             db.session.flush()
-            new_task.ticket_no = generate_task_ticket_no(new_task.id)
+            new_task.task_no = generate_task_ticket_no(new_task.id)
             _clone_ticket_attachments(old_task, new_task, uploaded_at=new_task.created_at)
             recreated_tasks.append((old_task, new_task))
 
@@ -2335,6 +2691,148 @@ def export():
     resp = Response(output.getvalue(), mimetype="text/csv")
     resp.headers["Content-Disposition"] = "attachment; filename=tickets_export.csv"
     return resp
+
+
+@tickets_bp.route("/tasks/<int:task_id>/update-info", methods=["POST"])
+@login_required
+def update_task_info(task_id):
+    task = TicketTask.query.get_or_404(task_id)
+    closed_redirect = _ensure_task_not_closed(task)
+    if closed_redirect:
+        return closed_redirect
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+
+    changed = False
+    user_name = current_user.full_name or current_user.username
+
+    new_target_date_raw = (request.form.get("target_date") or "").strip()
+    old_target_date = task.target_date
+    new_target_date = None
+    if new_target_date_raw:
+        try:
+            new_target_date = datetime.strptime(new_target_date_raw, "%Y-%m-%d").date()
+        except ValueError:
+            flash("Invalid target date format.", "danger")
+            return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+    if old_target_date != new_target_date:
+        task.target_date = new_target_date
+        _record_task_change(
+            task,
+            f"Target schedule changed from {old_target_date.strftime('%Y-%m-%d') if old_target_date else 'Not set'} to {new_target_date.strftime('%Y-%m-%d') if new_target_date else 'Not set'} by {user_name}."
+        )
+        changed = True
+
+    new_priority_raw = (request.form.get("priority") or "").strip()
+    valid_priorities = {
+        TicketPriority.NOT_SET.value: TicketPriority.NOT_SET,
+        TicketPriority.CRITICAL.value: TicketPriority.CRITICAL,
+        TicketPriority.HIGH.value: TicketPriority.HIGH,
+        TicketPriority.MEDIUM.value: TicketPriority.MEDIUM,
+        TicketPriority.LOW.value: TicketPriority.LOW,
+    }
+    new_priority = valid_priorities.get(new_priority_raw)
+    if new_priority and task.priority != new_priority:
+        old_priority = task.priority
+        task.priority = new_priority
+        _record_task_change(task, f"Priority changed from {_enum_label(old_priority)} to {_enum_label(new_priority)} by {user_name}.")
+        changed = True
+
+    valid_statuses = {
+        TicketStatus.OPEN.value: TicketStatus.OPEN,
+        TicketStatus.IN_PROGRESS.value: TicketStatus.IN_PROGRESS,
+        TicketStatus.RESOLVED.value: TicketStatus.RESOLVED,
+        TicketStatus.REOPENED.value: TicketStatus.REOPENED,
+        TicketStatus.CLOSED.value: TicketStatus.CLOSED,
+    }
+    new_status = valid_statuses.get((request.form.get("status") or "").strip())
+    if not new_status:
+        flash("Invalid status selection.", "danger")
+        return redirect(url_for("tickets.task_detail", task_id=task.id))
+    if task.status != new_status:
+        old_status = task.status
+        task.status = new_status
+        task.kanban_bucket = None
+        if new_status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+            task.closed_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+        elif new_status == TicketStatus.REOPENED:
+            task.closed_at = None
+        _record_task_change(task, f"Status changed from {_enum_label(old_status)} to {_enum_label(new_status)} by {user_name}.")
+        changed = True
+
+    if "engineer_id" in request.form:
+        engineer_id_raw = (request.form.get("engineer_id") or "").strip()
+        old_engineer = task.assigned_engineer
+        new_engineer = None
+        if engineer_id_raw:
+            new_engineer = User.query.filter(User.id == engineer_id_raw, User.role == UserRole.ENGINEER).first()
+            if not new_engineer:
+                flash("Invalid engineer selection.", "danger")
+                return redirect(url_for("tickets.task_detail", task_id=task.id))
+        if (old_engineer.id if old_engineer else None) != (new_engineer.id if new_engineer else None):
+            task.assigned_engineer_id = new_engineer.id if new_engineer else None
+            task.assigned_by_id = current_user.id
+            _record_task_change(
+                task,
+                f"Engineer/IT assigned to {new_engineer.full_name or new_engineer.username if new_engineer else 'None'} (previously {old_engineer.full_name or old_engineer.username if old_engineer else 'None'}) by {user_name}."
+            )
+            changed = True
+
+    if changed:
+        db.session.commit()
+        _emit_ticket_changed(task, "updated")
+        flash("Task info updated successfully.", "success")
+    else:
+        flash("No changes detected.", "warning")
+
+    return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+
+@tickets_bp.route("/tasks/<int:task_id>/work_state", methods=["POST"])
+@login_required
+def toggle_task_work_state(task_id):
+    task = TicketTask.query.get_or_404(task_id)
+    closed_redirect = _ensure_task_not_closed(task)
+    if closed_redirect:
+        return closed_redirect
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+    if task.assigned_engineer_id != current_user.id and current_user.role != UserRole.ADMIN:
+        abort(403)
+
+    action = (request.form.get("action") or "").strip()
+    user_name = current_user.full_name or current_user.username
+    if action == "start":
+        task.is_working = True
+        task.started_date = date.today()
+        if task.status in (TicketStatus.OPEN, TicketStatus.REOPENED, TicketStatus.ON_HOLD):
+            task.status = TicketStatus.IN_PROGRESS
+        parent_ticket = task.parent_ticket
+        if parent_ticket and parent_ticket.status in (TicketStatus.OPEN, TicketStatus.REOPENED, TicketStatus.ON_HOLD):
+            old_parent_status = parent_ticket.status
+            parent_ticket.status = TicketStatus.IN_PROGRESS
+            parent_ticket.kanban_bucket = None
+            _record_ticket_change(
+                parent_ticket,
+                f"Status changed from {_enum_label(old_parent_status)} to In Progress by {user_name}.",
+                is_internal=True,
+            )
+        _record_task_change(task, f"Work status changed to Working by {user_name}.")
+    elif action == "stop":
+        task.is_working = False
+        _record_task_change(task, f"Work status changed to Not Working by {user_name}.")
+    else:
+        flash("Invalid work action.", "danger")
+        return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+    db.session.commit()
+    _emit_ticket_changed(task, "updated")
+    if action == "start" and task.parent_ticket:
+        _emit_ticket_changed(task.parent_ticket, "updated")
+    flash("Work status updated.", "success")
+    return redirect(url_for("tickets.task_detail", task_id=task.id))
+
 
 @tickets_bp.route("/<int:ticket_id>/update-info", methods=["POST"])
 @login_required

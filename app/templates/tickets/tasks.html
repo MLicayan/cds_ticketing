@@ -1,5 +1,150 @@
 {% extends "base.html" %}
 {% block title %}Developer Tasks - Instrument Monitoring{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .task-toolbar-card .card-body {
+    padding: 14px;
+  }
+  .task-filter-toolbar {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .task-filter-search-group {
+    flex: 1;
+    min-width: 320px;
+  }
+  .task-filter-search-group .input-group-text,
+  .task-filter-search-group .form-control,
+  .task-filter-search-group .btn,
+  .task-filter-reset-btn {
+    height: 38px;
+  }
+  .task-filter-search:focus,
+  .task-filter-search-group .form-control:focus,
+  .task-filter-search-group .btn:focus,
+  .task-advanced-filter .form-control:focus,
+  .task-advanced-filter .btn:focus,
+  .task-advanced-filter .select2-search__field:focus,
+  .task-advanced-filter .select2-container--default.select2-container--focus .select2-selection--multiple {
+    outline: none !important;
+    box-shadow: none !important;
+  }
+  .task-advanced-filter label {
+    color: #3f4354;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+  }
+  .task-advanced-filter .select2-container {
+    width: 100% !important;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--multiple {
+    min-height: 38px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 3px 8px;
+    display: flex;
+    align-items: center;
+  }
+  .task-filter-reset-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .task-filter-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .task-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    background: #e9f2ff;
+    color: #0d6efd;
+    border: 1px solid #b8d4ff;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 1;
+    gap: 8px;
+  }
+  .task-filter-chip .remove-chip {
+    cursor: pointer;
+    font-weight: 700;
+    color: #0d6efd;
+  }
+  .task-filter-chip .remove-chip:hover {
+    color: #dc3545;
+  }
+  .task-advanced-filter .card-body {
+    background: #ffffff;
+    color: #3f4354;
+    border-radius: 0 0 8px 8px;
+  }
+  .task-advanced-filter .input-group-text {
+    height: 38px;
+    background: #ffffff;
+    border-color: #ced4da;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: 28px;
+    align-items: center;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--multiple .select2-selection__choice {
+    display: inline-flex !important;
+    align-items: center !important;
+    flex-direction: row-reverse !important;
+    background: #e9f2ff !important;
+    border: 1px solid #b8d4ff !important;
+    color: #0d6efd !important;
+    border-radius: 999px !important;
+    padding: 4px 10px !important;
+    margin: 0 !important;
+    line-height: 1.2 !important;
+    font-size: 12px !important;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+    position: static !important;
+    margin-left: 8px !important;
+    margin-right: 0 !important;
+    width: 16px !important;
+    height: 16px !important;
+    border-radius: 50% !important;
+    border: none !important;
+    background: #dbeafe !important;
+    color: #2563eb !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    line-height: 16px !important;
+    text-align: center !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer;
+  }
+  @media (max-width: 768px) {
+    .task-filter-toolbar {
+      flex-direction: column;
+    }
+    .task-filter-search-group,
+    .task-filter-reset-btn {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
 {% block page_header %}
 <div class="row mb-2">
   <div class="col-sm-6">
@@ -14,9 +159,118 @@
 {% endblock %}
 
 {% block content %}
+<div class="card mb-3 task-toolbar-card">
+  <div class="card-body">
+    <form method="get" id="task-filter-form">
+      <div class="task-filter-toolbar">
+        <div class="task-filter-search-group">
+          <div class="input-group">
+            <div class="input-group-prepend">
+              <span class="input-group-text bg-white">
+                <i class="fas fa-search text-muted"></i>
+              </span>
+            </div>
+            <input type="text" id="task-search-input" class="form-control task-filter-search" placeholder="Search tasks...">
+            <div class="input-group-append">
+              <button
+                type="button"
+                class="btn btn-default"
+                data-toggle="collapse"
+                data-target="#advancedTaskFilterPanel"
+                aria-expanded="false"
+                aria-controls="advancedTaskFilterPanel"
+                title="Filters">
+                <i class="fas fa-sliders-h"></i>
+              </button>
+            </div>
+          </div>
+          <div id="active-task-filter-chips" class="task-filter-chips"></div>
+        </div>
+
+        <a href="{{ url_for('tickets.developer_tasks') }}" class="btn btn-secondary task-filter-reset-btn">
+          <i class="fas fa-undo mr-1"></i> Reset
+        </a>
+      </div>
+
+      <div class="collapse mt-3 task-advanced-filter" id="advancedTaskFilterPanel">
+        <div class="card mb-0">
+          <div class="card-header bg-white">
+            <strong>Advanced Filters</strong>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-4 mb-2">
+                <label for="task_client_id">Client</label>
+                <select id="task_client_id" name="client_id" class="form-control select2" multiple>
+                  {% for c in clients %}
+                  <option value="{{ c.id }}" {% if selected_filters.client_ids and c.id|string in selected_filters.client_ids %}selected{% endif %}>
+                    {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              {% if current_user.role.value != 'engineer' %}
+              <div class="col-md-4 mb-2">
+                <label for="task_assignee_id">Assigned IT</label>
+                <select id="task_assignee_id" name="assignee_id" class="form-control select2" multiple>
+                  {% for user in assignees %}
+                  <option value="{{ user.id }}" {% if selected_filters.assignee_ids and user.id|string in selected_filters.assignee_ids %}selected{% endif %}>
+                    {{ user.full_name or user.username }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              {% endif %}
+
+              <div class="col-md-4 mb-2">
+                <label for="task_priority">Priority</label>
+                <select id="task_priority" name="priority" class="form-control select2" multiple>
+                  {% for p, label in [('NOT_SET', 'Not Set'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')] %}
+                  <option value="{{ p }}" {% if selected_filters.priority and p in selected_filters.priority %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="col-md-4 mb-2">
+                <label for="task_status">Status</label>
+                <select id="task_status" name="status" class="form-control select2" multiple>
+                  {% for s, label in status_labels.items() %}
+                  <option value="{{ s.value }}" {% if selected_filters.status and s.value in selected_filters.status %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="col-6 col-md-4 mb-2">
+                <label for="task_date_from">Date From</label>
+                <div class="input-group">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="far fa-calendar-alt text-muted"></i></span>
+                  </div>
+                  <input type="date" id="task_date_from" name="date_from" class="form-control" value="{{ selected_filters.date_from or '' }}">
+                </div>
+              </div>
+
+              <div class="col-6 col-md-4 mb-2">
+                <label for="task_date_to">Date To</label>
+                <div class="input-group">
+                  <div class="input-group-prepend">
+                    <span class="input-group-text"><i class="far fa-calendar-alt text-muted"></i></span>
+                  </div>
+                  <input type="date" id="task_date_to" name="date_to" class="form-control" value="{{ selected_filters.date_to or '' }}">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-body table-responsive p-0">
-    <table class="table table-hover text-nowrap mb-0">
+    <table class="table table-hover text-nowrap mb-0" id="developer-tasks-table">
       <thead>
         <tr>
           <th>Task Ticket</th>
@@ -31,9 +285,8 @@
       </thead>
       <tbody>
         {% for task in tasks %}
-          {% set parent_id = (task.category or '').replace('task:', '')|int %}
-          {% set parent = parents.get(parent_id) %}
-          <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=task.id) }}'" style="cursor:pointer;">
+          {% set parent = parents.get(task.ticket_id) %}
+          <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=task.id) }}'" style="cursor:pointer;">
             <td>{{ task.ticket_no }}</td>
             <td>{{ task.subject }}</td>
             <td>
@@ -54,13 +307,166 @@
             <td>{{ task.client.name if task.client else 'N/A' }}</td>
             <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '' }}</td>
           </tr>
-        {% else %}
-          <tr>
-            <td colspan="8" class="text-center text-muted">No developer tasks found.</td>
-          </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+(function() {
+  var table = null;
+  var autoSubmitTimer = null;
+
+  function autoSubmitFilters() {
+    clearTimeout(autoSubmitTimer);
+    autoSubmitTimer = setTimeout(function() {
+      var form = document.getElementById('task-filter-form');
+      if (form) form.submit();
+    }, 250);
+  }
+
+  if (window.$ && $.fn.DataTable && $('#developer-tasks-table').length) {
+    table = $('#developer-tasks-table').DataTable({
+      pageLength: 10,
+      order: [[7, 'desc']],
+      searching: true,
+      language: {
+        emptyTable: 'No developer tasks found.'
+      }
+    });
+    $('#developer-tasks-table_filter').hide();
+  }
+
+  if (window.$ && $.fn.select2) {
+    $('#task_client_id').select2({ width: '100%', placeholder: 'Select client(s)' });
+    $('#task_assignee_id').select2({ width: '100%', placeholder: 'Select IT user(s)' });
+    $('#task_priority').select2({ width: '100%', placeholder: 'Select priority' });
+    $('#task_status').select2({ width: '100%', placeholder: 'Select status' });
+  }
+
+  var searchInput = document.getElementById('task-search-input');
+  if (searchInput && table) {
+    searchInput.addEventListener('input', function() {
+      table.search(searchInput.value || '').draw();
+    });
+  }
+
+  function addChip(container, label, value, displayText, targetId) {
+    if (!value) return;
+    var chip = document.createElement('span');
+    chip.className = 'task-filter-chip';
+    chip.innerHTML =
+      '<span>' + label + ': ' + displayText + '</span>' +
+      '<span class="remove-chip" data-target="' + targetId + '" data-value="' + value + '">&times;</span>';
+    container.appendChild(chip);
+  }
+
+  function updateTaskFilterChips() {
+    var chips = document.getElementById('active-task-filter-chips');
+    if (!chips) return;
+    chips.innerHTML = '';
+
+    [
+      { id: 'task_client_id', label: 'Client' },
+      { id: 'task_assignee_id', label: 'Assigned IT' },
+      { id: 'task_priority', label: 'Priority' },
+      { id: 'task_status', label: 'Status' }
+    ].forEach(function(config) {
+      var picker = document.getElementById(config.id);
+      if (!picker) return;
+      Array.from(picker.selectedOptions).forEach(function(opt) {
+        addChip(chips, config.label, opt.value, opt.text, config.id);
+      });
+    });
+
+    var dateFrom = document.getElementById('task_date_from');
+    var dateTo = document.getElementById('task_date_to');
+    if (dateFrom && dateFrom.value) {
+      addChip(chips, 'From', dateFrom.value, dateFrom.value, 'task_date_from');
+    }
+    if (dateTo && dateTo.value) {
+      addChip(chips, 'To', dateTo.value, dateTo.value, 'task_date_to');
+    }
+
+    chips.querySelectorAll('.remove-chip').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var targetId = btn.getAttribute('data-target');
+        var value = btn.getAttribute('data-value');
+        var target = document.getElementById(targetId);
+        if (!target) return;
+
+        if (target.tagName === 'SELECT') {
+          Array.from(target.options).forEach(function(opt) {
+            if (opt.value === value) {
+              opt.selected = false;
+            }
+          });
+          if (window.$ && $(target).hasClass('select2-hidden-accessible')) {
+            $(target).trigger('change');
+          } else {
+            updateTaskFilterChips();
+            autoSubmitFilters();
+          }
+        } else {
+          target.value = '';
+          updateTaskFilterChips();
+          autoSubmitFilters();
+        }
+      });
+    });
+  }
+
+  ['task_client_id', 'task_assignee_id', 'task_priority', 'task_status'].forEach(function(id) {
+    var picker = document.getElementById(id);
+    if (!picker) return;
+    if (window.$) {
+      $('#' + id).on('change', function() {
+        updateTaskFilterChips();
+        autoSubmitFilters();
+      });
+    } else {
+      picker.addEventListener('change', function() {
+        updateTaskFilterChips();
+        autoSubmitFilters();
+      });
+    }
+  });
+
+  ['task_date_from', 'task_date_to'].forEach(function(id) {
+    var input = document.getElementById(id);
+    if (!input) return;
+    input.addEventListener('change', function() {
+      updateTaskFilterChips();
+      autoSubmitFilters();
+    });
+  });
+
+  var advancedFilterPanel = document.getElementById('advancedTaskFilterPanel');
+  var filterToggleBtn = document.querySelector('[data-target="#advancedTaskFilterPanel"]');
+  if (advancedFilterPanel) {
+    if (localStorage.getItem('developerTasksFilterPanelOpen') === '1') {
+      advancedFilterPanel.classList.add('show');
+      if (filterToggleBtn) {
+        filterToggleBtn.setAttribute('aria-expanded', 'true');
+      }
+    }
+
+    if (window.$) {
+      $('#advancedTaskFilterPanel').on('shown.bs.collapse', function() {
+        localStorage.setItem('developerTasksFilterPanelOpen', '1');
+      });
+      $('#advancedTaskFilterPanel').on('hidden.bs.collapse', function() {
+        localStorage.setItem('developerTasksFilterPanelOpen', '0');
+      });
+    }
+  }
+
+  updateTaskFilterChips();
+})();
+</script>
 {% endblock %}
