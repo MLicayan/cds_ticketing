@@ -509,10 +509,9 @@ def instruments_delete(instrument_id):
 @admin_bp.route("/engineers")
 @login_required
 def engineers_index():
-    q = (request.args.get("q") or "").strip()
     engineers = User.query.filter_by(role=UserRole.ENGINEER).order_by(User.full_name.asc()).all()
     clients = Client.query.order_by(Client.name.asc()).all()
-    return render_template("admin/engineers/index.html", engineers=engineers, clients=clients, q=q)
+    return render_template("admin/engineers/index.html", engineers=engineers, clients=clients)
 
 
 @admin_bp.route("/engineers/new", methods=["GET", "POST"])
@@ -803,7 +802,6 @@ def admins_delete(user_id):
 @login_required
 def system_setup():
     users = User.query.order_by(User.role.asc(), User.full_name.asc(), User.username.asc()).all()
-    clients = Client.query.order_by(Client.name.asc()).all()
 
     if request.method == "POST":
         for user in users:
@@ -815,7 +813,6 @@ def system_setup():
     return render_template(
         "admin/system_setup.html",
         users=users,
-        clients=clients,
         nav_access_options=NAV_ACCESS_OPTIONS,
     )
 
