@@ -414,6 +414,8 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
 
     commenter_is_client = bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES)
     viewer_is_client = user.role in CLIENT_SCOPED_ROLES
+    if _is_support_user(user):
+        return True
     if commenter_is_client == viewer_is_client:
         return False
 
@@ -422,8 +424,6 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
         return ticket.client_id == user.client_id and ticket.reported_by_id == user.id
     if user.role == UserRole.CLIENT_ADMIN:
         return ticket.client_id == user.client_id and ticket.reported_by_id == user.id
-    if _is_support_user(user):
-        return True
     if user.role == UserRole.ENGINEER:
         return ticket.assigned_engineer_id == user.id
     if user.role == UserRole.SALES:
@@ -436,16 +436,11 @@ def _notification_recipients_for_comment(ticket: Ticket, comment: TicketComment)
         return []
 
     user_ids = set()
-    commenter_is_client = comment.user.role in CLIENT_SCOPED_ROLES
-    if commenter_is_client:
-        support_users = User.query.filter(
-            User.role == UserRole.ENGINEER,
-            db.func.lower(User.user_type) == "support",
-        ).all()
-        user_ids.update(user.id for user in support_users)
-    else:
-        if ticket.reported_by and ticket.reported_by.role in CLIENT_SCOPED_ROLES:
-            user_ids.add(ticket.reported_by_id)
+    support_users = User.query.filter(
+        User.role == UserRole.ENGINEER,
+        db.func.lower(User.user_type) == "support",
+    ).all()
+    user_ids.update(user.id for user in support_users)
 
     user_ids.discard(comment.user_id)
     if not user_ids:
@@ -469,7 +464,9 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
         .filter(TicketComment.is_internal.is_(False), TicketComment.user_id != user.id)
     )
 
-    if user.role in CLIENT_SCOPED_ROLES:
+    if _is_support_user(user):
+        pass
+    elif user.role in CLIENT_SCOPED_ROLES:
         query = query.filter(~User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
         query = query.filter(Ticket.client_id == user.client_id, Ticket.reported_by_id == user.id)
     else:
@@ -522,13 +519,20 @@ def _emit_ticket_comment_notification(ticket: Ticket, comment: TicketComment) ->
 
 
 def _emit_ticket_comment_notification_count(comment: TicketComment) -> None:
-    if not _is_ticket_comment_notification_for_user(comment, current_user):
-        return
-    socketio.emit(
-        "ticket_comment_notification_count",
-        {"count": _ticket_comment_notification_count_for_user(current_user)},
-        room=f"user_notifications:{current_user.id}",
-    )
+    recipients = {}
+
+    for user in _notification_recipients_for_comment(comment.ticket, comment):
+        recipients[user.id] = user
+
+    if _is_ticket_comment_notification_for_user(comment, current_user):
+        recipients[current_user.id] = current_user
+
+    for recipient in recipients.values():
+        socketio.emit(
+            "ticket_comment_notification_count",
+            {"count": _ticket_comment_notification_count_for_user(recipient)},
+            room=f"user_notifications:{recipient.id}",
+        )
 
 
 def _record_ticket_change(ticket: Ticket, message: str, is_internal: bool = False) -> None:
@@ -615,7 +619,9 @@ def _apply_my_ticket_scope(query):
 
 def _apply_my_task_scope(query):
     user_type = (current_user.user_type or "").strip().lower()
-    if current_user.role == UserRole.ENGINEER:
+    if _is_support_user(current_user):
+        return query
+    if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
         return query.filter(TicketTask.assigned_engineer_id == current_user.id)
     if current_user.role == UserRole.ADMIN or user_type == "administrator":
         return query.filter(TicketTask.assigned_engineer_id == current_user.id)
@@ -654,6 +660,7 @@ def _render_ticket_index(my_tickets_only=False):
 
     instrument_ids = [iid.strip() for iid in request.args.getlist("instrument_id") if iid.strip()]
     app_ids = [aid.strip() for aid in request.args.getlist("app_id") if aid.strip()]
+    ticket_no_raw = (request.args.get("ticket_no") or "").strip()
     # Assigned Engineer/IT filter hidden on the Tickets page.
     assignee_id = ""
     reported_by_ids = [rid.strip() for rid in request.args.getlist("reported_by_id") if rid.strip()]
@@ -724,6 +731,9 @@ def _render_ticket_index(my_tickets_only=False):
             query = query.filter(list_model.app_id.in_([int(aid) for aid in app_ids]))
         except ValueError:
             pass
+
+    if ticket_no_raw:
+        query = query.filter(list_model.ticket_no.ilike(f"%{ticket_no_raw}%"))
 
     # Assigned Engineer/IT filter hidden on the Tickets page.
     # if assignee_id:
@@ -803,6 +813,7 @@ def _render_ticket_index(my_tickets_only=False):
             "client_ids": client_ids,
             "instrument_ids": instrument_ids,
             "app_ids": app_ids,
+            "ticket_no": ticket_no_raw,
             "assignee_id": assignee_id,
             "reported_by_ids": reported_by_ids,
             "priority": [] if using_default_open_not_set_scope else priority_values,
@@ -1476,12 +1487,7 @@ def developer_tasks():
     ).order_by(User.full_name.asc(), User.username.asc()).all()
 
     query = TicketTask.query
-    current_user_type = (current_user.user_type or "").strip().lower()
-    if (
-        current_user.role == UserRole.ENGINEER
-        or current_user.role == UserRole.ADMIN
-        or current_user_type == "administrator"
-    ):
+    if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
         query = query.filter(TicketTask.assigned_engineer_id == current_user.id)
 
     client_ids = [cid.strip() for cid in request.args.getlist("client_id") if cid.strip()]
@@ -1497,7 +1503,7 @@ def developer_tasks():
         except ValueError:
             pass
 
-    if assignee_ids and current_user.role != UserRole.ENGINEER:
+    if assignee_ids and (current_user.role != UserRole.ENGINEER or _is_support_user(current_user)):
         try:
             query = query.filter(TicketTask.assigned_engineer_id.in_([int(aid) for aid in assignee_ids]))
         except ValueError:
@@ -1832,7 +1838,11 @@ def task_detail(task_id):
     parent_ticket = task.parent_ticket
     if current_user.role in READ_ONLY_ROLES:
         abort(403)
-    if current_user.role == UserRole.ENGINEER and task.assigned_engineer_id != current_user.id:
+    if (
+        current_user.role == UserRole.ENGINEER
+        and not _is_support_user(current_user)
+        and task.assigned_engineer_id != current_user.id
+    ):
         abort(403)
 
     if request.method == "POST":

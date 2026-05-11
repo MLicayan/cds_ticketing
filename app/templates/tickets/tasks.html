@@ -278,6 +278,7 @@
           <th>Parent Ticket</th>
           <th>Assigned IT</th>
           <th>Status</th>
+          <th>Work Status</th>
           <th>Priority</th>
           <th>Client</th>
           <th>Created</th>
@@ -298,6 +299,11 @@
             </td>
             <td>{{ task.assigned_engineer.full_name or task.assigned_engineer.username if task.assigned_engineer else 'Unassigned' }}</td>
             <td>{{ status_labels.get(task.status, task.status.value.replace('_', ' ')|title) }}</td>
+            <td>
+              <span class="badge badge-{{ 'success' if task.is_working else 'secondary' }}">
+                {{ 'Working' if task.is_working else 'Not Working' }}
+              </span>
+            </td>
             <td>
               {% set task_priority_value = task.priority.value if task.priority else 'NOT_SET' %}
               <span class="badge badge-{{ 'danger' if task_priority_value == 'critical' else 'warning' if task_priority_value == 'high' else 'info' if task_priority_value == 'medium' else 'secondary' }}">
@@ -333,7 +339,7 @@
   if (window.$ && $.fn.DataTable && $('#developer-tasks-table').length) {
     table = $('#developer-tasks-table').DataTable({
       pageLength: 10,
-      order: [[7, 'desc']],
+      order: [[8, 'desc']],
       searching: true,
       language: {
         emptyTable: 'No developer tasks found.'
