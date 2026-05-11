@@ -10,6 +10,8 @@
 
 {% block extra_css %}
 {{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@ttskch/select2-bootstrap4-theme@1.5.2/dist/select2-bootstrap4.min.css">
 <style>
   .setup-filter-toolbar {
     display: flex;
@@ -38,6 +40,16 @@
     text-transform: uppercase;
     color: #6c757d;
   }
+  .setup-filter-panel .select2-container { width: 100% !important; }
+  .setup-filter-panel .select2-container--bootstrap4 .select2-selection--single {
+    height: calc(1.8125rem + 2px);
+    min-height: calc(1.8125rem + 2px);
+    font-size: .875rem;
+    overflow: hidden;
+  }
+  .setup-filter-panel .select2-container--bootstrap4 .select2-selection__clear {
+    display: none;
+  }
 </style>
 {% endblock %}
 
@@ -64,7 +76,7 @@
       </div>
       <div class="collapse mt-3 setup-filter-panel" id="systemSetupFilters">
         <div class="form-row">
-          <div class="form-group col-md-4 mb-2">
+          <div class="form-group col-md-3 mb-2">
             <label for="system-setup-role">Role</label>
             <select id="system-setup-role" class="form-control form-control-sm">
               <option value="">All roles</option>
@@ -72,9 +84,20 @@
               <option value="engineer">Engineer</option>
               <option value="sales">Sales</option>
               <option value="client">Client</option>
+              <option value="client_admin">Client Admin</option>
             </select>
           </div>
-          <div class="form-group col-md-4 mb-2">
+          <div class="form-group col-md-3 mb-2">
+            <label for="system-setup-client">Client</label>
+            <select id="system-setup-client" class="form-control form-control-sm select2" data-single-select="true">
+              <option value="">All clients</option>
+              <option value="__none__">No client</option>
+              {% for client in clients %}
+                <option value="{{ client.id }}">{{ client.name }}{% if client.client_code %} - {{ client.client_code }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group col-md-3 mb-2">
             <label for="system-setup-type">Type</label>
             <select id="system-setup-type" class="form-control form-control-sm">
               <option value="">All types</option>
@@ -84,7 +107,7 @@
               <option value="sales">Sales</option>
             </select>
           </div>
-          <div class="form-group col-md-4 mb-2">
+          <div class="form-group col-md-3 mb-2">
             <label for="system-setup-access">Navigation Access</label>
             <select id="system-setup-access" class="form-control form-control-sm">
               <option value="">Any access</option>
@@ -102,6 +125,7 @@
           <tr>
             <th>User</th>
             <th>Role</th>
+            <th>Client</th>
             <th>Type</th>
             {% for key, label in nav_access_options %}
               <th class="text-center">{{ label }}</th>
@@ -115,6 +139,8 @@
               class="system-setup-row"
               data-name="{{ (user.full_name or user.username)|lower }} {{ user.username|lower }}"
               data-role="{{ user.role.value|lower if user.role else '' }}"
+              data-client-id="{{ user.client_id if user.client_id else '__none__' }}"
+              data-client="{{ (user.client.name if user.client else 'no client')|lower }}"
               data-type="{{ (user.user_type or '')|lower }}"
               data-access="{{ selected_nav|join(' ')|lower }}"
               data-access-labels="{% for key, label in nav_access_options %}{% if key in selected_nav %}{{ label|lower }} {% endif %}{% endfor %}"
@@ -124,6 +150,7 @@
                 <br><small class="text-muted">{{ user.username }}</small>
               </td>
               <td>{{ user.role.value|capitalize if user.role else '' }}</td>
+              <td>{{ user.client.name if user.client else '-' }}</td>
               <td>{{ user.user_type or '' }}</td>
               {% for key, label in nav_access_options %}
                 <td class="text-center">
@@ -140,11 +167,11 @@
             </tr>
           {% else %}
             <tr>
-              <td colspan="{{ 3 + nav_access_options|length }}" class="text-center text-muted">No users found.</td>
+              <td colspan="{{ 4 + nav_access_options|length }}" class="text-center text-muted">No users found.</td>
             </tr>
           {% endfor %}
           <tr id="system-setup-no-results" class="d-none">
-            <td colspan="{{ 3 + nav_access_options|length }}" class="text-center text-muted">No users match the current filter.</td>
+            <td colspan="{{ 4 + nav_access_options|length }}" class="text-center text-muted">No users match the current filter.</td>
           </tr>
         </tbody>
       </table>
@@ -158,10 +185,12 @@
 
 {% block extra_js %}
 {{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 (function() {
   var searchInput = document.getElementById('system-setup-search');
   var roleFilter = document.getElementById('system-setup-role');
+  var clientFilter = document.getElementById('system-setup-client');
   var typeFilter = document.getElementById('system-setup-type');
   var accessFilter = document.getElementById('system-setup-access');
   var checkAll = document.getElementById('system-setup-check-all');
@@ -176,6 +205,7 @@
   function applyFilters() {
     var search = normalize(searchInput ? searchInput.value : '');
     var role = normalize(roleFilter ? roleFilter.value : '');
+    var client = normalize(clientFilter ? clientFilter.value : '');
     var type = normalize(typeFilter ? typeFilter.value : '');
     var access = normalize(accessFilter ? accessFilter.value : '');
     var visibleCount = 0;
@@ -184,6 +214,8 @@
       var haystack = [
         row.getAttribute('data-name'),
         row.getAttribute('data-role'),
+        row.getAttribute('data-client'),
+        row.getAttribute('data-client-id'),
         row.getAttribute('data-type'),
         row.getAttribute('data-access'),
         row.getAttribute('data-access-labels')
@@ -191,10 +223,11 @@
 
       var matchesSearch = !search || haystack.indexOf(search) >= 0;
       var matchesRole = !role || row.getAttribute('data-role') === role;
+      var matchesClient = !client || row.getAttribute('data-client-id') === client;
       var matchesType = !type || row.getAttribute('data-type') === type;
       var accessKeys = (row.getAttribute('data-access') || '').split(' ');
       var matchesAccess = !access || accessKeys.indexOf(access) >= 0;
-      var visible = matchesSearch && matchesRole && matchesType && matchesAccess;
+      var visible = matchesSearch && matchesRole && matchesClient && matchesType && matchesAccess;
 
       row.classList.toggle('d-none', !visible);
       if (visible) visibleCount += 1;
@@ -204,6 +237,18 @@
       noResults.classList.toggle('d-none', visibleCount !== 0);
     }
     updateCheckAllState();
+  }
+
+  if (window.$ && $.fn.select2 && clientFilter) {
+    $('#system-setup-client').select2({
+      theme: 'bootstrap4',
+      width: '100%',
+      placeholder: 'All clients',
+      allowClear: false
+    }).on('change', applyFilters).on('select2:open', function() {
+      var field = document.querySelector('.select2-container--open .select2-search__field');
+      if (field) field.focus();
+    });
   }
 
   function refreshRowAccess(row) {
@@ -250,7 +295,7 @@
     applyFilters();
   }
 
-  [searchInput, roleFilter, typeFilter, accessFilter].forEach(function(el) {
+  [searchInput, roleFilter, clientFilter, typeFilter, accessFilter].forEach(function(el) {
     if (!el) return;
     el.addEventListener('input', applyFilters);
     el.addEventListener('change', applyFilters);
@@ -260,6 +305,12 @@
     clearBtn.addEventListener('click', function() {
       if (searchInput) searchInput.value = '';
       if (roleFilter) roleFilter.value = '';
+      if (clientFilter) {
+        clientFilter.value = '';
+        if (window.$ && $(clientFilter).hasClass('select2-hidden-accessible')) {
+          $(clientFilter).trigger('change');
+        }
+      }
       if (typeFilter) typeFilter.value = '';
       if (accessFilter) accessFilter.value = '';
       applyFilters();

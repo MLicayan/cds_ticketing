@@ -13,6 +13,28 @@
 </div>
 {% endblock %}
 {% block content %}
+<div class="card card-outline card-secondary mb-3">
+  <div class="card-header d-flex">
+    <button type="button" class="btn btn-tool left" data-card-widget="collapse" title="Toggle filters">
+      <i class="fas fa-minus"></i>
+    </button>
+    <h3 class="card-title mb-0 left">Filters</h3>
+  </div>
+  <div class="card-body">
+    <form method="get" id="engineer-filter-form" onsubmit="return false;">
+      <div class="form-group mb-0">
+        <label for="q">Search</label>
+        <div class="input-group">
+          <input type="text" name="q" id="q" class="form-control" placeholder="Username, name, client, or type" value="{{ q }}" autocomplete="off">
+          <div class="input-group-append">
+            <a href="{{ url_for('admin.engineers_index') }}" class="btn btn-secondary" id="engineer-filter-reset">Reset</a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div class="card">
   <div class="card-body table-responsive p-0">
     <table class="table table-hover text-nowrap">
@@ -28,7 +50,7 @@
       </thead>
       <tbody>
         {% for e in engineers %}
-        <tr>
+        <tr class="engineer-row" data-search="{{ (e.username ~ ' ' ~ (e.full_name or '') ~ ' ' ~ (e.client.name if e.client else '') ~ ' ' ~ (e.client.client_code if e.client else '') ~ ' ' ~ (e.user_type or 'Engineer') ~ ' ' ~ (e.contact_number or ''))|lower }}">
           <td>{{ loop.index }}</td>
           <td>{{ e.username }}</td>
           <td>{{ e.full_name }}</td>
@@ -47,11 +69,67 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="5" class="text-center text-muted">No engineers found.</td>
+          <td colspan="6" class="text-center text-muted">No engineers found.</td>
         </tr>
         {% endfor %}
+        <tr id="engineer-no-results" class="d-none">
+          <td colspan="6" class="text-center text-muted">No engineers match the current search.</td>
+        </tr>
       </tbody>
     </table>
   </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+(function() {
+  var searchInput = document.getElementById('q');
+  var resetBtn = document.getElementById('engineer-filter-reset');
+  var rows = Array.from(document.querySelectorAll('.engineer-row'));
+  var noResults = document.getElementById('engineer-no-results');
+  var searchTimer = null;
+
+  function normalize(value) {
+    return (value || '').toString().toLowerCase().trim();
+  }
+
+  function applyEngineerSearch() {
+    var q = normalize(searchInput ? searchInput.value : '');
+    var visibleCount = 0;
+
+    rows.forEach(function(row) {
+      var visible = !q || (row.getAttribute('data-search') || '').indexOf(q) >= 0;
+      row.classList.toggle('d-none', !visible);
+      if (visible) visibleCount += 1;
+    });
+
+    if (noResults) {
+      noResults.classList.toggle('d-none', visibleCount !== 0);
+    }
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('input', function() {
+      window.clearTimeout(searchTimer);
+      searchTimer = window.setTimeout(applyEngineerSearch, 150);
+    });
+    applyEngineerSearch();
+  }
+
+  if (resetBtn) {
+    resetBtn.addEventListener('click', function(event) {
+      event.preventDefault();
+      if (searchInput) {
+        searchInput.value = '';
+      }
+      applyEngineerSearch();
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', resetBtn.getAttribute('href'));
+      }
+    });
+  }
+})();
+</script>
 {% endblock %}
