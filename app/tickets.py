@@ -173,7 +173,7 @@ def _scoped_ticket_query():
     query = _exclude_task_tickets(Ticket.query)
     if current_user.role in CLIENT_SCOPED_ROLES:
         query = _apply_client_ticket_scope(query)
-    elif current_user.role == UserRole.ENGINEER:
+    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
         query = query.filter(Ticket.assigned_engineer_id == current_user.id)
     return query
 
@@ -383,6 +383,14 @@ def _task_comment_reaction_payload(comment: TicketTaskComment) -> dict:
     }
 
 
+def _is_support_user(user: User) -> bool:
+    return bool(
+        user
+        and user.role == UserRole.ENGINEER
+        and (user.user_type or "").strip().lower() == "support"
+    )
+
+
 def _emit_comment_reaction(comment: TicketComment) -> None:
     socketio.emit(
         "ticket_comment_reacted",
@@ -414,11 +422,13 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
         return ticket.client_id == user.client_id and ticket.reported_by_id == user.id
     if user.role == UserRole.CLIENT_ADMIN:
         return ticket.client_id == user.client_id and ticket.reported_by_id == user.id
+    if _is_support_user(user):
+        return True
     if user.role == UserRole.ENGINEER:
         return ticket.assigned_engineer_id == user.id
     if user.role == UserRole.SALES:
         return bool(ticket.client and ticket.client.assigned_sales_id == user.id)
-    return user.role == UserRole.ADMIN
+    return False
 
 
 def _notification_recipients_for_comment(ticket: Ticket, comment: TicketComment):
@@ -428,12 +438,11 @@ def _notification_recipients_for_comment(ticket: Ticket, comment: TicketComment)
     user_ids = set()
     commenter_is_client = comment.user.role in CLIENT_SCOPED_ROLES
     if commenter_is_client:
-        if ticket.assigned_engineer_id:
-            user_ids.add(ticket.assigned_engineer_id)
-        if ticket.client and ticket.client.assigned_sales_id:
-            user_ids.add(ticket.client.assigned_sales_id)
-        admins = User.query.filter(User.role == UserRole.ADMIN).all()
-        user_ids.update(admin.id for admin in admins)
+        support_users = User.query.filter(
+            User.role == UserRole.ENGINEER,
+            db.func.lower(User.user_type) == "support",
+        ).all()
+        user_ids.update(user.id for user in support_users)
     else:
         if ticket.reported_by and ticket.reported_by.role in CLIENT_SCOPED_ROLES:
             user_ids.add(ticket.reported_by_id)
@@ -466,10 +475,14 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
     else:
         query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
 
-    if user.role == UserRole.ENGINEER:
+    if _is_support_user(user):
+        pass
+    elif user.role == UserRole.ENGINEER:
         query = query.filter(Ticket.assigned_engineer_id == user.id)
     elif user.role == UserRole.SALES:
         query = query.join(Client, Ticket.client_id == Client.id).filter(Client.assigned_sales_id == user.id)
+    elif user.role == UserRole.ADMIN:
+        return 0
 
     total = 0
     for comment in query.order_by(TicketComment.created_at.desc()).limit(100).all():
@@ -601,10 +614,11 @@ def _apply_my_ticket_scope(query):
 
 
 def _apply_my_task_scope(query):
+    user_type = (current_user.user_type or "").strip().lower()
     if current_user.role == UserRole.ENGINEER:
         return query.filter(TicketTask.assigned_engineer_id == current_user.id)
-    if current_user.role == UserRole.ADMIN:
-        return query
+    if current_user.role == UserRole.ADMIN or user_type == "administrator":
+        return query.filter(TicketTask.assigned_engineer_id == current_user.id)
     return query.filter(
         db.or_(
             TicketTask.reported_by_id == current_user.id,
@@ -676,7 +690,7 @@ def _render_ticket_index(my_tickets_only=False):
         reporters = reporters_query.order_by(User.full_name.asc(), User.username.asc()).all()
         clients = [c for c in clients if c.id == current_user.client_id]
 
-    elif current_user.role == UserRole.ENGINEER and (current_user.user_type or "").lower() != "it":
+    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user) and (current_user.user_type or "").lower() != "it":
         assignee_id = ""
         query = query.filter(Ticket.assigned_engineer_id == current_user.id)
     
@@ -864,7 +878,7 @@ def kanban():
     if current_user.role in CLIENT_SCOPED_ROLES:
         base_query = _apply_client_ticket_scope(base_query)
         clients = [c for c in clients if c.id == current_user.client_id]
-    elif current_user.role == UserRole.ENGINEER:
+    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
         base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
         filter_by = "my"
         filter_value = ""
@@ -1045,7 +1059,7 @@ def gantt_view():
         query = _exclude_task_tickets(query)
     if current_user.role in CLIENT_SCOPED_ROLES:
         query = _apply_client_ticket_scope(query)
-    elif current_user.role == UserRole.ENGINEER:
+    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
         query = query.filter(Ticket.assigned_engineer_id == current_user.id)
 
     tickets = query.order_by(Ticket.created_at.asc()).all()
@@ -1182,7 +1196,7 @@ def calendar_view():
     if current_user.role in CLIENT_SCOPED_ROLES:
         base_query = _apply_client_ticket_scope(base_query)
         clients = [c for c in clients if c.id == current_user.client_id]
-    elif current_user.role == UserRole.ENGINEER:
+    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
         base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
         filter_by = "my"
         filter_value = ""
@@ -1462,7 +1476,12 @@ def developer_tasks():
     ).order_by(User.full_name.asc(), User.username.asc()).all()
 
     query = TicketTask.query
-    if current_user.role == UserRole.ENGINEER:
+    current_user_type = (current_user.user_type or "").strip().lower()
+    if (
+        current_user.role == UserRole.ENGINEER
+        or current_user.role == UserRole.ADMIN
+        or current_user_type == "administrator"
+    ):
         query = query.filter(TicketTask.assigned_engineer_id == current_user.id)
 
     client_ids = [cid.strip() for cid in request.args.getlist("client_id") if cid.strip()]
@@ -2077,7 +2096,11 @@ def create_tasks(ticket_id):
     closed_redirect = _ensure_ticket_not_closed(ticket)
     if closed_redirect:
         return closed_redirect
-    if current_user.role != UserRole.ADMIN:
+    can_create_tasks = (
+        current_user.role == UserRole.ADMIN
+        or (current_user.role == UserRole.ENGINEER and (current_user.user_type or "").strip().lower() == "support")
+    )
+    if not can_create_tasks:
         abort(403)
     if _is_task_ticket(ticket):
         flash("Tasks cannot be created from another task.", "warning")

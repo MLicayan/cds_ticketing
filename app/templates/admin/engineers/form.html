@@ -25,6 +25,7 @@
           {% set current_type = (engineer.user_type if engineer and engineer.user_type else 'Engineer') %}
           <option value="Engineer" {% if current_type == 'Engineer' %}selected{% endif %}>Engineer</option>
           <option value="IT" {% if current_type == 'IT' %}selected{% endif %}>IT</option>
+          <option value="Support" {% if current_type == 'Support' %}selected{% endif %}>Support</option>
         </select>
       </div>
       <div class="form-group">

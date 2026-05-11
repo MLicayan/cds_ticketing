@@ -7,7 +7,7 @@
   </div>
   <div class="col-sm-6 text-right">
     {% if current_user.role.value not in ['client', 'client_admin', 'sales'] %}
-      {% if current_user.role.value == 'admin' and not is_task_ticket and ticket.status not in [TicketStatus.RESOLVED, TicketStatus.CLOSED] %}
+      {% if (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) and not is_task_ticket and ticket.status not in [TicketStatus.RESOLVED, TicketStatus.CLOSED] %}
         <button class="btn btn-outline-primary mr-2" type="button" data-toggle="modal" data-target="#createTaskModal">
           <i class="fas fa-tasks"></i> Create Task
         </button>
@@ -1090,7 +1090,7 @@
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
-      {% if current_user.role.value == 'admin' %}
+      {% if current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support') %}
       <form method="post" action="{{ url_for('tickets.create_tasks', ticket_id=ticket.id) }}">
         <div class="modal-body">
           <div class="alert alert-info py-2 px-3">

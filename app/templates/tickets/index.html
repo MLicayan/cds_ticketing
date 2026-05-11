@@ -1083,6 +1083,32 @@ $(function() {
     }
   }
 
+  function lockSelect2InlineSearch(selector) {
+    if (!window.$ || !$(selector).length) return;
+
+    function applyLock() {
+      var searchFields = $(selector).next('.select2-container').find('.select2-search__field');
+      searchFields.each(function() {
+        this.value = '';
+        this.setAttribute('readonly', 'readonly');
+        this.setAttribute('aria-readonly', 'true');
+        this.style.width = '1px';
+        this.style.minWidth = '1px';
+        this.style.padding = '0';
+        this.style.border = '0';
+      });
+    }
+
+    $(selector).on('select2:open select2:close select2:select select2:unselect', applyLock);
+    $(selector).next('.select2-container').on('keydown', '.select2-search__field', function(event) {
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+      }
+    });
+
+    applyLock();
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
     bindMultiPicker('picker_instrument_id', 'filter_instrument_ids_container', 'instrument_id');
     bindMultiPicker('picker_app_id', 'filter_app_ids_container', 'app_id');
@@ -1108,56 +1134,66 @@ $(function() {
     if (window.$ && $('#picker_priority').length) {
       $('#picker_priority').select2({
         width: '100%',
-        placeholder: 'Select priority'
+        placeholder: 'Select priority',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_priority_container', 'priority', 'picker_priority');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_priority');
     }
 
     if (window.$ && $('#picker_status').length) {
       $('#picker_status').select2({
         width: '100%',
-        placeholder: 'Select status'
+        placeholder: 'Select status',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncStatusHiddenInputs();
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_status');
     }
 
     if (window.$ && $('#picker_instrument_id').length) {
       $('#picker_instrument_id').select2({
         width: '100%',
-        placeholder: 'Select instrument(s)'
+        placeholder: 'Select instrument(s)',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_instrument_ids_container', 'instrument_id', 'picker_instrument_id');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_instrument_id');
     }
 
     if (window.$ && $('#picker_app_id').length) {
       $('#picker_app_id').select2({
         width: '100%',
-        placeholder: 'Select app(s)'
+        placeholder: 'Select app(s)',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_app_ids_container', 'app_id', 'picker_app_id');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_app_id');
     }
 
     if (window.$ && $('#picker_reported_by_id').length) {
       $('#picker_reported_by_id').select2({
         width: '100%',
-        placeholder: 'Select reporter(s)'
+        placeholder: 'Select reporter(s)',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_reported_by_ids_container', 'reported_by_id', 'picker_reported_by_id');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_reported_by_id');
     }
 
     filterInstruments();
