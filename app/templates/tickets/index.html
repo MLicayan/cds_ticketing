@@ -309,6 +309,7 @@
           {% endfor %}
         {% endif %}
       </div>
+      <input type="hidden" name="ticket_no" id="filter_ticket_no" value="{{ selected_filters.ticket_no or '' }}">
       <input type="hidden" name="date_from" id="filter_date_from" value="{{ selected_filters.date_from or '' }}">
       <input type="hidden" name="date_to" id="filter_date_to" value="{{ selected_filters.date_to or '' }}">
 
@@ -349,7 +350,17 @@
           </div>
           <div class="card-body">
             <div class="row">
-              <div class="col-md-12 mb-2">
+              <div class="col-md-4 mb-2">
+                <label for="picker_ticket_no">Ticket No</label>
+                <input
+                  type="text"
+                  id="picker_ticket_no"
+                  class="form-control"
+                  placeholder="Search ticket no..."
+                  value="{{ selected_filters.ticket_no or '' }}">
+              </div>
+
+              <div class="col-md-8 mb-2">
                 <label for="picker_client_id">Client</label>
                 {% if current_user.role.value in ['client', 'client_admin'] %}
                   {% set my_client = clients[0] if clients else None %}
@@ -473,6 +484,9 @@
             <th>Priority</th>
           {% endif %}
           <th>Status</th>
+          {% if is_task_list %}
+            <th>Work Status</th>
+          {% endif %}
           <th>Since</th>
           <th>Ticket No</th>
           <th>Complaint</th>
@@ -522,6 +536,13 @@
               {{ status_labels.get(t.status, status_value.replace('_', ' ')|title) }}
             </span>
           </td>
+          {% if is_task_list %}
+            <td>
+              <span class="badge badge-{{ 'success' if t.is_working else 'secondary' }}">
+                {{ 'Working' if t.is_working else 'Not Working' }}
+              </span>
+            </td>
+          {% endif %}
           <td data-order="{{ 0 if status_value == 'closed' else (t.created_at.timestamp() if t.created_at else 0) }}">
             {% if t.created_at %}
               {% set delta = now.replace(tzinfo=None) - t.created_at %}
@@ -584,6 +605,9 @@
             <td></td>
           {% endif %}
           <td></td>
+          {% if is_task_list %}
+            <td></td>
+          {% endif %}
           <td></td>
           <td></td>
           <td></td>
@@ -754,7 +778,7 @@ $(function() {
 
     picker.value = hidden.value;
 
-    picker.addEventListener('change', function() {
+    var syncPicker = function() {
       hidden.value = picker.value;
       updateFilterChips();
       if (pickerId === 'picker_client_id') {
@@ -762,7 +786,12 @@ $(function() {
         filterApps();
       }
       autoSubmitFilters();
-    });
+    };
+
+    picker.addEventListener('change', syncPicker);
+    if (picker.tagName === 'INPUT' && picker.type === 'text') {
+      picker.addEventListener('input', syncPicker);
+    }
   }
 
   function bindMultiPicker(pickerId, containerId, inputName, onChange) {
@@ -944,6 +973,7 @@ $(function() {
       filter_assignee_id: 'picker_assignee_id',
       filter_reported_by_id: 'picker_reported_by_id',
       filter_priority: 'picker_priority',
+      filter_ticket_no: 'picker_ticket_no',
       filter_date_from: 'picker_date_from',
       filter_date_to: 'picker_date_to'
     };
@@ -1083,12 +1113,39 @@ $(function() {
     }
   }
 
+  function lockSelect2InlineSearch(selector) {
+    if (!window.$ || !$(selector).length) return;
+
+    function applyLock() {
+      var searchFields = $(selector).next('.select2-container').find('.select2-search__field');
+      searchFields.each(function() {
+        this.value = '';
+        this.setAttribute('readonly', 'readonly');
+        this.setAttribute('aria-readonly', 'true');
+        this.style.width = '1px';
+        this.style.minWidth = '1px';
+        this.style.padding = '0';
+        this.style.border = '0';
+      });
+    }
+
+    $(selector).on('select2:open select2:close select2:select select2:unselect', applyLock);
+    $(selector).next('.select2-container').on('keydown', '.select2-search__field', function(event) {
+      if (event.key === 'Backspace' || event.key === 'Delete') {
+        event.preventDefault();
+      }
+    });
+
+    applyLock();
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
     bindMultiPicker('picker_instrument_id', 'filter_instrument_ids_container', 'instrument_id');
     bindMultiPicker('picker_app_id', 'filter_app_ids_container', 'app_id');
     bindPicker('picker_assignee_id', 'filter_assignee_id');
     bindMultiPicker('picker_reported_by_id', 'filter_reported_by_ids_container', 'reported_by_id');
     bindMultiPicker('picker_priority', 'filter_priority_container', 'priority');
+    bindPicker('picker_ticket_no', 'filter_ticket_no');
     bindPicker('picker_date_from', 'filter_date_from');
     bindPicker('picker_date_to', 'filter_date_to');
 
@@ -1108,56 +1165,66 @@ $(function() {
     if (window.$ && $('#picker_priority').length) {
       $('#picker_priority').select2({
         width: '100%',
-        placeholder: 'Select priority'
+        placeholder: 'Select priority',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_priority_container', 'priority', 'picker_priority');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_priority');
     }
 
     if (window.$ && $('#picker_status').length) {
       $('#picker_status').select2({
         width: '100%',
-        placeholder: 'Select status'
+        placeholder: 'Select status',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncStatusHiddenInputs();
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_status');
     }
 
     if (window.$ && $('#picker_instrument_id').length) {
       $('#picker_instrument_id').select2({
         width: '100%',
-        placeholder: 'Select instrument(s)'
+        placeholder: 'Select instrument(s)',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_instrument_ids_container', 'instrument_id', 'picker_instrument_id');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_instrument_id');
     }
 
     if (window.$ && $('#picker_app_id').length) {
       $('#picker_app_id').select2({
         width: '100%',
-        placeholder: 'Select app(s)'
+        placeholder: 'Select app(s)',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_app_ids_container', 'app_id', 'picker_app_id');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_app_id');
     }
 
     if (window.$ && $('#picker_reported_by_id').length) {
       $('#picker_reported_by_id').select2({
         width: '100%',
-        placeholder: 'Select reporter(s)'
+        placeholder: 'Select reporter(s)',
+        minimumResultsForSearch: Infinity
       }).on('change', function() {
         syncMultiHiddenInputs('filter_reported_by_ids_container', 'reported_by_id', 'picker_reported_by_id');
         updateFilterChips();
         autoSubmitFilters();
       });
+      lockSelect2InlineSearch('#picker_reported_by_id');
     }
 
     filterInstruments();

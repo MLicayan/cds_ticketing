@@ -70,6 +70,7 @@ def create_app(config_class=Config):
             .join(Ticket, TicketComment.ticket_id == Ticket.id)
             .join(User, TicketComment.user_id == User.id)
             .filter(TicketComment.is_internal.is_(False))
+            .filter(Ticket.status != models.TicketStatus.CLOSED)
         )
 
         if current_user.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN):
@@ -81,7 +82,13 @@ def create_app(config_class=Config):
         else:
             query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
 
-        if current_user.role == UserRole.ENGINEER:
+        current_user_type = (current_user.user_type or "").strip().lower()
+        is_support_user = (
+            current_user.role == UserRole.ENGINEER
+            and current_user_type == "support"
+        )
+
+        if current_user.role == UserRole.ENGINEER and not is_support_user:
             query = query.filter(Ticket.assigned_engineer_id == current_user.id)
         elif current_user.role == UserRole.SALES:
             query = query.join(
@@ -91,13 +98,11 @@ def create_app(config_class=Config):
 
         comments = query.order_by(TicketComment.created_at.desc()).limit(100).all()
         by_ticket = {}
-        total = 0
         for comment in comments:
             if any((comment.comment_text or "").startswith(prefix) for prefix in change_prefixes):
                 continue
             if comment.reaction_state_map().get(str(current_user.id), {}).get("acknowledge"):
                 continue
-            total += 1
             if comment.ticket_id not in by_ticket:
                 by_ticket[comment.ticket_id] = {
                     "ticket": comment.ticket,
@@ -108,7 +113,7 @@ def create_app(config_class=Config):
 
         return {
             "client_comment_notifications": list(by_ticket.values())[:8],
-            "client_comment_notification_count": total,
+            "client_comment_notification_count": len(by_ticket),
         }
 
     from .auth import auth_bp
