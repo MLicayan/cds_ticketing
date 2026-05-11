@@ -657,6 +657,38 @@
       notificationItems.prepend(createNotificationItem(notification));
     }
 
+    function renderNotificationSnapshot(payload) {
+      if (!notificationItems) return;
+      const notifications = (payload && payload.notifications) || [];
+      updateNotificationCount(payload && payload.count);
+      notificationItems.innerHTML = '';
+
+      if (!notifications.length) {
+        const empty = document.createElement('span');
+        empty.className = 'dropdown-item text-muted';
+        empty.setAttribute('data-notification-empty', '');
+        empty.textContent = 'No new ticket comments.';
+        notificationItems.appendChild(empty);
+        return;
+      }
+
+      notifications.forEach(function(notification, index) {
+        if (index > 0) {
+          const divider = document.createElement('div');
+          divider.className = 'dropdown-divider';
+          notificationItems.appendChild(divider);
+        }
+        const item = createNotificationItem(notification);
+        item.setAttribute('data-ticket-count', notification.count || 1);
+        const ticketBadge = item.querySelector('[data-ticket-notification-count]');
+        if (ticketBadge && (notification.count || 1) > 1) {
+          ticketBadge.textContent = notification.count;
+          ticketBadge.classList.remove('d-none');
+        }
+        notificationItems.appendChild(item);
+      });
+    }
+
     const notificationSocket = io();
     notificationSocket.on('connect', function() {
       notificationSocket.emit('join_header_notifications');
@@ -667,6 +699,9 @@
     });
     notificationSocket.on('ticket_comment_notification_count', function(payload) {
       updateNotificationCount(payload && payload.count);
+    });
+    notificationSocket.on('ticket_comment_notification_snapshot', function(payload) {
+      renderNotificationSnapshot(payload);
     });
   });
 </script>

@@ -412,14 +412,17 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
     if _is_change_comment(comment.comment_text):
         return False
 
+    ticket = comment.ticket
+    if not ticket or ticket.status == TicketStatus.CLOSED:
+        return False
+
     commenter_is_client = bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES)
     viewer_is_client = user.role in CLIENT_SCOPED_ROLES
     if _is_support_user(user):
-        return True
+        return commenter_is_client
     if commenter_is_client == viewer_is_client:
         return False
 
-    ticket = comment.ticket
     if user.role == UserRole.CLIENT:
         return ticket.client_id == user.client_id and ticket.reported_by_id == user.id
     if user.role == UserRole.CLIENT_ADMIN:
@@ -432,15 +435,19 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
 
 
 def _notification_recipients_for_comment(ticket: Ticket, comment: TicketComment):
-    if not comment.user:
+    if not comment.user or not ticket or ticket.status == TicketStatus.CLOSED:
         return []
 
     user_ids = set()
-    support_users = User.query.filter(
-        User.role == UserRole.ENGINEER,
-        db.func.lower(User.user_type) == "support",
-    ).all()
-    user_ids.update(user.id for user in support_users)
+    commenter_is_client = comment.user.role in CLIENT_SCOPED_ROLES
+    if commenter_is_client:
+        support_users = User.query.filter(
+            User.role == UserRole.ENGINEER,
+            db.func.lower(User.user_type) == "support",
+        ).all()
+        user_ids.update(user.id for user in support_users)
+    elif ticket.reported_by and ticket.reported_by.role in CLIENT_SCOPED_ROLES:
+        user_ids.add(ticket.reported_by_id)
 
     user_ids.discard(comment.user_id)
     if not user_ids:
@@ -462,10 +469,11 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
         .join(Ticket, TicketComment.ticket_id == Ticket.id)
         .join(User, TicketComment.user_id == User.id)
         .filter(TicketComment.is_internal.is_(False), TicketComment.user_id != user.id)
+        .filter(Ticket.status != TicketStatus.CLOSED)
     )
 
     if _is_support_user(user):
-        pass
+        query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
     elif user.role in CLIENT_SCOPED_ROLES:
         query = query.filter(~User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
         query = query.filter(Ticket.client_id == user.client_id, Ticket.reported_by_id == user.id)
@@ -481,14 +489,80 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
     elif user.role == UserRole.ADMIN:
         return 0
 
-    total = 0
+    unread_ticket_ids = set()
     for comment in query.order_by(TicketComment.created_at.desc()).limit(100).all():
         if not _is_ticket_comment_notification_for_user(comment, user):
             continue
         if comment.reaction_state_map().get(str(user.id), {}).get("acknowledge"):
             continue
-        total += 1
-    return total
+        unread_ticket_ids.add(comment.ticket_id)
+    return len(unread_ticket_ids)
+
+
+def _ticket_comment_notification_snapshot_for_user(user: User, limit: int = 8) -> dict:
+    if not user:
+        return {"count": 0, "notifications": []}
+
+    query = (
+        TicketComment.query
+        .join(Ticket, TicketComment.ticket_id == Ticket.id)
+        .join(User, TicketComment.user_id == User.id)
+        .filter(TicketComment.is_internal.is_(False), TicketComment.user_id != user.id)
+        .filter(Ticket.status != TicketStatus.CLOSED)
+    )
+
+    if _is_support_user(user):
+        query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
+    elif user.role in CLIENT_SCOPED_ROLES:
+        query = query.filter(~User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
+        query = query.filter(Ticket.client_id == user.client_id, Ticket.reported_by_id == user.id)
+    else:
+        query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
+
+    if _is_support_user(user):
+        pass
+    elif user.role == UserRole.ENGINEER:
+        query = query.filter(Ticket.assigned_engineer_id == user.id)
+    elif user.role == UserRole.SALES:
+        query = query.join(Client, Ticket.client_id == Client.id).filter(Client.assigned_sales_id == user.id)
+    elif user.role == UserRole.ADMIN:
+        return {"count": 0, "notifications": []}
+
+    by_ticket = {}
+    for comment in query.order_by(TicketComment.created_at.desc()).limit(100).all():
+        if not _is_ticket_comment_notification_for_user(comment, user):
+            continue
+        if comment.reaction_state_map().get(str(user.id), {}).get("acknowledge"):
+            continue
+        if comment.ticket_id not in by_ticket:
+            by_ticket[comment.ticket_id] = {
+                "ticket": comment.ticket,
+                "latest_comment": comment,
+                "count": 0,
+            }
+        by_ticket[comment.ticket_id]["count"] += 1
+
+    notifications = []
+    for entry in list(by_ticket.values())[:limit]:
+        ticket = entry["ticket"]
+        comment = entry["latest_comment"]
+        notifications.append({
+            "ticket_id": ticket.id,
+            "ticket_no": ticket.ticket_no,
+            "subject": ticket.subject,
+            "reported_by": ticket.reported_by.full_name or ticket.reported_by.username if ticket.reported_by else "",
+            "url": url_for("tickets.detail", ticket_id=ticket.id) + "#ticket-comments-card",
+            "comment_id": comment.id,
+            "comment_text": comment.comment_text,
+            "user": comment.user.full_name or comment.user.username if comment.user else "",
+            "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
+            "count": entry["count"],
+        })
+
+    return {
+        "count": len(by_ticket),
+        "notifications": notifications,
+    }
 
 
 def _header_notification_payload(comment: TicketComment, recipient: User) -> dict:
@@ -516,6 +590,11 @@ def _emit_ticket_comment_notification(ticket: Ticket, comment: TicketComment) ->
             _header_notification_payload(comment, recipient),
             room=f"user_notifications:{recipient.id}",
         )
+        socketio.emit(
+            "ticket_comment_notification_snapshot",
+            _ticket_comment_notification_snapshot_for_user(recipient),
+            room=f"user_notifications:{recipient.id}",
+        )
 
 
 def _emit_ticket_comment_notification_count(comment: TicketComment) -> None:
@@ -531,6 +610,11 @@ def _emit_ticket_comment_notification_count(comment: TicketComment) -> None:
         socketio.emit(
             "ticket_comment_notification_count",
             {"count": _ticket_comment_notification_count_for_user(recipient)},
+            room=f"user_notifications:{recipient.id}",
+        )
+        socketio.emit(
+            "ticket_comment_notification_snapshot",
+            _ticket_comment_notification_snapshot_for_user(recipient),
             room=f"user_notifications:{recipient.id}",
         )
 
@@ -733,7 +817,8 @@ def _render_ticket_index(my_tickets_only=False):
             pass
 
     if ticket_no_raw:
-        query = query.filter(list_model.ticket_no.ilike(f"%{ticket_no_raw}%"))
+        ticket_no_column = TicketTask.task_no if is_task_list else Ticket.ticket_no
+        query = query.filter(ticket_no_column.ilike(f"%{ticket_no_raw}%"))
 
     # Assigned Engineer/IT filter hidden on the Tickets page.
     # if assignee_id:
