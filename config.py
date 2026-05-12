@@ -6,14 +6,9 @@ class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL",
-<<<<<<< HEAD
-        # "mysql+pymysql://cerebro_ticketing:Alp65230071@localhost:3306/cerebro_ticketing",
-        "mysql+pymysql://root:6523007@localhost:3306/cds_service",
-=======
         "mysql+pymysql://cerebro_ticketing:Alp65230071@localhost:3306/cerebro_ticketing",
         # "mysql+pymysql://root:6523007@localhost:3306/cds_service",
         # "mysql+pymysql://root:6523007@localhost:3306/cds_service",
->>>>>>> 31ddcba8a316b26d7fc00239b5d869d6ac585081
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
