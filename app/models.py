@@ -376,6 +376,7 @@ class TicketComment(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False)
+    parent_comment_id = db.Column(db.Integer, db.ForeignKey("ticket_comments.id"), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     comment_text = db.Column(db.Text, nullable=False)
     is_internal = db.Column(db.Boolean, default=False)
@@ -383,6 +384,11 @@ class TicketComment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User")
+    parent_comment = db.relationship(
+        "TicketComment",
+        remote_side=[id],
+        backref=db.backref("replies", lazy=True),
+    )
 
     def reaction_state_map(self):
         if not self.reactions_json:
@@ -517,6 +523,7 @@ class TicketTaskComment(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     ticket_task_id = db.Column(db.Integer, db.ForeignKey("ticket_tasks.id"), nullable=False)
+    parent_comment_id = db.Column(db.Integer, db.ForeignKey("ticket_task_comments.id"), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     comment_text = db.Column(db.Text, nullable=False)
     is_internal = db.Column(db.Boolean, default=False)
@@ -524,6 +531,11 @@ class TicketTaskComment(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship("User")
+    parent_comment = db.relationship(
+        "TicketTaskComment",
+        remote_side=[id],
+        backref=db.backref("replies", lazy=True),
+    )
 
     def reaction_state_map(self):
         return TicketComment.reaction_state_map(self)

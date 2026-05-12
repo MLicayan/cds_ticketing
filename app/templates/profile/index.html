@@ -10,12 +10,78 @@
 {% endblock %}
 
 {% block content %}
+<div class="row">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-id-card mr-2"></i>My Information</h3>
+      </div>
+      <form method="post" action="{{ url_for('profile.update_account') }}">
+        <div class="card-body">
+          <dl class="row mb-3">
+            <dt class="col-sm-4">Username</dt>
+            <dd class="col-sm-8">{{ current_user.username }}</dd>
+            <dt class="col-sm-4">Role</dt>
+            <dd class="col-sm-8">{{ current_user.role.value|replace('_', ' ')|title }}</dd>
+            {% if current_user.user_type and current_user.role.value not in ['client', 'client_admin'] %}
+            <dt class="col-sm-4">User Type</dt>
+            <dd class="col-sm-8">{{ current_user.user_type }}</dd>
+            {% endif %}
+            {% if current_user.client %}
+            <dt class="col-sm-4">Client</dt>
+            <dd class="col-sm-8">{{ current_user.client.name }}</dd>
+            {% endif %}
+          </dl>
+          <div class="form-group">
+            <label for="full_name">Full Name</label>
+            <input id="full_name" name="full_name" class="form-control" value="{{ current_user.full_name or '' }}" required>
+          </div>
+          <div class="form-group mb-0">
+            <label for="contact_number">Contact Number</label>
+            <input id="contact_number" name="contact_number" class="form-control" value="{{ current_user.contact_number or '' }}" required>
+          </div>
+        </div>
+        <div class="card-footer">
+          <button type="submit" class="btn btn-primary">Save My Information</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-lock mr-2"></i>Change Password</h3>
+      </div>
+      <form method="post" action="{{ url_for('profile.change_password') }}">
+        <div class="card-body">
+          <div class="form-row">
+            <div class="form-group col-md-6">
+              <label for="new_password">New Password</label>
+              <input id="new_password" type="password" name="new_password" class="form-control" required minlength="6" autocomplete="new-password">
+            </div>
+            <div class="form-group col-md-6">
+              <label for="confirm_password">Confirm New Password</label>
+              <input id="confirm_password" type="password" name="confirm_password" class="form-control" required minlength="6" autocomplete="new-password">
+            </div>
+          </div>
+          <small class="text-muted">Use at least 6 characters.</small>
+        </div>
+        <div class="card-footer">
+          <button type="submit" class="btn btn-primary">Change Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% if current_user.role.value == 'client_admin' and client %}
 <form method="post" action="{{ url_for('profile.index') }}">
   <div class="card">
     <ul class="nav nav-tabs" role="tablist">
       <li class="nav-item">
         <a class="nav-link active" data-toggle="tab" href="#tab-info" role="tab">
-          <i class="fas fa-info-circle mr-1"></i> Info
+          <i class="fas fa-info-circle mr-1"></i> Hospital Info
         </a>
       </li>
       <li class="nav-item">
@@ -82,9 +148,7 @@
                 <td>{{ instrument.model.name if instrument.model else '-' }}</td>
               </tr>
               {% else %}
-              <tr>
-                <td colspan="3" class="text-muted text-center">No instruments assigned.</td>
-              </tr>
+              <tr><td colspan="3" class="text-muted text-center">No instruments assigned.</td></tr>
               {% endfor %}
             </tbody>
           </table>
@@ -98,19 +162,10 @@
                 {% set checked = (client and app in client.apps) or (app.id|string in request.form.getlist('app_ids')) %}
                 <div class="col-md-6">
                   <div class="custom-control custom-checkbox mb-2">
-                    <input
-                      type="checkbox"
-                      class="custom-control-input"
-                      id="app_{{ app.id }}"
-                      name="app_ids"
-                      value="{{ app.id }}"
-                      {% if checked %}checked{% endif %}
-                    >
+                    <input type="checkbox" class="custom-control-input" id="app_{{ app.id }}" name="app_ids" value="{{ app.id }}" {% if checked %}checked{% endif %}>
                     <label class="custom-control-label" for="app_{{ app.id }}">
                       {{ app.name }}
-                      {% if app.code %}
-                        <span class="text-muted">({{ app.code }})</span>
-                      {% endif %}
+                      {% if app.code %}<span class="text-muted">({{ app.code }})</span>{% endif %}
                     </label>
                   </div>
                 </div>
@@ -122,14 +177,14 @@
       </div>
     </div>
     <div class="card-footer">
-      <button type="submit" class="btn btn-primary">Save Profile</button>
+      <button type="submit" class="btn btn-primary">Save Hospital Profile</button>
     </div>
   </div>
 </form>
 
 <div class="card card-outline card-secondary">
   <div class="card-header">
-    <h3 class="card-title">Users</h3>
+    <h3 class="card-title">Client Users</h3>
   </div>
   <div class="card-body">
     <h5>Add User</h5>
@@ -177,11 +232,7 @@
               <td class="text-right">
                 <div class="d-flex">
                   <button type="submit" class="btn btn-sm btn-outline-primary mr-1">Save</button>
-                  <button type="submit"
-                          formaction="{{ url_for('profile.delete_user', user_id=u.id) }}"
-                          formmethod="post"
-                          class="btn btn-sm btn-outline-danger"
-                          onclick="return confirm('Delete this user?');">
+                  <button type="submit" formaction="{{ url_for('profile.delete_user', user_id=u.id) }}" formmethod="post" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this user?');">
                     Delete
                   </button>
                 </div>
@@ -189,13 +240,12 @@
             </form>
           </tr>
           {% else %}
-          <tr>
-            <td colspan="5" class="text-muted">No users yet.</td>
-          </tr>
+          <tr><td colspan="5" class="text-muted">No users yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
 </div>
+{% endif %}
 {% endblock %}

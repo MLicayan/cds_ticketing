@@ -329,11 +329,11 @@
           </li>
           {% endif %}
 
-          {% if current_user.is_authenticated and current_user.role.value not in ['client', 'client_admin'] and current_user.has_nav_access('my_tickets') %}
+          {% if current_user.is_authenticated and current_user.has_nav_access('my_tickets') %}
           <li class="nav-item">
             <a href="{{ url_for('tickets.my_tickets') }}" class="nav-link {% if request.endpoint == 'tickets.my_tickets' %}active{% endif %}">
               <i class="nav-icon fas fa-user-check"></i>
-              <p>My Task</p>
+              <p>{{ 'My Tickets' if current_user.role.value in ['client', 'client_admin'] else 'My Task' }}</p>
             </a>
           </li>
           {% endif %}
@@ -407,7 +407,7 @@
           </li>
           {% endif %}
 
-          {% if current_user.is_authenticated and current_user.role.value == 'client_admin' %}
+          {% if current_user.is_authenticated %}
           <li class="nav-item">
             <a href="{{ url_for('profile.index') }}" class="nav-link {% if request.endpoint and request.endpoint.startswith('profile.') %}active{% endif %}">
               <i class="nav-icon fas fa-user-cog"></i>

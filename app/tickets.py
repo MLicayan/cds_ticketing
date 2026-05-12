@@ -330,9 +330,11 @@ def _emit_ticket_comment(ticket: Ticket, comment: TicketComment, attachments=Non
 
 
 def _ticket_comment_payload(comment: TicketComment, attachments=None) -> dict:
+    parent = comment.parent_comment
     return {
         "ticket_id": comment.ticket_id,
         "comment_id": comment.id,
+        "parent_comment": _ticket_comment_parent_payload(parent) if parent else None,
         "user_id": comment.user_id,
         "user": comment.user.full_name or comment.user.username if comment.user else "",
         "comment_text": comment.comment_text,
@@ -344,10 +346,21 @@ def _ticket_comment_payload(comment: TicketComment, attachments=None) -> dict:
     }
 
 
+def _ticket_comment_parent_payload(comment: TicketComment) -> dict:
+    return {
+        "comment_id": comment.id,
+        "user": comment.user.full_name or comment.user.username if comment.user else "",
+        "comment_text": comment.comment_text,
+        "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
+    }
+
+
 def _task_comment_payload(comment: TicketTaskComment, attachments=None) -> dict:
+    parent = comment.parent_comment
     return {
         "ticket_id": comment.ticket_task_id,
         "comment_id": comment.id,
+        "parent_comment": _task_comment_parent_payload(parent) if parent else None,
         "user_id": comment.user_id,
         "user": comment.user.full_name or comment.user.username if comment.user else "",
         "comment_text": comment.comment_text,
@@ -356,6 +369,15 @@ def _task_comment_payload(comment: TicketTaskComment, attachments=None) -> dict:
         "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
         "reactions": comment.reaction_summary(),
         "attachments": [_ticket_attachment_payload(att) for att in (attachments or [])],
+    }
+
+
+def _task_comment_parent_payload(comment: TicketTaskComment) -> dict:
+    return {
+        "comment_id": comment.id,
+        "user": comment.user.full_name or comment.user.username if comment.user else "",
+        "comment_text": comment.comment_text,
+        "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
     }
 
 
@@ -1751,6 +1773,7 @@ def detail(ticket_id):
 
     if request.method == "POST":
         comment_text = (request.form.get("comment_text") or "").strip()
+        parent_comment_id = request.form.get("parent_comment_id", type=int)
         is_internal = False if current_user.role in READ_ONLY_ROLES else bool(request.form.get("is_internal"))
         files = request.files.getlist("attachment")
         has_uploaded_files = any(file and file.filename for file in files)
@@ -1759,10 +1782,23 @@ def detail(ticket_id):
         new_comment = None
         added_attachments = []
         propagated_child_tasks = []
+        parent_comment = None
+
+        if parent_comment_id:
+            parent_comment = TicketComment.query.filter_by(
+                id=parent_comment_id,
+                ticket_id=ticket.id,
+            ).first()
+            if not parent_comment or _is_change_comment(parent_comment.comment_text):
+                if wants_json:
+                    return jsonify({"ok": False, "message": "Reply target was not found."}), 400
+                flash("Reply target was not found.", "warning")
+                return redirect(f"{url_for('tickets.detail', ticket_id=ticket.id)}#ticket-comments-card")
 
         if comment_text or has_uploaded_files:
             comment = TicketComment(
                 ticket_id=ticket.id,
+                parent_comment_id=parent_comment.id if parent_comment else None,
                 user_id=current_user.id,
                 comment_text=comment_text,
                 is_internal=is_internal,
@@ -1945,6 +1981,7 @@ def task_detail(task_id):
             return closed_redirect
 
         comment_text = (request.form.get("comment_text") or "").strip()
+        parent_comment_id = request.form.get("parent_comment_id", type=int)
         is_internal = bool(request.form.get("is_internal"))
         files = request.files.getlist("attachment")
         has_uploaded_files = any(file and file.filename for file in files)
@@ -1952,10 +1989,23 @@ def task_detail(task_id):
         did_something = False
         new_comment = None
         added_attachments = []
+        parent_comment = None
+
+        if parent_comment_id:
+            parent_comment = TicketTaskComment.query.filter_by(
+                id=parent_comment_id,
+                ticket_task_id=task.id,
+            ).first()
+            if not parent_comment or _is_change_comment(parent_comment.comment_text):
+                if wants_json:
+                    return jsonify({"ok": False, "message": "Reply target was not found."}), 400
+                flash("Reply target was not found.", "warning")
+                return redirect(f"{url_for('tickets.task_detail', task_id=task.id)}#ticket-comments-card")
 
         if comment_text or has_uploaded_files:
             new_comment = TicketTaskComment(
                 ticket_task_id=task.id,
+                parent_comment_id=parent_comment.id if parent_comment else None,
                 user_id=current_user.id,
                 comment_text=comment_text,
                 is_internal=is_internal,

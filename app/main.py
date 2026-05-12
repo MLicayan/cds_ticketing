@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+import calendar
 
 from flask import Blueprint, render_template
 from flask_login import login_required, current_user
@@ -10,7 +11,9 @@ from .models import (
     PreventiveMaintenanceSchedule,
     ServiceLog,
     Ticket,
+    TicketPriority,
     TicketStatus,
+    User,
     UserRole,
 )
 TASK_CATEGORY_PREFIX = "task:"
@@ -49,17 +52,34 @@ def dashboard():
     total_instruments = Instrument.query.count()
 
     role = current_user.role
-    if role == UserRole.SALES:
-        total_tickets = _exclude_task_tickets(Ticket.query).count()
-        open_tickets = _exclude_task_tickets(Ticket.query).filter(Ticket.status.in_(open_like_statuses)).count()
+    user_type = (current_user.user_type or "").strip().lower()
+    can_view_overall = role == UserRole.ADMIN or (role == UserRole.ENGINEER and user_type == "support")
 
-    ticket_scope = Ticket.query
+    scoped_client_ids = []
+    ticket_scope = _exclude_task_tickets(Ticket.query)
     service_log_scope = ServiceLog.query
-    if role == UserRole.ENGINEER:
+    if role == UserRole.SALES:
+        sales_clients = Client.query.filter(Client.assigned_sales_id == current_user.id).all()
+        scoped_client_ids = [client.id for client in sales_clients]
+        ticket_scope = ticket_scope.filter(Ticket.client_id.in_(scoped_client_ids)) if scoped_client_ids else ticket_scope.filter(db.false())
+        service_log_scope = service_log_scope.filter(ServiceLog.client_id.in_(scoped_client_ids)) if scoped_client_ids else service_log_scope.filter(db.false())
+    elif role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN]:
+        ticket_scope = _apply_client_ticket_scope(ticket_scope)
+        if current_user.client_id:
+            scoped_client_ids = [current_user.client_id]
+            service_log_scope = service_log_scope.filter(ServiceLog.client_id == current_user.client_id)
+        else:
+            service_log_scope = service_log_scope.filter(db.false())
+    elif role == UserRole.ENGINEER and not can_view_overall:
         ticket_scope = ticket_scope.filter(Ticket.assigned_engineer_id == current_user.id)
         service_log_scope = service_log_scope.filter(ServiceLog.engineer_id == current_user.id)
-        total_tickets = ticket_scope.count()
-        open_tickets = ticket_scope.filter(Ticket.status.in_(open_like_statuses)).count()
+
+    total_tickets = ticket_scope.count()
+    open_tickets = ticket_scope.filter(Ticket.status.in_(open_like_statuses)).count()
+    if role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN] and current_user.client_id:
+        total_instruments = Instrument.query.filter(Instrument.client_id == current_user.client_id).count()
+    elif role == UserRole.SALES:
+        total_instruments = Instrument.query.filter(Instrument.client_id.in_(scoped_client_ids)).count() if scoped_client_ids else 0
 
     engineer_stats = {}
     client_stats = {}
@@ -100,11 +120,15 @@ def dashboard():
             "my_recent_logs": my_recent_logs,
         }
 
-    # Admin / Engineer shared dashboard data
-    if role in [UserRole.ADMIN, UserRole.ENGINEER]:
+    # Shared dashboard data. Admin and support see overall; other roles see their own scope.
+    if True:
         pm_scope = PreventiveMaintenanceSchedule.query
-        if role == UserRole.ENGINEER:
+        if role == UserRole.ENGINEER and not can_view_overall:
             pm_scope = pm_scope.filter(PreventiveMaintenanceSchedule.assigned_engineer_id == current_user.id)
+        elif role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN] and current_user.client_id:
+            pm_scope = pm_scope.filter(PreventiveMaintenanceSchedule.client_id == current_user.client_id)
+        elif role == UserRole.SALES:
+            pm_scope = pm_scope.filter(PreventiveMaintenanceSchedule.client_id.in_(scoped_client_ids)) if scoped_client_ids else pm_scope.filter(db.false())
 
         pm_week = (
             pm_scope.filter(
@@ -124,6 +148,15 @@ def dashboard():
             .all()
         )
         ticket_overview = ticket_scope.order_by(Ticket.created_at.desc()).limit(20).all()
+        if role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN]:
+            active_tickets = ticket_scope.order_by(Ticket.created_at.desc()).limit(8).all()
+        else:
+            active_tickets = (
+                ticket_scope.filter(Ticket.status.in_(open_like_statuses))
+                .order_by(Ticket.date_needed.asc(), Ticket.target_date.asc(), Ticket.created_at.desc())
+                .limit(8)
+                .all()
+            )
         logs_week = (
             service_log_scope.filter(
                 ServiceLog.visit_date >= today,
@@ -174,13 +207,116 @@ def dashboard():
             },
         }
 
+        all_scope = ticket_scope
+        status_counts = {
+            "open": all_scope.filter(Ticket.status == TicketStatus.OPEN).count(),
+            "in_progress": all_scope.filter(Ticket.status == TicketStatus.IN_PROGRESS).count(),
+            "resolved": all_scope.filter(Ticket.status == TicketStatus.RESOLVED).count(),
+            "closed": all_scope.filter(Ticket.status == TicketStatus.CLOSED).count(),
+            "overdue": all_scope.filter(
+                Ticket.target_date.isnot(None),
+                Ticket.target_date < today,
+                Ticket.status.notin_([TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED]),
+            ).count(),
+        }
+        priority_counts = {
+            "critical": all_scope.filter(Ticket.priority == TicketPriority.CRITICAL).count(),
+            "high": all_scope.filter(Ticket.priority == TicketPriority.HIGH).count(),
+            "medium": all_scope.filter(Ticket.priority == TicketPriority.MEDIUM).count(),
+            "low": all_scope.filter(Ticket.priority == TicketPriority.LOW).count(),
+        }
+
+        month_calendar = calendar.Calendar(firstweekday=0).monthdatescalendar(today.year, today.month)
+        due_counts = {}
+        for ticket in ticket_deadlines:
+            due_date = ticket.target_date or (ticket.date_needed.date() if ticket.date_needed else None)
+            if due_date:
+                due_counts[due_date] = due_counts.get(due_date, 0) + 1
+
+        engineers_query = User.query.filter(
+            User.role == UserRole.ENGINEER,
+            User.is_active_user.is_(True),
+        )
+        if role == UserRole.ENGINEER and not can_view_overall:
+            engineers_query = engineers_query.filter(User.id == current_user.id)
+        elif not can_view_overall:
+            scoped_engineer_ids = [
+                row[0]
+                for row in ticket_scope.with_entities(Ticket.assigned_engineer_id)
+                .filter(Ticket.assigned_engineer_id.isnot(None))
+                .distinct()
+                .all()
+            ]
+            engineers_query = engineers_query.filter(User.id.in_(scoped_engineer_ids)) if scoped_engineer_ids else engineers_query.filter(db.false())
+        engineers = engineers_query.order_by(User.full_name.asc(), User.username.asc()).limit(6).all()
+        engineer_performance = []
+        completed_statuses = [TicketStatus.RESOLVED, TicketStatus.CLOSED]
+        performance_ticket_scope = Ticket.query if can_view_overall else ticket_scope
+        for engineer in engineers:
+            assigned_count = performance_ticket_scope.filter(Ticket.assigned_engineer_id == engineer.id).count()
+            completed_count = performance_ticket_scope.filter(
+                Ticket.assigned_engineer_id == engineer.id,
+                Ticket.status.in_(completed_statuses),
+            ).count()
+            completion_rate = round((completed_count / assigned_count) * 100) if assigned_count else 0
+            engineer_performance.append(
+                {
+                    "engineer": engineer,
+                    "assigned": assigned_count,
+                    "completed": completed_count,
+                    "completion_rate": completion_rate,
+                }
+            )
+
+        recent_activity = []
+        for ticket in ticket_scope.order_by(Ticket.updated_at.desc()).limit(6).all():
+            recent_activity.append(
+                {
+                    "kind": "ticket",
+                    "title": f"Ticket {ticket.ticket_no} updated",
+                    "description": ticket.subject,
+                    "timestamp": ticket.updated_at or ticket.created_at,
+                    "icon": "fa-ticket-alt",
+                    "tone": "blue",
+                }
+            )
+        for log in service_log_scope.order_by(ServiceLog.created_at.desc(), ServiceLog.id.desc()).limit(4).all():
+            log_timestamp = log.created_at
+            if not log_timestamp and log.visit_date:
+                log_timestamp = datetime.combine(log.visit_date, datetime.min.time())
+            recent_activity.append(
+                {
+                    "kind": "log",
+                    "title": "Service log added",
+                    "description": log.client.name if log.client else "Service activity",
+                    "timestamp": log_timestamp,
+                    "icon": "fa-clipboard-check",
+                    "tone": "green",
+                }
+            )
+        recent_activity = sorted(
+            recent_activity,
+            key=lambda item: item["timestamp"] or datetime.min,
+            reverse=True,
+        )[:8]
+
         admin_data = {
+            "can_view_overall": can_view_overall,
             "pm_week": pm_week,
             "ticket_deadlines": ticket_deadlines,
             "ticket_overview": ticket_overview,
+            "active_tickets": active_tickets,
             "logs_week": logs_week,
             "pm_total": pm_total,
             "service_log_stats": service_log_stats,
+            "status_counts": status_counts,
+            "priority_counts": priority_counts,
+            "calendar_weeks": month_calendar,
+            "calendar_month": today.strftime("%B %Y"),
+            "today": today,
+            "due_counts": due_counts,
+            "engineer_performance": engineer_performance,
+            "recent_activity": recent_activity,
             "week_range": week_range,
             "current_year": today.year,
         }

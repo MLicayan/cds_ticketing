@@ -3,6 +3,7 @@
 
 {% block extra_css %}
 <style>
+  .content-wrapper { background: #f6f7f9; }
   .status-chip { padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.85rem; }
   .status-open, .status-new { background: rgba(13,110,253,0.12); color: #0d6efd; }
   .status-in_progress, .status-inprocess { background: rgba(243,156,18,0.14); color: #c47a08; }
@@ -13,6 +14,225 @@
   .timeline-date { font-weight: 700; }
   .list-unstyled li { margin-bottom: 8px; }
   .card-header span.date-range { font-size: 0.9rem; color: #f8f9fa; }
+
+  .dashboard-page { color: #031836; }
+  .dashboard-subtitle { color: #466079; font-size: 15px; margin-top: 4px; }
+  .dashboard-card {
+    background: #fff;
+    border: 1px solid #dde3ea;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+  }
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .kpi-card { padding: 22px 24px; min-height: 146px; }
+  .kpi-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .kpi-label { color: #2b455f; font-size: 14px; margin-bottom: 12px; }
+  .kpi-value { font-size: 30px; line-height: 1; font-weight: 500; color: #00152e; }
+  .kpi-foot { color: #52667a; font-size: 12px; margin-top: 18px; }
+  .kpi-foot.good { color: #079642; }
+  .kpi-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+  .tone-blue { color: #1e63ff; background: #eaf1ff; }
+  .tone-orange { color: #fb4e12; background: #fff4eb; }
+  .tone-purple { color: #9719ff; background: #f8ecff; }
+  .tone-green { color: #08a64b; background: #eafaf0; }
+  .tone-red { color: #e42032; background: #fff0f2; }
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
+    gap: 24px;
+    align-items: start;
+    margin-bottom: 24px;
+  }
+  .dashboard-grid-single {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-card-header {
+    padding: 24px 24px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .dashboard-card-title { font-size: 18px; font-weight: 700; margin: 0; }
+  .dashboard-card-body { padding: 20px 24px 24px; }
+  .analytics-layout {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(320px, 1fr);
+    gap: 32px;
+    align-items: center;
+  }
+  .section-label { color: #344e67; font-size: 13px; font-weight: 600; margin-bottom: 18px; }
+  .donut-wrap { display: flex; flex-direction: column; align-items: center; }
+  .donut-chart {
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    position: relative;
+    background: conic-gradient(var(--open) 0 var(--open-end), var(--progress) var(--open-end) var(--progress-end), var(--resolved) var(--progress-end) var(--resolved-end), var(--closed) var(--resolved-end) 100%);
+  }
+  .donut-chart::after {
+    content: "";
+    position: absolute;
+    inset: 30px;
+    border-radius: 50%;
+    background: #fff;
+  }
+  .donut-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 24px; font-size: 13px; color: #344e67; }
+  .legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+  .priority-list { display: flex; flex-direction: column; gap: 12px; }
+  .priority-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 8px;
+    padding: 18px;
+    border: 1px solid transparent;
+  }
+  .priority-name { display: flex; align-items: center; gap: 12px; font-weight: 600; }
+  .priority-count { font-size: 22px; color: currentColor; }
+  .priority-count small { font-size: 12px; color: #64748b; margin-left: 4px; }
+  .priority-critical { background: #ffe0e2; border-color: #ffc0c4; color: #dd0012; }
+  .priority-high { background: #fff0d6; border-color: #ffd18d; color: #cf4b00; }
+  .priority-medium { background: #fff9bf; border-color: #f4e56f; color: #b87900; }
+  .priority-low { background: #d8f8e3; border-color: #a8ebbf; color: #079642; }
+  .calendar-card .dashboard-card-body { padding-top: 12px; }
+  .calendar-month { text-align: center; color: #344e67; font-weight: 600; margin: 4px 0 20px; }
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+  .calendar-weekday { color: #52667a; font-size: 12px; text-align: center; padding-bottom: 8px; }
+  .calendar-day {
+    min-height: 56px;
+    border: 1px solid #dde3ea;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #10253c;
+    font-size: 14px;
+    position: relative;
+    background: #fff;
+  }
+  .calendar-day.muted { color: transparent; background: transparent; border-color: transparent; }
+  .calendar-day.today { background: #1e63ff; border-color: #1e63ff; color: #fff; }
+  .calendar-day.has-due { background: #fff0d6; border-color: #ffd18d; color: #d94400; }
+  .calendar-day.has-due.today { background: #1e63ff; color: #fff; }
+  .due-list-title { font-weight: 700; font-size: 14px; margin: 24px 0 12px; }
+  .due-list { display: flex; flex-direction: column; gap: 8px; }
+  .due-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px;
+    border: 1px solid #dde3ea;
+    border-radius: 8px;
+    background: #fbfcfe;
+  }
+  .due-date-chip {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: #dbeafe;
+    color: #1e63ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+  .active-table { width: 100%; border-collapse: collapse; }
+  .active-table th {
+    color: #344154;
+    font-size: 13px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #dde3ea;
+  }
+  .active-table td {
+    padding: 15px 14px;
+    border-bottom: 1px solid #edf1f5;
+    vertical-align: middle;
+  }
+  .active-table tr:hover { background: #f8fafc; }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .pill-critical { background: #ffe0e2; color: #dd0012; border-color: #ffc0c4; }
+  .pill-high { background: #fff0d6; color: #cf4b00; border-color: #ffd18d; }
+  .pill-medium { background: #fff9bf; color: #a66a00; border-color: #f4e56f; }
+  .pill-low { background: #d8f8e3; color: #079642; border-color: #a8ebbf; }
+  .pill-NOT_SET { background: #f1f5f9; color: #475569; border-color: #dbe3ec; }
+  .pill-open { background: #f2e6ff; color: #8a1cff; border-color: #dfc3ff; }
+  .pill-in_progress { background: #dbeafe; color: #1e63ff; border-color: #bfdbfe; }
+  .pill-on_hold, .pill-reopened { background: #f1f5f9; color: #475569; border-color: #dbe3ec; }
+  .performance-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+    gap: 16px;
+  }
+  .engineer-card { border: 1px solid #dde3ea; border-radius: 8px; padding: 16px; }
+  .engineer-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .engineer-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    color: #fff;
+    background: #1e63ff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+  }
+  .engineer-metric { display: flex; justify-content: space-between; color: #344e67; font-size: 14px; margin-bottom: 8px; }
+  .progress-track { height: 8px; background: #e5e7eb; border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .progress-fill { height: 100%; background: #1e63ff; border-radius: inherit; }
+  .activity-list { max-height: 420px; overflow-y: auto; padding-right: 8px; }
+  .activity-item { display: grid; grid-template-columns: 40px 1fr; gap: 12px; padding-bottom: 20px; position: relative; }
+  .activity-item::before {
+    content: "";
+    position: absolute;
+    left: 19px;
+    top: 40px;
+    bottom: 0;
+    border-left: 1px solid #dde3ea;
+  }
+  .activity-item:last-child::before { display: none; }
+  .activity-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .activity-title { font-weight: 700; margin-bottom: 2px; }
+  .activity-desc { color: #344e67; font-size: 13px; }
+  .activity-time { color: #64748b; font-size: 12px; margin-top: 8px; }
+  .view-link { font-size: 13px; font-weight: 700; color: #1e63ff; }
+  @media (max-width: 1200px) {
+    .kpi-grid { grid-template-columns: repeat(3, minmax(160px, 1fr)); }
+    .dashboard-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 768px) {
+    .kpi-grid, .analytics-layout, .performance-grid { grid-template-columns: 1fr; }
+    .active-table { min-width: 820px; }
+  }
 </style>
 {% endblock %}
 
@@ -20,10 +240,9 @@
 <div class="row mb-2">
   <div class="col-12 d-flex align-items-center justify-content-between flex-wrap">
     <div class="page-title">
-      <i class="fas fa-chart-pie"></i>
       <div>
         <div>Dashboard</div>
-        <!-- <small class="text-muted">Role-focused snapshots for tickets, schedules, and logs.</small> -->
+        <small class="dashboard-subtitle">Healthcare Ticketing Management System</small>
       </div>
     </div>
   </div>
@@ -124,8 +343,231 @@
 </div>
  -->
 
-{# Admin / Engineer dashboard #}
-{% if current_user.role.value in ['admin', 'engineer'] %}
+{# Role-scoped dashboard. Admin and support see overall data. #}
+{% if admin_data %}
+{% set sc = admin_data.status_counts %}
+{% set pc = admin_data.priority_counts %}
+{% set donut_total = sc.open + sc.in_progress + sc.resolved + sc.closed %}
+{% if donut_total == 0 %}{% set donut_total = 1 %}{% endif %}
+{% set open_end = (sc.open / donut_total * 100)|round(2) %}
+{% set progress_end = ((sc.open + sc.in_progress) / donut_total * 100)|round(2) %}
+{% set resolved_end = ((sc.open + sc.in_progress + sc.resolved) / donut_total * 100)|round(2) %}
+
+<div class="dashboard-page">
+  <div class="kpi-grid">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+      <div class="kpi-card-top">
+        <div><div class="kpi-label">Total Tickets</div><div class="kpi-value">{{ total_tickets }}</div></div>
+        <div class="kpi-icon tone-blue"><i class="fas fa-ticket-alt"></i></div>
+      </div>
+      <div class="kpi-foot good">+{{ admin_data.pm_total or 0 }} PM this year</div>
+    </a>
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+      <div class="kpi-card-top">
+        <div><div class="kpi-label">Open Tickets</div><div class="kpi-value">{{ sc.open }}</div></div>
+        <div class="kpi-icon tone-orange"><i class="fas fa-exclamation-circle"></i></div>
+      </div>
+      <div class="kpi-foot">Needs assignment or triage</div>
+    </a>
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+      <div class="kpi-card-top">
+        <div><div class="kpi-label">In Progress</div><div class="kpi-value">{{ sc.in_progress }}</div></div>
+        <div class="kpi-icon tone-purple"><i class="far fa-clock"></i></div>
+      </div>
+      <div class="kpi-foot">Currently being handled</div>
+    </a>
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+      <div class="kpi-card-top">
+        <div><div class="kpi-label">Resolved</div><div class="kpi-value">{{ sc.resolved }}</div></div>
+        <div class="kpi-icon tone-green"><i class="fas fa-check-circle"></i></div>
+      </div>
+      <div class="kpi-foot good">Ready for review or closure</div>
+    </a>
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+      <div class="kpi-card-top">
+        <div><div class="kpi-label">Overdue</div><div class="kpi-value">{{ sc.overdue }}</div></div>
+        <div class="kpi-icon tone-red"><i class="fas fa-chart-line"></i></div>
+      </div>
+      <div class="kpi-foot">Past target schedule</div>
+    </a>
+  </div>
+
+  <div class="dashboard-grid{% if current_user.role.value in ['client', 'client_admin'] %} dashboard-grid-single{% endif %}">
+    {% if current_user.role.value not in ['client', 'client_admin'] %}
+    <div class="dashboard-card">
+      <div class="dashboard-card-header"><h3 class="dashboard-card-title">Ticket Analytics</h3></div>
+      <div class="dashboard-card-body">
+        <div class="analytics-layout">
+          <div>
+            <div class="section-label">Status Distribution</div>
+            <div class="donut-wrap">
+              <div class="donut-chart" style="--open:#f97316;--progress:#a855f7;--resolved:#22c55e;--closed:#64748b;--open-end:{{ open_end }}%;--progress-end:{{ progress_end }}%;--resolved-end:{{ resolved_end }}%;"></div>
+              <div class="donut-legend">
+                <span><i class="legend-dot" style="background:#f97316"></i>Open ({{ sc.open }})</span>
+                <span><i class="legend-dot" style="background:#a855f7"></i>In Progress ({{ sc.in_progress }})</span>
+                <span><i class="legend-dot" style="background:#22c55e"></i>Resolved ({{ sc.resolved }})</span>
+                <span><i class="legend-dot" style="background:#64748b"></i>Closed ({{ sc.closed }})</span>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="section-label">Priority Breakdown</div>
+            <div class="priority-list">
+              <div class="priority-row priority-critical"><div class="priority-name"><i class="fas fa-exclamation-circle"></i> Critical</div><div class="priority-count">{{ pc.critical }} <small>tickets</small></div></div>
+              <div class="priority-row priority-high"><div class="priority-name"><i class="fas fa-exclamation-circle"></i> High</div><div class="priority-count">{{ pc.high }} <small>tickets</small></div></div>
+              <div class="priority-row priority-medium"><div class="priority-name"><i class="far fa-clock"></i> Medium</div><div class="priority-count">{{ pc.medium }} <small>tickets</small></div></div>
+              <div class="priority-row priority-low"><div class="priority-name"><i class="fas fa-check-circle"></i> Low</div><div class="priority-count">{{ pc.low }} <small>tickets</small></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="dashboard-card calendar-card">
+      <div class="dashboard-card-header">
+        <h3 class="dashboard-card-title">Schedule</h3>
+        <div class="text-muted"><i class="fas fa-chevron-left mr-3"></i><i class="fas fa-chevron-right"></i></div>
+      </div>
+      <div class="dashboard-card-body">
+        <div class="calendar-month">{{ admin_data.calendar_month }}</div>
+        <div class="calendar-grid">
+          {% for day_name in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] %}<div class="calendar-weekday">{{ day_name }}</div>{% endfor %}
+          {% for week in admin_data.calendar_weeks %}
+            {% for day in week %}
+            {% set is_current_month = day.month == admin_data.today.month %}
+            {% set has_due = admin_data.due_counts.get(day, 0) > 0 %}
+            <div class="calendar-day{% if not is_current_month %} muted{% endif %}{% if has_due %} has-due{% endif %}{% if day == admin_data.today %} today{% endif %}">
+              {% if is_current_month %}{{ day.day }}{% endif %}
+            </div>
+            {% endfor %}
+          {% endfor %}
+        </div>
+        <div class="due-list-title"><i class="far fa-clock mr-2"></i>Upcoming Due Dates</div>
+        <div class="due-list">
+          {% for ticket in admin_data.ticket_deadlines[:4] %}
+          {% set due = ticket.target_date or (ticket.date_needed.date() if ticket.date_needed else none) %}
+          <a class="due-item text-decoration-none" href="{{ url_for('tickets.detail', ticket_id=ticket.id) }}">
+            <div class="due-date-chip">{{ due.day if due else '-' }}</div>
+            <div class="flex-grow-1">
+              <div class="font-weight-bold">{{ ticket.ticket_no }}</div>
+              <div class="text-muted small">{{ due.strftime('%b %d') if due else 'No date' }}</div>
+            </div>
+            <div class="text-right small text-dark">{{ ticket.client.name if ticket.client else '' }}</div>
+          </a>
+          {% else %}
+          <div class="text-muted">No upcoming due dates.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-card mb-4">
+    <div class="dashboard-card-header">
+      <h3 class="dashboard-card-title">{{ 'My Tickets' if current_user.role.value in ['client', 'client_admin'] else 'Active Tickets' }}</h3>
+      <a class="btn btn-primary" href="{{ url_for('tickets.index') }}">View All Tickets</a>
+    </div>
+    <div class="dashboard-card-body">
+      <div class="table-responsive">
+        <table class="active-table">
+          <thead>
+            <tr>
+              <th>Ticket No</th>
+              <th>Client</th>
+              <th>Reported By</th>
+              <th>Instrument</th>
+              {% if current_user.role.value not in ['client', 'client_admin'] %}
+              <th>Engineer</th>
+              <th>Priority</th>
+              {% endif %}
+              <th>Status</th>
+              <th>Date Needed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for t in admin_data.active_tickets %}
+            {% set pval = t.priority.value if t.priority else 'NOT_SET' %}
+            {% set sval = t.status.value if t.status else 'open' %}
+            <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+              <td><a href="{{ url_for('tickets.detail', ticket_id=t.id) }}">{{ t.ticket_no }}</a></td>
+              <td>{{ t.client.name if t.client else '' }}</td>
+              <td>{{ t.reported_by.full_name or t.reported_by.username if t.reported_by else 'Unknown' }}</td>
+              <td>{{ ticket_item(t) }}</td>
+              {% if current_user.role.value not in ['client', 'client_admin'] %}
+              <td>{{ t.assigned_engineer.full_name or t.assigned_engineer.username if t.assigned_engineer else 'Unassigned' }}</td>
+              <td><span class="pill pill-{{ pval }}">{{ pval.replace('_', ' ')|title }}</span></td>
+              {% endif %}
+              <td><span class="pill pill-{{ sval }}">{{ sval.replace('_', ' ')|title }}</span></td>
+              <td>{{ t.date_needed.strftime('%Y-%m-%d') if t.date_needed else (t.target_date.strftime('%Y-%m-%d') if t.target_date else '-') }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="{{ 6 if current_user.role.value in ['client', 'client_admin'] else 8 }}" class="text-center text-muted py-4">{{ 'No tickets found.' if current_user.role.value in ['client', 'client_admin'] else 'No active tickets.' }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="dashboard-grid{% if current_user.role.value in ['client', 'client_admin'] %} dashboard-grid-single{% endif %}">
+    {% if current_user.role.value not in ['client', 'client_admin'] %}
+    <div class="dashboard-card">
+      <div class="dashboard-card-header">
+        <h3 class="dashboard-card-title">Engineer Performance</h3>
+        {% if admin_data.can_view_overall %}
+        <a class="view-link" href="{{ url_for('admin.engineers_index') }}"><i class="fas fa-chart-line mr-1"></i>View Details</a>
+        {% endif %}
+      </div>
+      <div class="dashboard-card-body">
+        <div class="performance-grid">
+          {% for row in admin_data.engineer_performance %}
+          {% set eng = row.engineer %}
+          {% set name = eng.full_name or eng.username %}
+          <div class="engineer-card">
+            <div class="engineer-head">
+              <div class="engineer-avatar">{{ (name.split()[0][0] ~ (name.split()[1][0] if name.split()|length > 1 else name.split()[0][1:2]))|upper }}</div>
+              <div><div class="font-weight-bold">{{ name }}</div><div class="text-muted small">Field Engineer</div></div>
+            </div>
+            <div class="engineer-metric"><span>Assigned</span><strong>{{ row.assigned }}</strong></div>
+            <div class="engineer-metric"><span>Completed</span><strong>{{ row.completed }}</strong></div>
+            <div class="engineer-metric"><span>Completion Rate</span><strong>{{ row.completion_rate }}%</strong></div>
+            <div class="progress-track"><div class="progress-fill" style="width: {{ row.completion_rate }}%;"></div></div>
+          </div>
+          {% else %}
+          <div class="text-muted">No engineers found.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="dashboard-card">
+      <div class="dashboard-card-header">
+        <h3 class="dashboard-card-title">Recent Activity</h3>
+        <a class="view-link" href="{{ url_for('tickets.index') }}">View All</a>
+      </div>
+      <div class="dashboard-card-body">
+        <div class="activity-list">
+          {% for item in admin_data.recent_activity %}
+          <div class="activity-item">
+            <div class="activity-icon tone-{{ item.tone }}"><i class="fas {{ item.icon }}"></i></div>
+            <div>
+              <div class="activity-title">{{ item.title }}</div>
+              <div class="activity-desc">{{ item.description }}</div>
+              <div class="activity-time">{{ item.timestamp.strftime('%Y-%m-%d %H:%M') if item.timestamp else '' }}</div>
+            </div>
+          </div>
+          {% else %}
+          <div class="text-muted">No recent activity.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if false %}
 
 <div class="card">
   <div class="card-header">
@@ -349,6 +791,8 @@
   </div>
 </div> 
 -->
+
+{% endif %}
 
 {% endif %}
 
