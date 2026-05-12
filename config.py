@@ -8,6 +8,7 @@ class Config:
         "DATABASE_URL",
         "mysql+pymysql://cerebro_ticketing:Alp65230071@localhost:3306/cerebro_ticketing",
         # "mysql+pymysql://root:6523007@localhost:3306/cds_service",
+        # "mysql+pymysql://root:6523007@localhost:3306/cds_service",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

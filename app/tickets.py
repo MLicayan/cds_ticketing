@@ -703,9 +703,9 @@ def _apply_my_ticket_scope(query):
 
 def _apply_my_task_scope(query):
     user_type = (current_user.user_type or "").strip().lower()
-    if _is_support_user(current_user):
-        return query
     if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
+        return query.filter(TicketTask.assigned_engineer_id == current_user.id)
+    if _is_support_user(current_user):
         return query.filter(TicketTask.assigned_engineer_id == current_user.id)
     if current_user.role == UserRole.ADMIN or user_type == "administrator":
         return query.filter(TicketTask.assigned_engineer_id == current_user.id)
@@ -1704,10 +1704,19 @@ def detail(ticket_id):
             engineers = User.query.filter(
                 User.role == UserRole.ENGINEER
             ).order_by(User.full_name.asc()).all()
-        task_engineers = User.query.filter(
-            User.role == UserRole.ENGINEER,
-            User.user_type == "IT"
-        ).order_by(User.full_name.asc(), User.username.asc()).all()
+        task_engineers_query = User.query.filter(
+            User.role == UserRole.ENGINEER
+        )
+        allowed_task_assignee_filters = [
+            db.func.lower(User.user_type) == "it",
+            db.func.lower(User.user_type) == "support",
+        ]
+        if current_user.role == UserRole.ENGINEER:
+            allowed_task_assignee_filters.append(User.id == current_user.id)
+        if is_task_ticket and ticket.assigned_engineer_id:
+            allowed_task_assignee_filters.append(User.id == ticket.assigned_engineer_id)
+        task_engineers_query = task_engineers_query.filter(db.or_(*allowed_task_assignee_filters))
+        task_engineers = task_engineers_query.order_by(User.full_name.asc(), User.username.asc()).all()
 
     ticket_tasks = TicketTask.query.filter(TicketTask.ticket_id == ticket.id).order_by(
         TicketTask.created_at.desc(),
@@ -2220,22 +2229,28 @@ def create_tasks(ticket_id):
         if not subject and not engineer_id and not description:
             continue
         if not engineer_id:
-            flash("Each task must be assigned to an IT user.", "danger")
+            flash("Each task must be assigned to an IT or Support user.", "danger")
             return redirect(url_for("tickets.detail", ticket_id=ticket.id))
 
         try:
             engineer_id_int = int(engineer_id)
         except ValueError:
-            flash("Invalid IT assignment selected.", "danger")
+            flash("Invalid task assignment selected.", "danger")
             return redirect(url_for("tickets.detail", ticket_id=ticket.id))
 
-        engineer = User.query.filter(
+        engineer_query = User.query.filter(
             User.id == engineer_id_int,
             User.role == UserRole.ENGINEER,
-            User.user_type == "IT",
-        ).first()
+        )
+        engineer_query = engineer_query.filter(
+            db.or_(
+                db.func.lower(User.user_type) == "it",
+                db.func.lower(User.user_type) == "support",
+            )
+        )
+        engineer = engineer_query.first()
         if not engineer:
-            flash("Invalid IT assignment selected.", "danger")
+            flash("Invalid task assignment selected.", "danger")
             return redirect(url_for("tickets.detail", ticket_id=ticket.id))
 
         try:
@@ -2923,7 +2938,8 @@ def toggle_task_work_state(task_id):
     user_name = current_user.full_name or current_user.username
     if action == "start":
         task.is_working = True
-        task.started_date = date.today()
+        if not task.started_date:
+            task.started_date = date.today()
         if task.status in (TicketStatus.OPEN, TicketStatus.REOPENED, TicketStatus.ON_HOLD):
             task.status = TicketStatus.IN_PROGRESS
         parent_ticket = task.parent_ticket

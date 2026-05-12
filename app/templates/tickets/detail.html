@@ -444,13 +444,13 @@
         <h3 class="card-title"><i class="fas fa-clipboard-list metric-icon"></i>Ticket Info</h3>
         <div class="btn-group text-right float-right">
             {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and ticket.status != TicketStatus.CLOSED %}
-              <button class="btn btn-sm btn-primary mr-3" type="button" data-toggle="modal" data-target="#updateInfoModal">
-                <i class="fas fa-edit"></i>Edit
+              <button class="btn btn-sm btn-info mr-3" type="button" data-toggle="modal" data-target="#updateInfoModal">
+                <i class="fas fa-edit"></i> Update
               </button>
             {% endif %}
             {% if current_user.role.value in ['client', 'client_admin'] and ticket.status != TicketStatus.CLOSED %}
-              <button class="btn btn-sm btn-primary mr-3" type="button" data-toggle="modal" data-target="#clientUpdateModal">
-                <i class="fas fa-edit"></i>Edit
+              <button class="btn btn-sm btn-info mr-3" type="button" data-toggle="modal" data-target="#clientUpdateModal">
+                <i class="fas fa-edit"></i> Update
               </button>
             {% endif %}
           </div>
@@ -557,6 +557,17 @@
               <dt class="col-sm-4">Reported By</dt>
               <dd class="col-sm-8">{{ ticket.reported_by.full_name or ticket.reported_by.username }}</dd>
 
+              {% if is_task_ticket %}
+              <dt class="col-sm-4">Assigned To</dt>
+              <dd class="col-sm-8">
+                {% if ticket.assigned_engineer %}
+                  {{ ticket.assigned_engineer.full_name or ticket.assigned_engineer.username }}
+                {% else %}
+                  <span class="text-muted">Not assigned</span>
+                {% endif %}
+              </dd>
+              {% endif %}
+
               <dt class="col-sm-4">Contact Number</dt>
               <dd class="col-sm-8">
                 {% if ticket.reported_by and ticket.reported_by.contact_number %}
@@ -617,9 +628,9 @@
           <div class="col-md-4">
             {% if current_user.role.value not in ['client', 'client_admin', 'sales'] %}
               <div class="bg-light p-3 rounded">
-                {% set is_assigned_it = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() == 'it' %}
+                {% set is_assigned_worker = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() in ['it', 'support'] %}
 
-                {% if is_assigned_it and ticket.status != TicketStatus.CLOSED %}
+                {% if is_assigned_worker and ticket.status != TicketStatus.CLOSED %}
                   <form method="post" action="{{ url_for('tickets.toggle_task_work_state', task_id=ticket.id) if is_task_ticket else url_for('tickets.toggle_work_state', ticket_id=ticket.id) }}">
                     <input type="hidden" name="action" value="{{ 'stop' if ticket.is_working else 'start' }}">
                     <button type="submit" class="btn btn-{{ 'danger' if ticket.is_working else 'success' }} btn-sm btn-block">
@@ -988,6 +999,20 @@
                 </div>
               </div>
             </div>
+
+            {% if is_task_ticket and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) %}
+            <div class="form-group">
+              <label for="engineer_id">Assigned To</label>
+              <select name="engineer_id" id="engineer_id" class="form-control">
+                <option value="">Unassigned</option>
+                {% for eng in task_engineers %}
+                  <option value="{{ eng.id }}" {% if ticket.assigned_engineer and ticket.assigned_engineer.id == eng.id %}selected{% endif %}>
+                    {{ eng.full_name or eng.username }}
+                  </option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endif %}
 
             <div class="form-group mb-0">
               <label for="status">Update Status</label>
