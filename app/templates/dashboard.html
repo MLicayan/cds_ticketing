@@ -109,6 +109,38 @@
   .priority-medium { background: #fff9bf; border-color: #f4e56f; color: #b87900; }
   .priority-low { background: #d8f8e3; border-color: #a8ebbf; color: #079642; }
   .calendar-card .dashboard-card-body { padding-top: 12px; }
+  .calendar-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+    z-index: 2;
+  }
+  .calendar-nav-button {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #344e67;
+    border: 1px solid #dde3ea;
+    background: #ffffff;
+    text-decoration: none;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+    cursor: pointer;
+    position: relative;
+    z-index: 3;
+    white-space: nowrap;
+  }
+  .calendar-nav-button:hover,
+  .calendar-nav-button:focus {
+    color: #1e63ff;
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    text-decoration: none;
+    outline: none;
+  }
   .calendar-month { text-align: center; color: #344e67; font-weight: 600; margin: 4px 0 20px; }
   .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
   .calendar-weekday { color: #52667a; font-size: 12px; text-align: center; padding-bottom: 8px; }
@@ -427,21 +459,18 @@
     <div class="dashboard-card calendar-card">
       <div class="dashboard-card-header">
         <h3 class="dashboard-card-title">Schedule</h3>
-        <div class="text-muted"><i class="fas fa-chevron-left mr-3"></i><i class="fas fa-chevron-right"></i></div>
+        <div class="calendar-nav" aria-label="Schedule month navigation">
+          <a class="calendar-nav-button" href="{{ url_for('main.dashboard', schedule_month=admin_data.previous_calendar_month) }}" data-schedule-month="{{ admin_data.previous_calendar_month }}" aria-label="Previous month" title="Previous month">
+            <i class="fas fa-chevron-left" aria-hidden="true"></i>
+          </a>
+          <a class="calendar-nav-button" href="{{ url_for('main.dashboard', schedule_month=admin_data.next_calendar_month) }}" data-schedule-month="{{ admin_data.next_calendar_month }}" aria-label="Next month" title="Next month">
+            <i class="fas fa-chevron-right" aria-hidden="true"></i>
+          </a>
+        </div>
       </div>
       <div class="dashboard-card-body">
-        <div class="calendar-month">{{ admin_data.calendar_month }}</div>
-        <div class="calendar-grid">
-          {% for day_name in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] %}<div class="calendar-weekday">{{ day_name }}</div>{% endfor %}
-          {% for week in admin_data.calendar_weeks %}
-            {% for day in week %}
-            {% set is_current_month = day.month == admin_data.today.month %}
-            {% set has_due = admin_data.due_counts.get(day, 0) > 0 %}
-            <div class="calendar-day{% if not is_current_month %} muted{% endif %}{% if has_due %} has-due{% endif %}{% if day == admin_data.today %} today{% endif %}">
-              {% if is_current_month %}{{ day.day }}{% endif %}
-            </div>
-            {% endfor %}
-          {% endfor %}
+        <div id="dashboard-schedule-calendar">
+          {% include "_dashboard_schedule_calendar.html" %}
         </div>
         <div class="due-list-title"><i class="far fa-clock mr-2"></i>Upcoming Due Dates</div>
         <div class="due-list">
@@ -1029,4 +1058,64 @@
 </div>
 {% endif %}
 
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var scheduleCard = document.querySelector('.calendar-card');
+    if (!scheduleCard) return;
+
+    var calendarContainer = document.getElementById('dashboard-schedule-calendar');
+    var navButtons = scheduleCard.querySelectorAll('.calendar-nav-button');
+    var endpoint = "{{ url_for('main.schedule_calendar') }}";
+
+    function setLoading(isLoading) {
+      navButtons.forEach(function (button) {
+        button.classList.toggle('disabled', isLoading);
+        button.setAttribute('aria-disabled', isLoading ? 'true' : 'false');
+      });
+    }
+
+    function updateButton(button, month, direction) {
+      button.dataset.scheduleMonth = month;
+      button.href = "{{ url_for('main.dashboard') }}" + "?schedule_month=" + encodeURIComponent(month);
+      button.title = direction;
+      button.setAttribute('aria-label', direction);
+    }
+
+    navButtons.forEach(function (button) {
+      button.addEventListener('click', function (event) {
+        var month = button.dataset.scheduleMonth;
+        if (!month || !window.fetch || !calendarContainer) return;
+
+        event.preventDefault();
+        setLoading(true);
+
+        fetch(endpoint + "?schedule_month=" + encodeURIComponent(month), {
+          headers: { "X-Requested-With": "XMLHttpRequest" }
+        })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Calendar update failed');
+            return response.json();
+          })
+          .then(function (payload) {
+            calendarContainer.innerHTML = payload.html;
+            if (navButtons[0]) updateButton(navButtons[0], payload.previous_month, 'Previous month');
+            if (navButtons[1]) updateButton(navButtons[1], payload.next_month, 'Next month');
+            var url = new URL(window.location.href);
+            url.searchParams.set('schedule_month', month);
+            window.history.replaceState({}, '', url.toString());
+          })
+          .catch(function () {
+            window.location.href = button.href;
+          })
+          .finally(function () {
+            setLoading(false);
+          });
+      });
+    });
+  });
+</script>
 {% endblock %}

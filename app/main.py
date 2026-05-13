@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 import calendar
 
-from flask import Blueprint, render_template
+from flask import Blueprint, jsonify, render_template, request
 from flask_login import login_required, current_user
 
 from . import db
@@ -33,6 +33,86 @@ def _apply_client_ticket_scope(query):
         return query.filter(Ticket.client_id == current_user.client_id)
     return query
 
+
+def _shift_month(month_date, offset):
+    month_index = month_date.month - 1 + offset
+    year = month_date.year + month_index // 12
+    month = month_index % 12 + 1
+    return month_date.replace(year=year, month=month, day=1)
+
+
+def _parse_schedule_month(value, today):
+    selected_month = today.replace(day=1)
+    if value:
+        try:
+            selected_month = datetime.strptime(value.strip(), "%Y-%m").date().replace(day=1)
+        except ValueError:
+            selected_month = today.replace(day=1)
+    return selected_month
+
+
+def _dashboard_ticket_scope_for_user():
+    role = current_user.role
+    user_type = (current_user.user_type or "").strip().lower()
+    can_view_overall = role == UserRole.ADMIN or (role == UserRole.ENGINEER and user_type == "support")
+    scoped_client_ids = []
+    ticket_scope = _exclude_task_tickets(Ticket.query)
+
+    if role == UserRole.SALES:
+        sales_clients = Client.query.filter(Client.assigned_sales_id == current_user.id).all()
+        scoped_client_ids = [client.id for client in sales_clients]
+        ticket_scope = ticket_scope.filter(Ticket.client_id.in_(scoped_client_ids)) if scoped_client_ids else ticket_scope.filter(db.false())
+    elif role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN]:
+        ticket_scope = _apply_client_ticket_scope(ticket_scope)
+    elif role == UserRole.ENGINEER and not can_view_overall:
+        ticket_scope = ticket_scope.filter(Ticket.assigned_engineer_id == current_user.id)
+
+    return ticket_scope
+
+
+def _schedule_calendar_data(ticket_scope, selected_calendar_month, today):
+    month_calendar = calendar.Calendar(firstweekday=0).monthdatescalendar(
+        selected_calendar_month.year,
+        selected_calendar_month.month,
+    )
+    next_calendar_month_start = _shift_month(selected_calendar_month, 1)
+    selected_month_start_dt = datetime.combine(selected_calendar_month, datetime.min.time())
+    next_month_start_dt = datetime.combine(next_calendar_month_start, datetime.min.time())
+    calendar_deadlines = (
+        ticket_scope.filter(
+            db.or_(
+                db.and_(
+                    Ticket.target_date.isnot(None),
+                    Ticket.target_date >= selected_calendar_month,
+                    Ticket.target_date < next_calendar_month_start,
+                ),
+                db.and_(
+                    Ticket.target_date.is_(None),
+                    Ticket.date_needed.isnot(None),
+                    Ticket.date_needed >= selected_month_start_dt,
+                    Ticket.date_needed < next_month_start_dt,
+                ),
+            )
+        )
+        .all()
+    )
+    due_counts = {}
+    for ticket in calendar_deadlines:
+        due_date = ticket.target_date or (ticket.date_needed.date() if ticket.date_needed else None)
+        if due_date:
+            due_counts[due_date] = due_counts.get(due_date, 0) + 1
+
+    return {
+        "calendar_weeks": month_calendar,
+        "calendar_month": selected_calendar_month.strftime("%B %Y"),
+        "calendar_date": selected_calendar_month,
+        "previous_calendar_month": _shift_month(selected_calendar_month, -1).strftime("%Y-%m"),
+        "next_calendar_month": _shift_month(selected_calendar_month, 1).strftime("%Y-%m"),
+        "is_current_calendar_month": selected_calendar_month == today.replace(day=1),
+        "today": today,
+        "due_counts": due_counts,
+    }
+
 main_bp = Blueprint(
         "main", __name__, 
         template_folder="templates",
@@ -41,6 +121,29 @@ main_bp = Blueprint(
 @main_bp.route("/user-manual")
 def user_manual():
     return render_template("user_manual.html")
+
+
+@main_bp.route("/dashboard/schedule-calendar")
+@login_required
+def schedule_calendar():
+    today = datetime.utcnow().date()
+    selected_calendar_month = _parse_schedule_month(request.args.get("schedule_month", ""), today)
+    calendar_data = _schedule_calendar_data(
+        _dashboard_ticket_scope_for_user(),
+        selected_calendar_month,
+        today,
+    )
+    return jsonify(
+        {
+            "html": render_template(
+                "_dashboard_schedule_calendar.html",
+                admin_data=calendar_data,
+            ),
+            "previous_month": calendar_data["previous_calendar_month"],
+            "next_month": calendar_data["next_calendar_month"],
+            "month": calendar_data["calendar_month"],
+        }
+    )
 
 @main_bp.route("/")
 @login_required
@@ -88,6 +191,7 @@ def dashboard():
     client_dash = {}
 
     today = datetime.utcnow().date()
+    selected_calendar_month = _parse_schedule_month(request.args.get("schedule_month", ""), today)
     week_ahead = today + timedelta(days=7)
     year_start = today.replace(month=1, day=1)
     year_end = today.replace(month=12, day=31)
@@ -226,12 +330,7 @@ def dashboard():
             "low": all_scope.filter(Ticket.priority == TicketPriority.LOW).count(),
         }
 
-        month_calendar = calendar.Calendar(firstweekday=0).monthdatescalendar(today.year, today.month)
-        due_counts = {}
-        for ticket in ticket_deadlines:
-            due_date = ticket.target_date or (ticket.date_needed.date() if ticket.date_needed else None)
-            if due_date:
-                due_counts[due_date] = due_counts.get(due_date, 0) + 1
+        calendar_data = _schedule_calendar_data(ticket_scope, selected_calendar_month, today)
 
         engineers_query = User.query.filter(
             User.role == UserRole.ENGINEER,
@@ -311,10 +410,7 @@ def dashboard():
             "service_log_stats": service_log_stats,
             "status_counts": status_counts,
             "priority_counts": priority_counts,
-            "calendar_weeks": month_calendar,
-            "calendar_month": today.strftime("%B %Y"),
-            "today": today,
-            "due_counts": due_counts,
+            **calendar_data,
             "engineer_performance": engineer_performance,
             "recent_activity": recent_activity,
             "week_range": week_range,

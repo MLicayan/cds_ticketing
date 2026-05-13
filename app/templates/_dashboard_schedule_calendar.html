@@ -1,0 +1,13 @@
+<div class="calendar-month">{{ admin_data.calendar_month }}</div>
+<div class="calendar-grid">
+  {% for day_name in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] %}<div class="calendar-weekday">{{ day_name }}</div>{% endfor %}
+  {% for week in admin_data.calendar_weeks %}
+    {% for day in week %}
+    {% set is_current_month = day.month == admin_data.calendar_date.month and day.year == admin_data.calendar_date.year %}
+    {% set has_due = admin_data.due_counts.get(day, 0) > 0 %}
+    <div class="calendar-day{% if not is_current_month %} muted{% endif %}{% if has_due %} has-due{% endif %}{% if day == admin_data.today %} today{% endif %}">
+      {% if is_current_month %}{{ day.day }}{% endif %}
+    </div>
+    {% endfor %}
+  {% endfor %}
+</div>
