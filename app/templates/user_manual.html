@@ -3,210 +3,274 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CDS Service Monitoring – User Manual</title>
+  <title>CDS Service Monitoring - User Manual</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
   <style>
     :root {
       --primary: #0d6efd;
+      --primary-dark: #0b4bb5;
       --text-main: #1c2b4d;
       --muted: #6c757d;
       --card: #ffffff;
       --border: #e3e9f4;
       --bg: #f4f7fc;
     }
-    body { background: var(--bg); color: var(--text-main); font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif; }
-    .page { max-width: 1100px; margin: 32px auto 64px; }
-    .card {
+    body {
+      background: var(--bg);
+      color: var(--text-main);
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    .page { max-width: 1120px; margin: 32px auto 64px; padding: 0 16px; }
+    .manual-shell {
       border: 1px solid var(--border);
-      border-radius: 14px;
+      border-radius: 8px;
       box-shadow: 0 8px 30px rgba(15,70,140,0.08);
       overflow: hidden;
       background: var(--card);
     }
-    .card-header {
-      background: linear-gradient(135deg, var(--primary), #0b4bb5);
+    .manual-header {
+      background: linear-gradient(135deg, var(--primary), var(--primary-dark));
       color: #fff;
-      padding: 18px 22px;
+      padding: 20px 24px;
       border-bottom: 1px solid #dce5f6;
     }
-    .card-header h1, .card-header h2 { margin: 0; font-weight: 700; }
+    .manual-header h1 { margin: 0; font-weight: 700; }
+    .manual-header p { margin: 6px 0 0; opacity: 0.9; }
+    .section { padding: 18px 24px 0; }
+    .section:last-child { padding-bottom: 24px; }
     .section-title {
-      display: flex; align-items: center; gap: 10px;
-      font-size: 1.05rem; font-weight: 700; color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
       margin-bottom: 10px;
     }
-    .section-title i { color: var(--primary); }
-    .section { padding: 16px 20px 4px; }
+    .section-title i { color: var(--primary); width: 20px; text-align: center; }
     .muted { color: var(--muted); }
-    .pill {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 6px 12px; border-radius: 999px;
-      background: rgba(13,110,253,0.08); color: #0b4bb5;
-      font-weight: 600; font-size: 0.9rem;
+    .role-grid, .nav-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
+      gap: 12px;
     }
-    ul { padding-left: 1.1rem; }
-    li { margin-bottom: 6px; }
-    .badge-role { background: rgba(13,110,253,0.1); color: var(--text-main); border-radius: 8px; padding: 4px 8px; margin-right: 6px; font-weight: 600; }
-    .block { margin-bottom: 18px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
-    .card-lite {
+    .info-panel {
       border: 1px solid var(--border);
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 12px 14px;
       background: #fff;
+      height: 100%;
     }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 10px;
+      border-radius: 8px;
+      background: rgba(13,110,253,0.08);
+      color: var(--primary-dark);
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-bottom: 8px;
+    }
+    ul, ol { padding-left: 1.25rem; }
+    li { margin-bottom: 6px; }
     a { color: var(--primary); }
+    code {
+      color: #0b4bb5;
+      background: rgba(13,110,253,0.08);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .subhead {
+      font-weight: 700;
+      color: var(--text-main);
+      margin: 12px 0 6px;
+    }
   </style>
 </head>
 <body>
   <div class="page">
-    <div class="card mb-4">
-      <div class="card-header">
-        <h1 class="h3 mb-0"><i class="fas fa-book mr-2"></i>CDS Service Monitoring – User Manual</h1>
+    <div class="manual-shell">
+      <div class="manual-header">
+        <h1 class="h3"><i class="fas fa-book mr-2"></i>CDS Service Monitoring - User Manual</h1>
+        <p>Operational guide for tickets, tasks, service logs, schedules, monitoring, instruments, reports, and administration.</p>
       </div>
-      <div class="section">
-        <div class="block">
-          <div class="section-title"><i class="fas fa-info-circle"></i> Overview</div>
-          <p class="muted mb-1">Web app for tracking tickets, service logs, PM/weekly schedules, instruments, and reports.</p>
-          <p class="muted mb-0">Key data: Tickets, Service Logs, Schedules, Instruments, Reports.</p>
-        </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-user-shield"></i> Roles & Permissions</div>
-          <div class="grid">
-            <div class="card-lite">
-              <div class="pill mb-2"><i class="fas fa-crown"></i> Admin</div>
-              <div class="muted">Full access; manage users (admins/engineers/sales/clients), clients, instruments, apps, parts, service types; view all data.</div>
-            </div>
-            <div class="card-lite">
-              <div class="pill mb-2"><i class="fas fa-tools"></i> Engineer / IT</div>
-              <div class="muted">Full access to tickets and service logs; can create/edit logs, schedules, exports, reports.</div>
-            </div>
-            <div class="card-lite">
-              <div class="pill mb-2"><i class="fas fa-briefcase"></i> Sales</div>
-              <div class="muted">Create tickets and view modules; cannot change status/priority/assignee or create service logs.</div>
-            </div>
-            <div class="card-lite">
-              <div class="pill mb-2"><i class="fas fa-user"></i> Client</div>
-              <div class="muted">Create tickets for own client; view own tickets/logs; cannot edit status/assignee/priority; must approve closures with a signature.</div>
-            </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-info-circle"></i>Overview</div>
+        <p class="muted mb-1">CDS Service Monitoring tracks service tickets, developer/IT tasks, service logs, preventive maintenance schedules, weekly schedules, instruments, application monitoring, and reports.</p>
+        <p class="muted mb-0">Access is role-based. Administrators can also customize module access per user through navigation permissions.</p>
+      </div>
+
+      <div class="section">
+        <div class="section-title"><i class="fas fa-user-shield"></i>Roles &amp; Permissions</div>
+        <div class="role-grid">
+          <div class="info-panel">
+            <div class="pill"><i class="fas fa-crown"></i>Admin</div>
+            <div class="muted">Full access to operational modules, reports, monitoring, and Administrator setup screens.</div>
+          </div>
+          <div class="info-panel">
+            <div class="pill"><i class="fas fa-tools"></i>Engineer / Support</div>
+            <div class="muted">Handles tickets, service logs, schedules, instruments, exports, and reports when granted.</div>
+          </div>
+          <div class="info-panel">
+            <div class="pill"><i class="fas fa-laptop-code"></i>IT</div>
+            <div class="muted">Usually works from My Task or Developer Tasks, plus tickets/service logs when granted.</div>
+          </div>
+          <div class="info-panel">
+            <div class="pill"><i class="fas fa-briefcase"></i>Sales</div>
+            <div class="muted">Creates and follows tickets for assigned clients; protected ticket fields and service-log creation are restricted.</div>
+          </div>
+          <div class="info-panel">
+            <div class="pill"><i class="fas fa-user"></i>Client</div>
+            <div class="muted">Creates and follows own tickets, views own instruments, and approves closures where required.</div>
+          </div>
+          <div class="info-panel">
+            <div class="pill"><i class="fas fa-users"></i>Client Admin</div>
+            <div class="muted">Views tickets for the assigned client organization with client-scoped access.</div>
           </div>
         </div>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-compass"></i> Navigation</div>
-          <ul class="muted">
-            <li><strong>Dashboard:</strong> KPIs scoped by role/client.</li>
-            <li><strong>Tickets:</strong> list, filters, Gantt, calendar, kanban, CSV export.</li>
-            <li><strong>Service Logs:</strong> list, filters, Gantt, CSV/PDF.</li>
-            <li><strong>Weekly / PM Schedules:</strong> plan work; link PMs to service logs.</li>
-            <li><strong>Instruments:</strong> inventory and per-instrument logs.</li>
-            <li><strong>Reports:</strong> top instruments/engineers (admin/engineer).</li>
-            <li><strong>Admin:</strong> manage users, clients, instruments, parts, apps, service types.</li>
-          </ul>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-compass"></i>Main Navigation</div>
+        <div class="nav-grid muted">
+          <div class="info-panel"><strong>Dashboard:</strong> role-scoped KPIs, summaries, workload snapshots, and schedule/calendar context.</div>
+          <div class="info-panel"><strong>All Tickets / Tickets:</strong> filters, details, comments, attachments, Gantt, calendar, kanban, and CSV export.</div>
+          <div class="info-panel"><strong>My Task / My Tickets:</strong> assigned work for staff or client-specific ticket access, depending on role.</div>
+          <div class="info-panel"><strong>Developer Tasks:</strong> IT/developer child tasks with filters and task details.</div>
+          <div class="info-panel"><strong>App Monitoring / Daily Monitoring:</strong> application and daily status views for permitted users.</div>
+          <div class="info-panel"><strong>Service Logs:</strong> service records, parts, signatures, CSV export, and PDF generation.</div>
+          <div class="info-panel"><strong>Weekly / PM Schedule:</strong> planned work, PM visits, comments, attachments, and linked logs.</div>
+          <div class="info-panel"><strong>Instruments:</strong> inventory, service history, QR links, and LIS status information.</div>
+          <div class="info-panel"><strong>Reports:</strong> top instruments, visits/defects, and engineer activity.</div>
+          <div class="info-panel"><strong>Profile:</strong> account details, password changes, and client-user management where enabled.</div>
+          <div class="info-panel"><strong>Administrator:</strong> setup for users, clients, instruments, models, parts, apps, and service types.</div>
         </div>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-stream"></i> Ticket Workflow</div>
-          <ul class="muted">
-            <li><strong>Create:</strong> Tickets → New; pick client + instrument/app, subject/description, optional photo; ticket no: <code>T-000001</code> format.</li>
-            <li><strong>View/Update:</strong> Detail shows status, priority, assignee, timeline, logs, attachments. Admin/Engineer can change status/priority/target date/assignee; Sales/Client read-only for these.</li>
-            <li><strong>Comments:</strong> Clients/Sales add public comments; staff can mark Internal.</li>
-            <li><strong>Close client-reported:</strong> Closing requires a ticket-level client signature (capture via modal before status = Closed).</li>
-            <li><strong>Resolution:</strong> Service log with status_after=operational sets ticket to Resolved; non-operational keeps In-Process.</li>
-            <li><strong>Views/Export:</strong> Gantt, Calendar, Kanban, Export CSV.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-stream"></i>Ticket Workflow</div>
+        <ol class="muted">
+          <li><strong>Create:</strong> go to Tickets -&gt; New Ticket, choose the client and whether the ticket is for an instrument or CDS application, then fill subject, description, priority/date details, and optional attachment/photo. Client users are automatically scoped to their own client. Ticket numbers use <code>T-000001</code> format.</li>
+          <li><strong>Review/update:</strong> ticket detail shows status, priority, assignee, target/date-needed fields, timeline, comments, attachments, related tasks, and linked service logs. Admin/Engineer users can update protected fields when permitted.</li>
+          <li><strong>Comments:</strong> public comments support normal collaboration. Staff can mark notes as internal. Replies keep discussion threaded, and reactions/acknowledgements show that a comment was seen or accepted.</li>
+          <li><strong>Notifications:</strong> new client comments can appear in the header notification bell for staff.</li>
+          <li><strong>Progress views:</strong> use list filters, Gantt, Calendar, and Kanban. Permitted staff can drag non-closed tickets between Kanban columns.</li>
+          <li><strong>Closure:</strong> client-reported tickets require a captured client signature before closing. Closing a parent ticket also closes its child tasks.</li>
+        </ol>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-tools"></i> Service Log Workflow</div>
-          <ul class="muted">
-            <li><strong>Create (Admin/Engineer):</strong> Service Logs → New; select client, service-for (instrument/app), engineer, visit date, <strong>start/end time</strong>, status_after, confirmation photo, confirmed by/position; capture onsite signature for non-remote types; add parts; Save.</li>
-            <li><strong>Links:</strong> Launch from ticket or PM to prefill.</li>
-            <li><strong>Edit:</strong> Log detail → Edit Log (admin/assigned engineer) → update fields/times/monitoring, add attachments.</li>
-            <li><strong>Exports:</strong> CSV from list; PDF per log.</li>
-            <li><strong>Ticket sync:</strong> operational → Resolved; otherwise In-Process (if ticket not closed).</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-tasks"></i>Developer / IT Tasks</div>
+        <ul class="muted">
+          <li>Developer Tasks are child work items connected to a parent ticket.</li>
+          <li>Each task has its own task number, assignee, status, priority, comments, replies, reactions, attachments, and working/not-working state.</li>
+          <li>Use the Developer Tasks page to search and filter by client, assigned IT user, priority, status, and date range.</li>
+          <li>Closed tasks are read-only.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-calendar-check"></i> PM Schedules</div>
-          <ul class="muted">
-            <li>Create: PM Schedule → New → client + instrument + date + description + assign engineer → Save.</li>
-            <li>Filter by client/instrument/date range; open detail → create linked service log when done.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-tools"></i>Service Log Workflow</div>
+        <ul class="muted">
+          <li><strong>Create:</strong> go to Service Logs -&gt; New, or launch from a ticket/PM schedule to prefill fields.</li>
+          <li><strong>Required details:</strong> client, instrument or application, engineer, service type, visit date, start/end time, status after service, confirmation photo, confirmed by, and confirmed by position.</li>
+          <li><strong>Signatures:</strong> onsite/non-remote service types require a customer signature; remote service types may skip it depending on setup.</li>
+          <li><strong>Parts:</strong> add parts with quantity, price, total, and warranty flag as needed.</li>
+          <li><strong>Monitoring:</strong> mark logs for monitoring and set monitored days where applicable.</li>
+          <li><strong>Ticket sync:</strong> operational logs move linked tickets to Fix/Completed/Resolved; non-operational logs keep or return them to In-Process if not closed.</li>
+          <li><strong>Exports:</strong> CSV from the Service Logs list and PDF from the log detail page.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-calendar-week"></i> Weekly Schedules</div>
-          <ul class="muted">
-            <li>Create: Weekly Schedule → New → set week start/title → add tasks (client + instrument/app + subject/service type + engineer/priority) → Save.</li>
-            <li>Use tasks to drive work; tasks can spawn tickets where applicable.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-calendar-check"></i>Preventive Maintenance Schedule</div>
+        <ul class="muted">
+          <li>Create PM work from PM Schedule -&gt; New with client, instrument, date, description, task duration, and assigned engineer.</li>
+          <li>PM numbers are generated automatically.</li>
+          <li>Use filters by client, instrument, and date range to find planned work.</li>
+          <li>Open PM detail to add comments, upload attachments, assign/reassign work, edit the schedule, or create a linked service log when completed.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-microscope"></i> Instruments</div>
-          <ul class="muted">
-            <li>View list (filtered by client for staff; auto-scoped for clients).</li>
-            <li>Instrument detail: service history table, QR link, last PM/calibration.</li>
-            <li>Click a log row to open service log detail.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-calendar-week"></i>Weekly Schedule</div>
+        <ul class="muted">
+          <li>Create a weekly plan from Weekly Schedule -&gt; New.</li>
+          <li>Set the week start and title, then add task rows for client, instrument/application, service type, subject, notes, engineer, priority, and optional PM schedule.</li>
+          <li>Weekly task rows help drive planned work and can link back to tickets/PM schedules where applicable.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-chart-line"></i> Reports</div>
-          <ul class="muted">
-            <li>Admin/Engineer: view top instruments (visits/defects) and top engineers (log counts).</li>
-            <li>Client scoping applies automatically for client users.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-microscope"></i>Instruments</div>
+        <ul class="muted">
+          <li>Instruments are scoped by client access.</li>
+          <li>The list shows inventory details such as client, model, serial number, installation/warranty dates, status, and LIS connection information.</li>
+          <li>Instrument detail pages show service history, linked tickets/logs, last maintenance/calibration context, and QR access.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-user-cog"></i> Admin</div>
-          <ul class="muted">
-            <li>Users: manage Admins, Engineers/IT, Sales, Clients (username, full name, password, role, optional client).</li>
-            <li>Clients: create/edit; map apps; add client users.</li>
-            <li>Instruments/Apps/Service Types/Parts: manage reference data.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-desktop"></i>Application &amp; Daily Monitoring</div>
+        <ul class="muted">
+          <li>App Monitoring summarizes current CDS application/integration status.</li>
+          <li>Daily Monitoring provides a day-by-day monitoring view.</li>
+          <li>Monitoring pages are available only when the user has the matching navigation permission.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-signature"></i> Attachments & Signatures</div>
-          <ul class="muted">
-            <li>Uploads stored per module (tickets, service logs, PM schedules).</li>
-            <li>Ticket closure (client-reported) requires a ticket-level signature captured on status change.</li>
-            <li>Service logs require onsite signatures for non-remote types.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-chart-line"></i>Reports</div>
+        <ul class="muted">
+          <li>Reports are available to Admin and permitted Engineer users.</li>
+          <li>Report data includes top instruments by visits/defects and engineer activity/log counts.</li>
+          <li>Client-scoped users only see data allowed by their client assignment.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-file-export"></i> Exports</div>
-          <ul class="muted">
-            <li>Tickets: Export CSV (Tickets page).</li>
-            <li>Service Logs: Export CSV (logs list); PDF per log.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-user-cog"></i>Profile</div>
+        <ul class="muted">
+          <li>Use Profile to update account details and password.</li>
+          <li>Client Admin users may manage users under their assigned client when enabled.</li>
+        </ul>
+      </div>
 
-        <div class="block">
-          <div class="section-title"><i class="fas fa-wrench"></i> Admin Setup</div>
-          <ul class="muted">
-            <li>Create users under Admin (Admins, Engineers/IT, Sales, Clients).</li>
-            <li>Configure upload folders: <code>UPLOAD_FOLDER_TICKETS</code>, <code>UPLOAD_FOLDER_SERVICE_LOGS</code>, <code>UPLOAD_FOLDER_PM_SCHEDULES</code>.</li>
-            <li>Legacy scrypt hashes on older Python are supported; new passwords use PBKDF2.</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-cogs"></i>Administrator Setup</div>
+        <ul class="muted">
+          <li><strong>System Setup:</strong> manage navigation permissions available to users.</li>
+          <li><strong>Users:</strong> manage Admins, Engineers/IT, Sales, and client users.</li>
+          <li><strong>Clients:</strong> maintain client records, contacts, assigned sales, status, mapped CDS applications, and client users.</li>
+          <li><strong>Instruments and Models:</strong> maintain instruments, client links, model code, brand, and machine type.</li>
+          <li><strong>Parts, CDS Application, Service Types:</strong> maintain operational reference data.</li>
+        </ul>
+      </div>
 
-        <div class="block mb-3">
-          <div class="section-title"><i class="fas fa-life-ring"></i> Troubleshooting</div>
-          <ul class="muted">
-            <li>Cannot close client-reported ticket: capture a ticket signature in the closure modal.</li>
-            <li>Service log save blocked: check required fields (client, target, engineer, visit date, photo, signature for onsite).</li>
-            <li>Missing start/end time: edit the log; PDFs reflect these fields.</li>
-            <li>Permission errors: confirm role (Sales/Client are read-only for many actions).</li>
-          </ul>
-        </div>
+      <div class="section">
+        <div class="section-title"><i class="fas fa-signature"></i>Attachments, Signatures &amp; Exports</div>
+        <ul class="muted">
+          <li>Tickets, ticket tasks, service logs, and PM schedules support attachments.</li>
+          <li>Ticket closure signatures are stored as ticket attachments.</li>
+          <li>Service log customer signatures are stored as service log attachments, and confirmation photos are required for service log creation.</li>
+          <li>Tickets export to CSV from the Tickets page. Service Logs export to CSV from the list and PDF from log detail.</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <div class="section-title"><i class="fas fa-life-ring"></i>Troubleshooting</div>
+        <ul class="muted mb-0">
+          <li><strong>Cannot see a module:</strong> ask an admin to check role and navigation permissions.</li>
+          <li><strong>Cannot close a client-reported ticket:</strong> capture and submit the closure signature in the modal.</li>
+          <li><strong>Cannot edit a ticket/task:</strong> closed items and protected fields may be read-only for your role.</li>
+          <li><strong>Service log save is blocked:</strong> check client, target instrument/application, engineer, service type, visit date, confirmation photo, confirmed by details, and required signature.</li>
+          <li><strong>Missing service time in PDF:</strong> edit the service log and fill Start Time and End Time.</li>
+          <li><strong>Client sees too little or too much data:</strong> verify the user's client assignment and whether the account is Client or Client Admin.</li>
+        </ul>
       </div>
     </div>
   </div>

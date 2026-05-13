@@ -1,133 +1,154 @@
-CDS Service Monitoring – User Manual
+CDS Service Monitoring - User Manual
 ====================================
 
 Overview
 --------
-- Web app for tracking tickets, service logs, preventive/weekly schedules, instruments, and reports.
-- Uses roles to control access; key data lives under Tickets, Service Logs, Instruments, PM/Weekly schedules, and Reports.
+- CDS Service Monitoring is used to track service tickets, developer/IT tasks, service logs, preventive maintenance schedules, weekly schedules, instruments, application monitoring, and reports.
+- Access is role-based. The menu can also be customized per user by an administrator through System Setup/user permissions.
+- Most operational work starts from Tickets, My Task, Service Logs, Weekly Schedule, PM Schedule, Instruments, or Monitoring.
 
 Roles & Permissions
 -------------------
-- **Admin**: full access; manage users (admins, engineers/IT, sales, clients), clients, instruments, apps, parts, service types; view all data.
-- **Engineer/IT**: full access to tickets and service logs; can create/edit logs, schedules, exports, and run reports.
-- **Sales**: can create tickets and view modules; cannot change ticket status/priority/assignee or create service logs.
-- **Client**: can create tickets for own client; view their tickets and logs; cannot edit ticket status/assignee/priority; must approve closures with a signature.
+- **Admin**: full access to operational modules, reports, monitoring, and Administrator setup screens.
+- **Engineer / Support**: handles assigned tickets and service logs; support users may see broader dashboard/report data depending on setup.
+- **IT**: usually works from My Task or Developer Tasks, plus tickets/service logs when granted.
+- **Sales**: creates and follows tickets for assigned clients; cannot change protected ticket fields or create service logs.
+- **Client**: creates and follows own tickets, views own instruments, and approves closures where required.
+- **Client Admin**: views tickets for the assigned client organization; access is client-scoped.
 
-Navigation
-----------
-- **Dashboard**: snapshots; scoped to your role/client.
-- **Tickets**: list, filters, Gantt, calendar, kanban, CSV export.
-- **Service Logs**: list, filters, Gantt, CSV/PDF exports.
-- **Weekly Schedule / PM Schedule**: plan work; link PMs to service logs.
-- **Instruments**: inventory; per-instrument service history.
-- **Reports**: top instruments/engineers (admin/engineer only).
-- **Admin**: manage users, clients, instruments, parts, apps, service types (admin only).
+Main Navigation
+---------------
+- **Dashboard**: role-scoped KPIs, ticket status summaries, schedules, workload snapshots, and calendar-style summaries.
+- **All Tickets / Tickets**: main ticket list with filters, details, comments, attachments, Gantt, calendar, kanban, and CSV export.
+- **My Task / My Tickets**: assigned work for staff or client-specific ticket access, depending on role and permissions.
+- **Developer Tasks**: IT/developer task board and filterable task list when access is granted.
+- **App Monitoring**: current application/integration status view, opened in a separate tab.
+- **Daily Monitoring**: daily monitoring view, opened in a separate tab.
+- **Service Logs**: onsite/remote service records, parts used, signatures, exports, and PDF generation.
+- **Weekly Schedule**: weekly planning with task rows that can be connected to tickets or PM work.
+- **PM Schedule**: preventive maintenance planning with comments, attachments, assignee, duration, and linked service log creation.
+- **Instruments**: client instrument inventory, service history, QR links, and LIS status information.
+- **Reports**: visit/defect and engineer activity summaries, scoped by access.
+- **Profile**: update personal account details and password; client admins may manage users under their client when enabled.
+- **Administrator**: system setup, users, clients, instruments, instrument models, parts, CDS applications, and service types.
 
 Ticket Workflow
 ---------------
-1) **Create**  
-   - Admin/Engineer/Sales: Tickets → New Ticket.  
-   - Client: Tickets → New Ticket (auto-scoped to own client).  
-   - Required: client, subject, ticket target (instrument or app). Optional photo upload.
-   - Ticket numbers format: `T-000001` (6 digits).
+1. **Create a ticket**
+   - Go to Tickets -> New Ticket.
+   - Select the client and whether the ticket is for an instrument or CDS application.
+   - Fill in subject, description, priority/date details where available, and optional attachment/photo.
+   - Client users are automatically scoped to their own client.
+   - Ticket numbers use the `T-000001` format.
 
-2) **View/Update**  
-   - Ticket detail shows status, priority, assignee, comments, timeline, attachments, linked service logs.  
-   - Admin/Engineer can change status, priority, target date, and assignee. Sales/Clients are read-only for these fields.  
-   - Comments: clients and sales can add public comments; internal notes are staff-only.
+2. **Review and update**
+   - Open a ticket row to view status, priority, assignee, target/date-needed fields, timeline, comments, attachments, related tasks, and linked service logs.
+   - Admin/Engineer users can update status, priority, target date, and assignee when permitted.
+   - Sales, Client, and Client Admin users have read-only access to protected fields.
 
-3) **Client signature required on closure (client-reported tickets)**  
-   - When changing status to **Closed** for tickets reported by a **Client** user, a signature modal appears.  
-   - Capture the client’s signature (draw in the modal) and submit; the signature is saved as a ticket attachment and closure proceeds.
+3. **Use comments**
+   - Add public comments for normal collaboration.
+   - Staff can mark comments as internal when the note should be hidden from client-facing users.
+   - Replies keep the conversation threaded.
+   - Reactions/acknowledgements can be used to show that a comment was seen or accepted.
+   - New client comments can appear in the header notification bell for staff.
 
-4) **Resolution flow**  
-   - Status options: Open, In-Process, Fix/Completed (Resolved), Re-Open, Closed, Cancelled, On Hold.  
-   - When a linked service log sets status_after to operational, the ticket moves to Resolved; non-operational keeps it In-Process.
+4. **Track progress**
+   - Status values include Open, In-Process, On Hold, Fix/Completed, Re-Open, Closed, and Cancelled.
+   - Kanban supports drag-and-drop status movement for permitted staff on non-closed tickets.
+   - Gantt and Calendar views help review timing and workload.
+
+5. **Close client-reported tickets**
+   - Closing a ticket reported by a client requires a captured client signature.
+   - The closure modal saves the signature as a ticket attachment before the ticket is closed.
+   - Closing a parent ticket also closes its child tasks.
+
+Developer / IT Tasks
+--------------------
+- Developer Tasks are child work items connected to a parent ticket.
+- Tasks have their own task number, assignee, status, priority, comments, replies, reactions, attachments, and working/not-working state.
+- Use the Developer Tasks page to search and filter by client, assigned IT user, priority, status, and date range.
+- Open a task to update permitted fields and collaborate without changing the parent ticket directly.
+- Closed tasks are read-only.
 
 Service Log Workflow
 --------------------
-- **Access**: Admin/Engineer can create/edit; Sales/Clients cannot.
-- **Create**: Service Logs → New. Optionally prefilled when opened from a ticket/PM.  
-  - Required: client, instrument or app (with service_for selector), engineer, visit date, confirmation photo, confirmed by/person, onsite signature (auto-required for non-remote types).  
-  - Times: capture **Start Time** and **End Time**.  
-  - Parts: add rows with qty/price; attachments saved automatically.  
-  - On save: creates attachments (photo, signature if provided) and updates linked ticket status (operational → Resolved; otherwise In-Process).
-- **View/Edit**: Service log detail shows summary, start/end times, monitoring flag, attachments; admins/assigned engineer can edit and upload attachments.
-- **Exports**: CSV export from Service Logs list; PDF per log.
+- **Access**: Admin and permitted Engineer/IT users can create and edit service logs. Sales and client-facing users cannot create service logs.
+- **Create**: Go to Service Logs -> New, or launch from a ticket/PM schedule to prefill fields.
+- **Required details** usually include client, instrument or application, engineer, service type, visit date, start/end time, problem/action details, status after service, confirmation photo, confirmed by, and confirmed by position.
+- **Signatures**: onsite/non-remote service types require a customer signature; remote service types may skip the signature depending on configuration.
+- **Parts**: add parts with quantity, price, total, and warranty flag as needed.
+- **Monitoring**: mark logs for monitoring and set monitored days where applicable.
+- **Ticket sync**: when a linked log marks the target operational, the ticket moves to Fix/Completed/Resolved; otherwise it remains or returns to In-Process if not closed.
+- **Exports**: use CSV from the Service Logs list and PDF from the log detail page.
 
-Schedules
----------
-- **PM Schedule**: plan preventive maintenance; assign engineer; link to service log creation; filters by client/instrument/date.
-- **Weekly Schedule**: plan weekly tasks; can create tickets from schedule entries.
+Preventive Maintenance Schedule
+-------------------------------
+- Go to PM Schedule -> New to create preventive maintenance work.
+- Enter client, instrument, date, description, task duration, and assigned engineer.
+- PM numbers are generated automatically.
+- Use filters by client, instrument, and date range to find planned work.
+- Open a PM detail page to add comments, upload attachments, assign/reassign work, edit the schedule, or create a linked service log when the PM is completed.
+
+Weekly Schedule
+---------------
+- Go to Weekly Schedule -> New to create a weekly plan.
+- Set the week start and title, then add task rows for client, instrument/application, service type, subject, notes, engineer, priority, and optional PM schedule.
+- Weekly task rows help drive planned work and can link back to tickets/PM schedules where applicable.
 
 Instruments
 -----------
-- Inventory with client, model/brand/SN, status, LIS data, install/warranty dates.
-- Per-instrument logs view (QR link available) lists service history; open log detail from the table.
+- Instruments are scoped by client access.
+- The instrument list shows inventory details such as client, model, serial number, installation/warranty dates, status, and LIS connection information.
+- Instrument detail pages show service history, linked tickets/logs, last maintenance/calibration context, and QR access.
+- QR links provide direct access to the instrument service history page.
+
+Application & Daily Monitoring
+------------------------------
+- App Monitoring summarizes the current status of CDS applications/integrations.
+- Daily Monitoring provides a day-by-day monitoring view.
+- Monitoring pages are available only when the user has the matching navigation permission.
 
 Reports
 -------
-- Admin/Engineer only; shows top instruments (visits/defects) and engineers (log counts). Clients see scoped data only.
+- Reports are available to Admin and permitted Engineer users.
+- Report data includes top instruments by visits/defects and engineer activity/log counts.
+- Client-scoped users only see data allowed by their client assignment.
+
+Profile
+-------
+- Use Profile to update account details and password.
+- Client Admin users may manage users under their assigned client when the feature is enabled.
+
+Administrator Setup
+-------------------
+- **System Setup**: manage navigation permissions available to users.
+- **Users**: manage Admins, Engineers/IT, Sales, and client users.
+- **Clients**: maintain client records, contact details, assigned sales, status, mapped CDS applications, and client users.
+- **Instruments**: maintain instruments and link them to clients and instrument models.
+- **Instrument Models**: maintain code, name, brand, and machine type.
+- **Parts**: maintain part name, description, unit cost, and price.
+- **CDS Application**: maintain application code, name, and description.
+- **Service Types**: maintain service type code, name, and description.
 
 Attachments & Signatures
 ------------------------
-- Uploads stored per module (tickets, service logs, PM schedules).  
-- Ticket closure for client-reported tickets requires a ticket-level signature (captured on status change).  
-- Service logs require onsite signatures for non-remote types; uploaded as attachments.
+- Tickets, ticket tasks, service logs, and PM schedules support attachments.
+- Ticket closure signatures are stored as ticket attachments.
+- Service log customer signatures are stored as service log attachments.
+- Confirmation photos are required for service log creation.
 
 Exports
 -------
-- Tickets: CSV from Tickets page.  
-- Service Logs: CSV from Logs page; PDF per log.
-
-Admin Setup
------------
-- Create users under Admin: Admins, Engineers/IT, Sales, Clients.  
-- Ensure `UPLOAD_FOLDER_*` paths are configured for tickets, service logs, PM schedules.  
-- For legacy scrypt password hashes on old Python/OpenSSL, login is supported; new passwords use PBKDF2.
+- Tickets: CSV export from the Tickets page.
+- Service Logs: CSV export from the Service Logs page.
+- Service Logs: PDF export from a service log detail page.
 
 Troubleshooting
 ---------------
-- Cannot close client-reported ticket: ensure a signature is captured in the closure modal.  
-- Service log save blocked: check required fields (client, instrument/app, engineer, visit date, photo, signature for onsite types).  
-- Missing start/end time: edit the log and save times; PDFs reflect these fields.  
-- Permission errors: confirm the role (Sales/Client are read-only for many actions).
-
-Step-by-Step by Module
-----------------------
-**Tickets**
-- Create: Tickets → New Ticket → select client/instrument or app → fill subject/description → (optional) attach photo → Save.
-- Filter: use client/instrument/priority/status/date filters; reset with Reset.
-- View: click a ticket row → see status, priority, assignee, comments, service logs, attachments.
-- Update (Admin/Engineer): change status/priority/target date/assignee; client-reported closure prompts for signature.
-- Comment: add text; staff can mark Internal; clients/sales add public comments only.
-- Exports/Views: use Gantt, Calendar, Kanban, or Export CSV from Tickets list.
-
-**Service Logs**
-- Create (Admin/Engineer): Service Logs → New → select client, service for (instrument/app), engineer, visit date, start/end time, status_after, confirmation photo, confirmed by/position; capture signature for onsite types; add parts if needed → Save.
-- Link: open from a ticket or PM schedule to prefill fields.
-- Edit: open a log, click Edit Log (admin or assigned engineer) → adjust fields, times, monitoring, add attachments.
-- Exports: Service Logs list → Export CSV; log detail → Generate PDF.
-
-**Preventive Maintenance Schedules**
-- Create: PM Schedule → New → select client/instrument, date, description, assign engineer → Save.
-- View/Filter: filter by client, instrument, date range.
-- Action: open schedule detail → create linked service log when work is done.
-
-**Weekly Schedules**
-- Create: Weekly Schedule → New → set week start/title → add tasks (client + instrument/app + subject/service type + engineer/priority) → Save.
-- Use: open schedule, access tasks; tasks can spawn tickets where applicable.
-
-**Instruments**
-- View list: Instruments menu; filter by client (for staff) or auto-scoped (clients).
-- Detail/logs: open an instrument → see service history (logs table), QR link, last PM/calibration.
-- From logs table: click a row to open the service log detail.
-
-**Reports**
-- Access (Admin/Engineer): Reports menu → view top instruments by visits/defects and top engineers by log counts.
-- Filters: client scoping applies automatically for clients; staff see global.
-
-**Admin**
-- Users: manage Admins, Engineers/IT, Sales, Clients. Set username, full name, password, role, optional client.
-- Clients: create/edit clients, map apps, add client users.
-- Instruments/Apps/Service Types/Parts: manage reference data; ensure instruments link to clients.
+- **Cannot see a module**: ask an admin to check role and navigation permissions in System Setup/user management.
+- **Cannot close a client-reported ticket**: capture and submit the closure signature in the modal.
+- **Cannot edit a ticket/task**: closed items and protected fields may be read-only for your role.
+- **Service log save is blocked**: check client, target instrument/application, engineer, service type, visit date, confirmation photo, confirmed by details, and required signature.
+- **Missing service time in PDF**: edit the service log and fill Start Time and End Time.
+- **Client sees too little or too much data**: verify the user's client assignment and whether the account is Client or Client Admin.
