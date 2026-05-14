@@ -229,6 +229,35 @@
       width: 100%;
     }
   }
+
+  .ticket-table-shell {
+    position: relative;
+    overflow: auto;
+    min-height: 320px;
+    max-height: calc(100dvh - 320px);
+  }
+
+  .ticket-table-shell table {
+    min-width: 1200px;
+    margin-bottom: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .ticket-table-shell thead {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+  }
+
+  .ticket-table-shell thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: #f8f9fa;
+    background-clip: padding-box;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  }
 </style>
 {% endblock %}
 
@@ -475,8 +504,9 @@
 </div>
 
 <div class="card" id="tickets-table-card">
-  <div class="card-body table-responsive p-0">
-    <table id="tickets-table" class="table table-hover text-nowrap">
+  <div class="card-body p-0">
+    <div class="ticket-table-shell" id="tickets-table-shell">
+      <table id="tickets-table" class="table table-hover text-nowrap">
       <thead>
         <tr>
           <th>#</th>
@@ -620,7 +650,8 @@
         </tr>
         {% endfor %}
       </tbody>
-    </table>
+      </table>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -630,6 +661,16 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+function syncTableViewportHeight(containerId) {
+  var container = document.getElementById(containerId);
+  if (!container) return;
+
+  var rect = container.getBoundingClientRect();
+  var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  var availableHeight = Math.max(320, viewportHeight - rect.top - 24);
+  container.style.height = availableHeight + 'px';
+}
+
 function initTicketsTable() {
   if (!window.$ || !$.fn.DataTable || !$('#tickets-table').length) return null;
   if ($.fn.DataTable.isDataTable('#tickets-table')) {
@@ -642,11 +683,13 @@ function initTicketsTable() {
   });
 
   $('#tickets-table_filter').hide();
+  syncTableViewportHeight('tickets-table-shell');
   return window.ticketsDataTable;
 }
 
 $(function() {
   initTicketsTable();
+  syncTableViewportHeight('tickets-table-shell');
   let searchTimer = null;
   $('#ticket-search-input').on('keyup', function() {
     clearTimeout(searchTimer);
@@ -697,6 +740,7 @@ $(function() {
 
         card.replaceWith(nextCard);
         initTicketsTable();
+        syncTableViewportHeight('tickets-table-shell');
 
         var currentSearch = document.getElementById('ticket-search-input');
         if (currentSearch && currentSearch.value && window.ticketsDataTable) {
@@ -717,6 +761,10 @@ $(function() {
   }
 
   window.refreshTicketsTable = refreshTicketsTable;
+
+  window.addEventListener('resize', function() {
+    syncTableViewportHeight('tickets-table-shell');
+  });
 
   function syncClientHiddenInputs() {
     var container = document.getElementById('filter_client_ids_container');
@@ -1105,10 +1153,16 @@ $(function() {
     if (window.$) {
       $('#advancedFilterPanel').on('shown.bs.collapse', function() {
         localStorage.setItem('ticketsFilterPanelOpen', '1');
+        window.requestAnimationFrame(function() {
+          syncTableViewportHeight('tickets-table-shell');
+        });
       });
 
       $('#advancedFilterPanel').on('hidden.bs.collapse', function() {
         localStorage.setItem('ticketsFilterPanelOpen', '0');
+        window.requestAnimationFrame(function() {
+          syncTableViewportHeight('tickets-table-shell');
+        });
       });
     }
   }

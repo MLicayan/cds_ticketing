@@ -143,6 +143,35 @@
       width: 100%;
     }
   }
+
+  .task-table-shell {
+    position: relative;
+    overflow: auto;
+    min-height: 320px;
+    max-height: calc(100dvh - 320px);
+  }
+
+  .task-table-shell table {
+    min-width: 1100px;
+    margin-bottom: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+  }
+
+  .task-table-shell thead {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+  }
+
+  .task-table-shell thead th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: #f8f9fa;
+    background-clip: padding-box;
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  }
 </style>
 {% endblock %}
 {% block page_header %}
@@ -269,53 +298,55 @@
 </div>
 
 <div class="card">
-  <div class="card-body table-responsive p-0">
-    <table class="table table-hover text-nowrap mb-0" id="developer-tasks-table">
-      <thead>
-        <tr>
-          <th>Task Ticket</th>
-          <th>Task</th>
-          <th>Parent Ticket</th>
-          <th>Assigned IT</th>
-          <th>Status</th>
-          <th>Work Status</th>
-          <th>Priority</th>
-          <th>Client</th>
-          <th>Created</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for task in tasks %}
-          {% set parent = parents.get(task.ticket_id) %}
-          <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=task.id) }}'" style="cursor:pointer;">
-            <td>{{ task.ticket_no }}</td>
-            <td>{{ task.subject }}</td>
-            <td>
-              {% if parent %}
-                <a href="{{ url_for('tickets.detail', ticket_id=parent.id) }}" onclick="event.stopPropagation();">{{ parent.ticket_no }}</a>
-              {% else %}
-                <span class="text-muted">N/A</span>
-              {% endif %}
-            </td>
-            <td>{{ task.assigned_engineer.full_name or task.assigned_engineer.username if task.assigned_engineer else 'Unassigned' }}</td>
-            <td>{{ status_labels.get(task.status, task.status.value.replace('_', ' ')|title) }}</td>
-            <td>
-              <span class="badge badge-{{ 'success' if task.is_working else 'secondary' }}">
-                {{ 'Working' if task.is_working else 'Not Working' }}
-              </span>
-            </td>
-            <td>
-              {% set task_priority_value = task.priority.value if task.priority else 'NOT_SET' %}
-              <span class="badge badge-{{ 'danger' if task_priority_value == 'critical' else 'warning' if task_priority_value == 'high' else 'info' if task_priority_value == 'medium' else 'secondary' }}">
-                {{ 'NOT SET' if task_priority_value == 'NOT_SET' else task_priority_value|upper }}
-              </span>
-            </td>
-            <td>{{ task.client.name if task.client else 'N/A' }}</td>
-            <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '' }}</td>
+  <div class="card-body p-0">
+    <div class="task-table-shell" id="developer-tasks-table-shell">
+      <table class="table table-hover text-nowrap mb-0" id="developer-tasks-table">
+        <thead>
+          <tr>
+            <th>Task Ticket</th>
+            <th>Task</th>
+            <th>Parent Ticket</th>
+            <th>Assigned IT</th>
+            <th>Status</th>
+            <th>Work Status</th>
+            <th>Priority</th>
+            <th>Client</th>
+            <th>Created</th>
           </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {% for task in tasks %}
+            {% set parent = parents.get(task.ticket_id) %}
+            <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=task.id) }}'" style="cursor:pointer;">
+              <td>{{ task.ticket_no }}</td>
+              <td>{{ task.subject }}</td>
+              <td>
+                {% if parent %}
+                  <a href="{{ url_for('tickets.detail', ticket_id=parent.id) }}" onclick="event.stopPropagation();">{{ parent.ticket_no }}</a>
+                {% else %}
+                  <span class="text-muted">N/A</span>
+                {% endif %}
+              </td>
+              <td>{{ task.assigned_engineer.full_name or task.assigned_engineer.username if task.assigned_engineer else 'Unassigned' }}</td>
+              <td>{{ status_labels.get(task.status, task.status.value.replace('_', ' ')|title) }}</td>
+              <td>
+                <span class="badge badge-{{ 'success' if task.is_working else 'secondary' }}">
+                  {{ 'Working' if task.is_working else 'Not Working' }}
+                </span>
+              </td>
+              <td>
+                {% set task_priority_value = task.priority.value if task.priority else 'NOT_SET' %}
+                <span class="badge badge-{{ 'danger' if task_priority_value == 'critical' else 'warning' if task_priority_value == 'high' else 'info' if task_priority_value == 'medium' else 'secondary' }}">
+                  {{ 'NOT SET' if task_priority_value == 'NOT_SET' else task_priority_value|upper }}
+                </span>
+              </td>
+              <td>{{ task.client.name if task.client else 'N/A' }}</td>
+              <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endblock %}
@@ -327,6 +358,16 @@
 (function() {
   var table = null;
   var autoSubmitTimer = null;
+
+  function syncTaskTableViewportHeight() {
+    var container = document.getElementById('developer-tasks-table-shell');
+    if (!container) return;
+
+    var rect = container.getBoundingClientRect();
+    var viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    var availableHeight = Math.max(320, viewportHeight - rect.top - 24);
+    container.style.height = availableHeight + 'px';
+  }
 
   function autoSubmitFilters() {
     clearTimeout(autoSubmitTimer);
@@ -346,6 +387,7 @@
       }
     });
     $('#developer-tasks-table_filter').hide();
+    syncTaskTableViewportHeight();
   }
 
   if (window.$ && $.fn.select2) {
@@ -361,6 +403,9 @@
       table.search(searchInput.value || '').draw();
     });
   }
+
+  syncTaskTableViewportHeight();
+  window.addEventListener('resize', syncTaskTableViewportHeight);
 
   function addChip(container, label, value, displayText, targetId) {
     if (!value) return;
@@ -465,9 +510,11 @@
     if (window.$) {
       $('#advancedTaskFilterPanel').on('shown.bs.collapse', function() {
         localStorage.setItem('developerTasksFilterPanelOpen', '1');
+        window.requestAnimationFrame(syncTaskTableViewportHeight);
       });
       $('#advancedTaskFilterPanel').on('hidden.bs.collapse', function() {
         localStorage.setItem('developerTasksFilterPanelOpen', '0');
+        window.requestAnimationFrame(syncTaskTableViewportHeight);
       });
     }
   }
