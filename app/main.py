@@ -371,16 +371,41 @@ def dashboard():
                 .all()
             ]
             engineers_query = engineers_query.filter(User.id.in_(scoped_engineer_ids)) if scoped_engineer_ids else engineers_query.filter(db.false())
-        engineers = engineers_query.order_by(User.full_name.asc(), User.username.asc()).limit(6).all()
+        engineers = engineers_query.order_by(User.full_name.asc(), User.username.asc()).all()
         engineer_performance = []
         completed_statuses = [TicketStatus.RESOLVED, TicketStatus.CLOSED]
-        performance_ticket_scope = Ticket.query if can_view_overall else ticket_scope
+        performance_ticket_scope = _exclude_task_tickets(Ticket.query) if can_view_overall else ticket_scope
+        performance_task_scope = TicketTask.query
+        if role == UserRole.SALES:
+            performance_task_scope = (
+                performance_task_scope.filter(TicketTask.client_id.in_(scoped_client_ids))
+                if scoped_client_ids
+                else performance_task_scope.filter(db.false())
+            )
+        elif role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN]:
+            if current_user.client_id:
+                performance_task_scope = performance_task_scope.filter(TicketTask.client_id == current_user.client_id)
+                if role == UserRole.CLIENT:
+                    performance_task_scope = performance_task_scope.filter(TicketTask.reported_by_id == current_user.id)
+            else:
+                performance_task_scope = performance_task_scope.filter(db.false())
+        elif role == UserRole.ENGINEER and not can_view_overall:
+            performance_task_scope = performance_task_scope.filter(TicketTask.assigned_engineer_id == current_user.id)
         for engineer in engineers:
-            assigned_count = performance_ticket_scope.filter(dashboard_item_model.assigned_engineer_id == engineer.id).count()
-            completed_count = performance_ticket_scope.filter(
-                dashboard_item_model.assigned_engineer_id == engineer.id,
-                dashboard_item_model.status.in_(completed_statuses),
-            ).count()
+            assigned_count = (
+                performance_ticket_scope.filter(Ticket.assigned_engineer_id == engineer.id).count()
+                + performance_task_scope.filter(TicketTask.assigned_engineer_id == engineer.id).count()
+            )
+            completed_count = (
+                performance_ticket_scope.filter(
+                    Ticket.assigned_engineer_id == engineer.id,
+                    Ticket.status.in_(completed_statuses),
+                ).count()
+                + performance_task_scope.filter(
+                    TicketTask.assigned_engineer_id == engineer.id,
+                    TicketTask.status.in_(completed_statuses),
+                ).count()
+            )
             completion_rate = round((completed_count / assigned_count) * 100) if assigned_count else 0
             engineer_performance.append(
                 {
@@ -388,6 +413,7 @@ def dashboard():
                     "assigned": assigned_count,
                     "completed": completed_count,
                     "completion_rate": completion_rate,
+                    "user_type_label": (engineer.user_type or "Engineer").strip() or "Engineer",
                 }
             )
 

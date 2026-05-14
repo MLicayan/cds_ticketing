@@ -1703,7 +1703,10 @@ def detail(ticket_id):
             parent_ticket = None
 
     today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    comments_raw = ticket.comments
+    comments_raw = sorted(
+        ticket.comments,
+        key=lambda c: (to_localtime(c.created_at).replace(tzinfo=None) if c.created_at else datetime.min, c.id or 0),
+    )
     if current_user.role in READ_ONLY_ROLES:
         comments_raw = [c for c in comments_raw if not c.is_internal]
 
@@ -1746,16 +1749,20 @@ def detail(ticket_id):
     ).all()
 
     timeline_events = []
+    timeline_event_seq = 0
 
     def add_event(timestamp, title, description, kind="update"):
+        nonlocal timeline_event_seq
         if not timestamp:
             return
+        timeline_event_seq += 1
         timeline_events.append(
             {
                 "timestamp": timestamp,
                 "title": title,
                 "description": description,
                 "type": kind,
+                "sort_seq": timeline_event_seq,
             }
         )
 
@@ -1879,7 +1886,10 @@ def detail(ticket_id):
             "update",
         )
 
-    for att in ticket.attachments:
+    for att in sorted(
+        ticket.attachments,
+        key=lambda att: (to_localtime(att.uploaded_at).replace(tzinfo=None) if att.uploaded_at else datetime.min, att.id or 0),
+    ):
         if _is_initial_attachment(att):
             continue
         sender = att.user.full_name or att.user.username if att.user else "Unknown"
@@ -1907,7 +1917,12 @@ def detail(ticket_id):
     elif ticket.status == TicketStatus.RESOLVED:
         add_event(ticket.updated_at, "Ticket resolved", "Awaiting confirmation.", "resolved")
 
-    timeline_events.sort(key=lambda e: e["timestamp"] or datetime.min, reverse=True)
+    timeline_events.sort(
+        key=lambda e: (
+            to_localtime(e["timestamp"]).replace(tzinfo=None) if e.get("timestamp") else datetime.min,
+            e.get("sort_seq", 0),
+        ),
+    )
 
     comment_attachments = {}
     assigned_attachment_ids = set()
@@ -2051,7 +2066,10 @@ def task_detail(task_id):
         return redirect(f"{url_for('tickets.task_detail', task_id=task.id)}#ticket-comments-card")
 
     today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    comments_raw = task.comments
+    comments_raw = sorted(
+        task.comments,
+        key=lambda c: (to_localtime(c.created_at).replace(tzinfo=None) if c.created_at else datetime.min, c.id or 0),
+    )
     comments = [c for c in comments_raw if not _is_change_comment(c.comment_text)]
 
     task_engineers = User.query.filter(
@@ -2061,11 +2079,22 @@ def task_detail(task_id):
     engineers = task_engineers
 
     timeline_events = []
+    timeline_event_seq = 0
 
     def add_event(timestamp, title, description, kind="update"):
+        nonlocal timeline_event_seq
         if not timestamp:
             return
-        timeline_events.append({"timestamp": timestamp, "title": title, "description": description, "type": kind})
+        timeline_event_seq += 1
+        timeline_events.append(
+            {
+                "timestamp": timestamp,
+                "title": title,
+                "description": description,
+                "type": kind,
+                "sort_seq": timeline_event_seq,
+            }
+        )
 
     def _is_initial_attachment(att: TicketTaskAttachment) -> bool:
         if not task.created_at or not att.uploaded_at:
@@ -2088,7 +2117,10 @@ def task_detail(task_id):
         commenter = c.user.full_name or c.user.username
         add_event(c.created_at, f"Updated by {commenter}", c.comment_text, "update")
 
-    for att in task.attachments:
+    for att in sorted(
+        task.attachments,
+        key=lambda att: (to_localtime(att.uploaded_at).replace(tzinfo=None) if att.uploaded_at else datetime.min, att.id or 0),
+    ):
         if _is_initial_attachment(att):
             continue
         sender = att.user.full_name or att.user.username if att.user else "Unknown"
@@ -2099,7 +2131,12 @@ def task_detail(task_id):
     elif task.status == TicketStatus.RESOLVED:
         add_event(task.updated_at, "Task resolved", "Awaiting confirmation.", "resolved")
 
-    timeline_events.sort(key=lambda e: e["timestamp"] or datetime.min, reverse=True)
+    timeline_events.sort(
+        key=lambda e: (
+            to_localtime(e["timestamp"]).replace(tzinfo=None) if e.get("timestamp") else datetime.min,
+            e.get("sort_seq", 0),
+        ),
+    )
 
     comment_attachments = {}
     assigned_attachment_ids = set()

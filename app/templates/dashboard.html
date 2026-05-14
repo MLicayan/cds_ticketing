@@ -215,7 +215,7 @@
   .pill-on_hold, .pill-reopened { background: #f1f5f9; color: #475569; border-color: #dbe3ec; }
   .performance-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 16px;
   }
   .engineer-card { border: 1px solid #dde3ea; border-radius: 8px; padding: 16px; }
@@ -543,7 +543,7 @@
     {% if current_user.role.value not in ['client', 'client_admin'] %}
     <div class="dashboard-card">
       <div class="dashboard-card-header">
-        <h3 class="dashboard-card-title">Engineer Performance</h3>
+        <h3 class="dashboard-card-title">Engineer / IT / Support Performance</h3>
         {% if admin_data.can_view_overall %}
         <a class="view-link" href="{{ url_for('admin.engineers_index') }}"><i class="fas fa-chart-line mr-1"></i>View Details</a>
         {% endif %}
@@ -556,7 +556,7 @@
           <div class="engineer-card">
             <div class="engineer-head">
               <div class="engineer-avatar">{{ (name.split()[0][0] ~ (name.split()[1][0] if name.split()|length > 1 else name.split()[0][1:2]))|upper }}</div>
-              <div><div class="font-weight-bold">{{ name }}</div><div class="text-muted small">Field Engineer</div></div>
+              <div><div class="font-weight-bold">{{ name }}</div><div class="text-muted small">{{ row.user_type_label }}</div></div>
             </div>
             <div class="engineer-metric"><span>Assigned</span><strong>{{ row.assigned }}</strong></div>
             <div class="engineer-metric"><span>Completed</span><strong>{{ row.completed }}</strong></div>

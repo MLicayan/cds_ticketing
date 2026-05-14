@@ -910,7 +910,7 @@
           <div class="timeline">
             {% for event in timeline_events %}
               <div class="timeline-item">
-                <div class="timeline-date">{{ to_localtime(event.timestamp).strftime('%b %d, %I:%M %p').upper() }}</div>
+                <div class="timeline-date">{{ to_localtime(event.timestamp).strftime('%b %d, %Y').upper() }}</div>
                 <div class="timeline-marker timeline-{{ event.type }}"></div>
                 <div class="timeline-content">
                   <div class="timeline-title">{{ event.title }}</div>
