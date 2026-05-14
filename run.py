@@ -9,7 +9,7 @@ if __name__ == "__main__":
         app,
         host=cfg.get("HOST", "0.0.0.0"),
         port=cfg.get("PORT", 5013),
-        debug=cfg.get("DEBUG", True),
+        debug=cfg.get("DEBUG", False),
         use_reloader=cfg.get("USE_RELOADER", False),
         allow_unsafe_werkzeug=True,
     )

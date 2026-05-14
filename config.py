@@ -18,5 +18,5 @@ class Config:
 
     HOST = os.environ.get("FLASK_RUN_HOST", "0.0.0.0")
     PORT = int(os.environ.get("FLASK_RUN_PORT", 5013))
-    DEBUG = os.environ.get("FLASK_DEBUG", "True").lower() in ("1", "true", "yes")
-    USE_RELOADER = os.environ.get("FLASK_USE_RELOADER", "True").lower() in ("1", "true", "yes")
+    DEBUG = os.environ.get("FLASK_DEBUG", "False").lower() in ("1", "true", "yes")
+    USE_RELOADER = os.environ.get("FLASK_USE_RELOADER", "False").lower() in ("1", "true", "yes")

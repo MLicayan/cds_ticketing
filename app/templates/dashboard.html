@@ -387,37 +387,37 @@
 
 <div class="dashboard-page">
   <div class="kpi-grid">
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
       <div class="kpi-card-top">
-        <div><div class="kpi-label">Total Tickets</div><div class="kpi-value">{{ total_tickets }}</div></div>
+        <div><div class="kpi-label">{{ 'Total My Tasks' if admin_data.uses_task_items else 'Total Tickets' }}</div><div class="kpi-value">{{ total_tickets }}</div></div>
         <div class="kpi-icon tone-blue"><i class="fas fa-ticket-alt"></i></div>
       </div>
       <div class="kpi-foot good">+{{ admin_data.pm_total or 0 }} PM this year</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
       <div class="kpi-card-top">
-        <div><div class="kpi-label">Open Tickets</div><div class="kpi-value">{{ sc.open }}</div></div>
+        <div><div class="kpi-label">{{ 'Open Tasks' if admin_data.uses_task_items else 'Open Tickets' }}</div><div class="kpi-value">{{ sc.open }}</div></div>
         <div class="kpi-icon tone-orange"><i class="fas fa-exclamation-circle"></i></div>
       </div>
       <div class="kpi-foot">Needs assignment or triage</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
       <div class="kpi-card-top">
-        <div><div class="kpi-label">In Progress</div><div class="kpi-value">{{ sc.in_progress }}</div></div>
+        <div><div class="kpi-label">{{ 'Tasks In Progress' if admin_data.uses_task_items else 'In Progress' }}</div><div class="kpi-value">{{ sc.in_progress }}</div></div>
         <div class="kpi-icon tone-purple"><i class="far fa-clock"></i></div>
       </div>
       <div class="kpi-foot">Currently being handled</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
       <div class="kpi-card-top">
-        <div><div class="kpi-label">Resolved</div><div class="kpi-value">{{ sc.resolved }}</div></div>
+        <div><div class="kpi-label">{{ 'Completed Tasks' if admin_data.uses_task_items else 'Resolved' }}</div><div class="kpi-value">{{ sc.resolved }}</div></div>
         <div class="kpi-icon tone-green"><i class="fas fa-check-circle"></i></div>
       </div>
       <div class="kpi-foot good">Ready for review or closure</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
       <div class="kpi-card-top">
-        <div><div class="kpi-label">Overdue</div><div class="kpi-value">{{ sc.overdue }}</div></div>
+        <div><div class="kpi-label">{{ 'Overdue Tasks' if admin_data.uses_task_items else 'Overdue' }}</div><div class="kpi-value">{{ sc.overdue }}</div></div>
         <div class="kpi-icon tone-red"><i class="fas fa-chart-line"></i></div>
       </div>
       <div class="kpi-foot">Past target schedule</div>
@@ -427,7 +427,7 @@
   <div class="dashboard-grid{% if current_user.role.value in ['client', 'client_admin'] %} dashboard-grid-single{% endif %}">
     {% if current_user.role.value not in ['client', 'client_admin'] %}
     <div class="dashboard-card">
-      <div class="dashboard-card-header"><h3 class="dashboard-card-title">Ticket Analytics</h3></div>
+      <div class="dashboard-card-header"><h3 class="dashboard-card-title">{{ 'My Task Analytics' if admin_data.uses_task_items else 'Ticket Analytics' }}</h3></div>
       <div class="dashboard-card-body">
         <div class="analytics-layout">
           <div>
@@ -445,10 +445,10 @@
           <div>
             <div class="section-label">Priority Breakdown</div>
             <div class="priority-list">
-              <div class="priority-row priority-critical"><div class="priority-name"><i class="fas fa-exclamation-circle"></i> Critical</div><div class="priority-count">{{ pc.critical }} <small>tickets</small></div></div>
-              <div class="priority-row priority-high"><div class="priority-name"><i class="fas fa-exclamation-circle"></i> High</div><div class="priority-count">{{ pc.high }} <small>tickets</small></div></div>
-              <div class="priority-row priority-medium"><div class="priority-name"><i class="far fa-clock"></i> Medium</div><div class="priority-count">{{ pc.medium }} <small>tickets</small></div></div>
-              <div class="priority-row priority-low"><div class="priority-name"><i class="fas fa-check-circle"></i> Low</div><div class="priority-count">{{ pc.low }} <small>tickets</small></div></div>
+              <div class="priority-row priority-critical"><div class="priority-name"><i class="fas fa-exclamation-circle"></i> Critical</div><div class="priority-count">{{ pc.critical }} <small>{{ 'tasks' if admin_data.uses_task_items else 'tickets' }}</small></div></div>
+              <div class="priority-row priority-high"><div class="priority-name"><i class="fas fa-exclamation-circle"></i> High</div><div class="priority-count">{{ pc.high }} <small>{{ 'tasks' if admin_data.uses_task_items else 'tickets' }}</small></div></div>
+              <div class="priority-row priority-medium"><div class="priority-name"><i class="far fa-clock"></i> Medium</div><div class="priority-count">{{ pc.medium }} <small>{{ 'tasks' if admin_data.uses_task_items else 'tickets' }}</small></div></div>
+              <div class="priority-row priority-low"><div class="priority-name"><i class="fas fa-check-circle"></i> Low</div><div class="priority-count">{{ pc.low }} <small>{{ 'tasks' if admin_data.uses_task_items else 'tickets' }}</small></div></div>
             </div>
           </div>
         </div>
@@ -476,7 +476,7 @@
         <div class="due-list">
           {% for ticket in admin_data.ticket_deadlines[:4] %}
           {% set due = ticket.target_date or (ticket.date_needed.date() if ticket.date_needed else none) %}
-          <a class="due-item text-decoration-none" href="{{ url_for('tickets.detail', ticket_id=ticket.id) }}">
+          <a class="due-item text-decoration-none" href="{{ url_for('tickets.task_detail', task_id=ticket.id) if admin_data.uses_task_items else url_for('tickets.detail', ticket_id=ticket.id) }}">
             <div class="due-date-chip">{{ due.day if due else '-' }}</div>
             <div class="flex-grow-1">
               <div class="font-weight-bold">{{ ticket.ticket_no }}</div>
@@ -494,15 +494,15 @@
 
   <div class="dashboard-card mb-4">
     <div class="dashboard-card-header">
-      <h3 class="dashboard-card-title">{{ 'My Tickets' if current_user.role.value in ['client', 'client_admin'] else 'Active Tickets' }}</h3>
-      <a class="btn btn-primary" href="{{ url_for('tickets.index') }}">View All Tickets</a>
+      <h3 class="dashboard-card-title">{{ 'My Tickets' if current_user.role.value in ['client', 'client_admin'] else ('My Pending Tasks' if admin_data.uses_task_items else 'Active Tickets') }}</h3>
+      <a class="btn btn-primary" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">{{ 'View All Tasks' if admin_data.uses_task_items else 'View All Tickets' }}</a>
     </div>
     <div class="dashboard-card-body">
       <div class="table-responsive">
         <table class="active-table">
           <thead>
             <tr>
-              <th>Ticket No</th>
+              <th>{{ 'Task No' if admin_data.uses_task_items else 'Ticket No' }}</th>
               <th>Client</th>
               <th>Reported By</th>
               <th>Instrument</th>
@@ -518,8 +518,8 @@
             {% for t in admin_data.active_tickets %}
             {% set pval = t.priority.value if t.priority else 'NOT_SET' %}
             {% set sval = t.status.value if t.status else 'open' %}
-            <tr onclick="window.location='{{ url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
-              <td><a href="{{ url_for('tickets.detail', ticket_id=t.id) }}">{{ t.ticket_no }}</a></td>
+            <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=t.id) if admin_data.uses_task_items else url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
+              <td><a href="{{ url_for('tickets.task_detail', task_id=t.id) if admin_data.uses_task_items else url_for('tickets.detail', ticket_id=t.id) }}">{{ t.ticket_no }}</a></td>
               <td>{{ t.client.name if t.client else '' }}</td>
               <td>{{ t.reported_by.full_name or t.reported_by.username if t.reported_by else 'Unknown' }}</td>
               <td>{{ ticket_item(t) }}</td>
@@ -531,7 +531,7 @@
               <td>{{ t.date_needed.strftime('%Y-%m-%d') if t.date_needed else (t.target_date.strftime('%Y-%m-%d') if t.target_date else '-') }}</td>
             </tr>
             {% else %}
-            <tr><td colspan="{{ 6 if current_user.role.value in ['client', 'client_admin'] else 8 }}" class="text-center text-muted py-4">{{ 'No tickets found.' if current_user.role.value in ['client', 'client_admin'] else 'No active tickets.' }}</td></tr>
+            <tr><td colspan="{{ 6 if current_user.role.value in ['client', 'client_admin'] else 8 }}" class="text-center text-muted py-4">{{ 'No tickets found.' if current_user.role.value in ['client', 'client_admin'] else ('No pending tasks.' if admin_data.uses_task_items else 'No active tickets.') }}</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -574,7 +574,7 @@
     <div class="dashboard-card">
       <div class="dashboard-card-header">
         <h3 class="dashboard-card-title">Recent Activity</h3>
-        <a class="view-link" href="{{ url_for('tickets.index') }}">View All</a>
+        <a class="view-link" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">View All</a>
       </div>
       <div class="dashboard-card-body">
         <div class="activity-list">
@@ -582,7 +582,9 @@
           <div class="activity-item">
             <div class="activity-icon tone-{{ item.tone }}"><i class="fas {{ item.icon }}"></i></div>
             <div>
-              <div class="activity-title">{{ item.title }}</div>
+              <div class="activity-title">
+                <a href="{{ url_for('tickets.task_detail', task_id=item.id) if item.kind == 'task' else (url_for('service_logs.detail', log_id=item.id) if item.kind == 'log' else url_for('tickets.detail', ticket_id=item.id)) }}" class="text-reset text-decoration-none">{{ item.title }}</a>
+              </div>
               <div class="activity-desc">{{ item.description }}</div>
               <div class="activity-time">{{ item.timestamp.strftime('%Y-%m-%d %H:%M') if item.timestamp else '' }}</div>
             </div>

@@ -11,6 +11,7 @@ from .models import (
     PreventiveMaintenanceSchedule,
     ServiceLog,
     Ticket,
+    TicketTask,
     TicketPriority,
     TicketStatus,
     User,
@@ -70,7 +71,23 @@ def _dashboard_ticket_scope_for_user():
     return ticket_scope
 
 
-def _schedule_calendar_data(ticket_scope, selected_calendar_month, today):
+def _dashboard_work_item_model():
+    role = current_user.role
+    user_type = (current_user.user_type or "").strip().lower()
+    can_view_overall = role == UserRole.ADMIN or (role == UserRole.ENGINEER and user_type == "support")
+    if role == UserRole.ENGINEER and not can_view_overall:
+        return TicketTask
+    return Ticket
+
+
+def _dashboard_work_item_scope_for_user():
+    model = _dashboard_work_item_model()
+    if model is TicketTask:
+        return TicketTask.query.filter(TicketTask.assigned_engineer_id == current_user.id)
+    return _dashboard_ticket_scope_for_user()
+
+
+def _schedule_calendar_data(item_scope, item_model, selected_calendar_month, today):
     month_calendar = calendar.Calendar(firstweekday=0).monthdatescalendar(
         selected_calendar_month.year,
         selected_calendar_month.month,
@@ -79,18 +96,18 @@ def _schedule_calendar_data(ticket_scope, selected_calendar_month, today):
     selected_month_start_dt = datetime.combine(selected_calendar_month, datetime.min.time())
     next_month_start_dt = datetime.combine(next_calendar_month_start, datetime.min.time())
     calendar_deadlines = (
-        ticket_scope.filter(
+        item_scope.filter(
             db.or_(
                 db.and_(
-                    Ticket.target_date.isnot(None),
-                    Ticket.target_date >= selected_calendar_month,
-                    Ticket.target_date < next_calendar_month_start,
+                    item_model.target_date.isnot(None),
+                    item_model.target_date >= selected_calendar_month,
+                    item_model.target_date < next_calendar_month_start,
                 ),
                 db.and_(
-                    Ticket.target_date.is_(None),
-                    Ticket.date_needed.isnot(None),
-                    Ticket.date_needed >= selected_month_start_dt,
-                    Ticket.date_needed < next_month_start_dt,
+                    item_model.target_date.is_(None),
+                    item_model.date_needed.isnot(None),
+                    item_model.date_needed >= selected_month_start_dt,
+                    item_model.date_needed < next_month_start_dt,
                 ),
             )
         )
@@ -128,8 +145,10 @@ def user_manual():
 def schedule_calendar():
     today = datetime.utcnow().date()
     selected_calendar_month = _parse_schedule_month(request.args.get("schedule_month", ""), today)
+    item_model = _dashboard_work_item_model()
     calendar_data = _schedule_calendar_data(
-        _dashboard_ticket_scope_for_user(),
+        _dashboard_work_item_scope_for_user(),
+        item_model,
         selected_calendar_month,
         today,
     )
@@ -157,9 +176,10 @@ def dashboard():
     role = current_user.role
     user_type = (current_user.user_type or "").strip().lower()
     can_view_overall = role == UserRole.ADMIN or (role == UserRole.ENGINEER and user_type == "support")
+    dashboard_item_model = TicketTask if role == UserRole.ENGINEER and not can_view_overall else Ticket
 
     scoped_client_ids = []
-    ticket_scope = _exclude_task_tickets(Ticket.query)
+    ticket_scope = TicketTask.query if dashboard_item_model is TicketTask else _exclude_task_tickets(Ticket.query)
     service_log_scope = ServiceLog.query
     if role == UserRole.SALES:
         sales_clients = Client.query.filter(Client.assigned_sales_id == current_user.id).all()
@@ -174,11 +194,11 @@ def dashboard():
         else:
             service_log_scope = service_log_scope.filter(db.false())
     elif role == UserRole.ENGINEER and not can_view_overall:
-        ticket_scope = ticket_scope.filter(Ticket.assigned_engineer_id == current_user.id)
+        ticket_scope = ticket_scope.filter(dashboard_item_model.assigned_engineer_id == current_user.id)
         service_log_scope = service_log_scope.filter(ServiceLog.engineer_id == current_user.id)
 
     total_tickets = ticket_scope.count()
-    open_tickets = ticket_scope.filter(Ticket.status.in_(open_like_statuses)).count()
+    open_tickets = ticket_scope.filter(dashboard_item_model.status.in_(open_like_statuses)).count()
     if role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN] and current_user.client_id:
         total_instruments = Instrument.query.filter(Instrument.client_id == current_user.client_id).count()
     elif role == UserRole.SALES:
@@ -199,19 +219,19 @@ def dashboard():
 
     # Engineer dashboard data
     if role == UserRole.ENGINEER:
-        my_assigned_open = Ticket.query.filter(
-            Ticket.assigned_engineer_id == current_user.id,
-            Ticket.status.in_(open_like_statuses),
+        my_assigned_open = dashboard_item_model.query.filter(
+            dashboard_item_model.assigned_engineer_id == current_user.id,
+            dashboard_item_model.status.in_(open_like_statuses),
         ).count()
 
-        my_reported_open = Ticket.query.filter(
-            Ticket.reported_by_id == current_user.id,
-            Ticket.status.in_(open_like_statuses),
+        my_reported_open = dashboard_item_model.query.filter(
+            dashboard_item_model.reported_by_id == current_user.id,
+            dashboard_item_model.status.in_(open_like_statuses),
         ).count()
 
-        my_recent_tickets = Ticket.query.filter(
-            Ticket.assigned_engineer_id == current_user.id
-        ).order_by(Ticket.created_at.desc()).limit(8).all()
+        my_recent_tickets = dashboard_item_model.query.filter(
+            dashboard_item_model.assigned_engineer_id == current_user.id
+        ).order_by(dashboard_item_model.created_at.desc()).limit(8).all()
 
         my_recent_logs = ServiceLog.query.filter(
             ServiceLog.engineer_id == current_user.id
@@ -244,20 +264,24 @@ def dashboard():
         )
         ticket_deadlines = (
             ticket_scope.filter(
-                Ticket.target_date.isnot(None),
-                Ticket.target_date <= week_ahead,
+                dashboard_item_model.target_date.isnot(None),
+                dashboard_item_model.target_date <= week_ahead,
             )
-            .order_by(Ticket.target_date.asc())
+            .order_by(dashboard_item_model.target_date.asc())
             .limit(15)
             .all()
         )
-        ticket_overview = ticket_scope.order_by(Ticket.created_at.desc()).limit(20).all()
+        ticket_overview = ticket_scope.order_by(dashboard_item_model.created_at.desc()).limit(20).all()
         if role in [UserRole.CLIENT, UserRole.CLIENT_ADMIN]:
-            active_tickets = ticket_scope.order_by(Ticket.created_at.desc()).limit(8).all()
+            active_tickets = ticket_scope.order_by(dashboard_item_model.created_at.desc()).limit(8).all()
         else:
             active_tickets = (
-                ticket_scope.filter(Ticket.status.in_(open_like_statuses))
-                .order_by(Ticket.date_needed.asc(), Ticket.target_date.asc(), Ticket.created_at.desc())
+                ticket_scope.filter(dashboard_item_model.status.in_(open_like_statuses))
+                .order_by(
+                    dashboard_item_model.date_needed.asc(),
+                    dashboard_item_model.target_date.asc(),
+                    dashboard_item_model.created_at.desc(),
+                )
                 .limit(8)
                 .all()
             )
@@ -313,24 +337,24 @@ def dashboard():
 
         all_scope = ticket_scope
         status_counts = {
-            "open": all_scope.filter(Ticket.status == TicketStatus.OPEN).count(),
-            "in_progress": all_scope.filter(Ticket.status == TicketStatus.IN_PROGRESS).count(),
-            "resolved": all_scope.filter(Ticket.status == TicketStatus.RESOLVED).count(),
-            "closed": all_scope.filter(Ticket.status == TicketStatus.CLOSED).count(),
+            "open": all_scope.filter(dashboard_item_model.status == TicketStatus.OPEN).count(),
+            "in_progress": all_scope.filter(dashboard_item_model.status == TicketStatus.IN_PROGRESS).count(),
+            "resolved": all_scope.filter(dashboard_item_model.status == TicketStatus.RESOLVED).count(),
+            "closed": all_scope.filter(dashboard_item_model.status == TicketStatus.CLOSED).count(),
             "overdue": all_scope.filter(
-                Ticket.target_date.isnot(None),
-                Ticket.target_date < today,
-                Ticket.status.notin_([TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED]),
+                dashboard_item_model.target_date.isnot(None),
+                dashboard_item_model.target_date < today,
+                dashboard_item_model.status.notin_([TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED]),
             ).count(),
         }
         priority_counts = {
-            "critical": all_scope.filter(Ticket.priority == TicketPriority.CRITICAL).count(),
-            "high": all_scope.filter(Ticket.priority == TicketPriority.HIGH).count(),
-            "medium": all_scope.filter(Ticket.priority == TicketPriority.MEDIUM).count(),
-            "low": all_scope.filter(Ticket.priority == TicketPriority.LOW).count(),
+            "critical": all_scope.filter(dashboard_item_model.priority == TicketPriority.CRITICAL).count(),
+            "high": all_scope.filter(dashboard_item_model.priority == TicketPriority.HIGH).count(),
+            "medium": all_scope.filter(dashboard_item_model.priority == TicketPriority.MEDIUM).count(),
+            "low": all_scope.filter(dashboard_item_model.priority == TicketPriority.LOW).count(),
         }
 
-        calendar_data = _schedule_calendar_data(ticket_scope, selected_calendar_month, today)
+        calendar_data = _schedule_calendar_data(ticket_scope, dashboard_item_model, selected_calendar_month, today)
 
         engineers_query = User.query.filter(
             User.role == UserRole.ENGINEER,
@@ -352,10 +376,10 @@ def dashboard():
         completed_statuses = [TicketStatus.RESOLVED, TicketStatus.CLOSED]
         performance_ticket_scope = Ticket.query if can_view_overall else ticket_scope
         for engineer in engineers:
-            assigned_count = performance_ticket_scope.filter(Ticket.assigned_engineer_id == engineer.id).count()
+            assigned_count = performance_ticket_scope.filter(dashboard_item_model.assigned_engineer_id == engineer.id).count()
             completed_count = performance_ticket_scope.filter(
-                Ticket.assigned_engineer_id == engineer.id,
-                Ticket.status.in_(completed_statuses),
+                dashboard_item_model.assigned_engineer_id == engineer.id,
+                dashboard_item_model.status.in_(completed_statuses),
             ).count()
             completion_rate = round((completed_count / assigned_count) * 100) if assigned_count else 0
             engineer_performance.append(
@@ -368,11 +392,12 @@ def dashboard():
             )
 
         recent_activity = []
-        for ticket in ticket_scope.order_by(Ticket.updated_at.desc()).limit(6).all():
+        for ticket in ticket_scope.order_by(dashboard_item_model.updated_at.desc()).limit(6).all():
             recent_activity.append(
                 {
-                    "kind": "ticket",
-                    "title": f"Ticket {ticket.ticket_no} updated",
+                    "kind": "task" if dashboard_item_model is TicketTask else "ticket",
+                    "id": ticket.id,
+                    "title": f"{'Task' if dashboard_item_model is TicketTask else 'Ticket'} {ticket.ticket_no} updated",
                     "description": ticket.subject,
                     "timestamp": ticket.updated_at or ticket.created_at,
                     "icon": "fa-ticket-alt",
@@ -386,6 +411,7 @@ def dashboard():
             recent_activity.append(
                 {
                     "kind": "log",
+                    "id": log.id,
                     "title": "Service log added",
                     "description": log.client.name if log.client else "Service activity",
                     "timestamp": log_timestamp,
@@ -415,6 +441,7 @@ def dashboard():
             "recent_activity": recent_activity,
             "week_range": week_range,
             "current_year": today.year,
+            "uses_task_items": dashboard_item_model is TicketTask,
         }
 
     # Client dashboard data
