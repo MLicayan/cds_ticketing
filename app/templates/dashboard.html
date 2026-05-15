@@ -386,41 +386,42 @@
 {% set resolved_end = ((sc.open + sc.in_progress + sc.resolved) / donut_total * 100)|round(2) %}
 
 <div class="dashboard-page">
+  {% set dashboard_list_endpoint = 'tickets.my_tickets' if admin_data.uses_task_items else 'tickets.index' %}
   <div class="kpi-grid">
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for(dashboard_list_endpoint) }}">
       <div class="kpi-card-top">
         <div><div class="kpi-label">{{ 'Total My Tasks' if admin_data.uses_task_items else 'Total Tickets' }}</div><div class="kpi-value">{{ total_tickets }}</div></div>
         <div class="kpi-icon tone-blue"><i class="fas fa-ticket-alt"></i></div>
       </div>
       <div class="kpi-foot good">+{{ admin_data.pm_total or 0 }} PM this year</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for(dashboard_list_endpoint, status='open') }}">
       <div class="kpi-card-top">
         <div><div class="kpi-label">{{ 'Open Tasks' if admin_data.uses_task_items else 'Open Tickets' }}</div><div class="kpi-value">{{ sc.open }}</div></div>
         <div class="kpi-icon tone-orange"><i class="fas fa-exclamation-circle"></i></div>
       </div>
       <div class="kpi-foot">Needs assignment or triage</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for(dashboard_list_endpoint, status='in_progress') }}">
       <div class="kpi-card-top">
         <div><div class="kpi-label">{{ 'Tasks In Progress' if admin_data.uses_task_items else 'In Progress' }}</div><div class="kpi-value">{{ sc.in_progress }}</div></div>
         <div class="kpi-icon tone-purple"><i class="far fa-clock"></i></div>
       </div>
       <div class="kpi-foot">Currently being handled</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for(dashboard_list_endpoint, status='resolved') }}">
       <div class="kpi-card-top">
         <div><div class="kpi-label">{{ 'Completed Tasks' if admin_data.uses_task_items else 'Resolved' }}</div><div class="kpi-value">{{ sc.resolved }}</div></div>
         <div class="kpi-icon tone-green"><i class="fas fa-check-circle"></i></div>
       </div>
       <div class="kpi-foot good">Ready for review or closure</div>
     </a>
-    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for('tickets.my_tickets') if admin_data.uses_task_items else url_for('tickets.index') }}">
+    <a class="dashboard-card kpi-card text-decoration-none" href="{{ url_for(dashboard_list_endpoint, status='closed') }}">
       <div class="kpi-card-top">
-        <div><div class="kpi-label">{{ 'Overdue Tasks' if admin_data.uses_task_items else 'Overdue' }}</div><div class="kpi-value">{{ sc.overdue }}</div></div>
-        <div class="kpi-icon tone-red"><i class="fas fa-chart-line"></i></div>
+        <div><div class="kpi-label">{{ 'Closed Tasks' if admin_data.uses_task_items else 'Closed' }}</div><div class="kpi-value">{{ sc.closed }}</div></div>
+        <div class="kpi-icon tone-red"><i class="fas fa-lock"></i></div>
       </div>
-      <div class="kpi-foot">Past target schedule</div>
+      <div class="kpi-foot">Completed and archived work</div>
     </a>
   </div>
 
