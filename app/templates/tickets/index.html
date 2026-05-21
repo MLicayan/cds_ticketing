@@ -510,6 +510,7 @@
       <table id="tickets-table" class="table table-hover text-nowrap">
       <thead>
         <tr>
+          {% set show_assigned_column = current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support') %}
           <th>#</th>
           {% if current_user.role.value not in ['client', 'client_admin'] %}
             <th>Priority</th>
@@ -522,6 +523,9 @@
           <th>Ticket No</th>
           <th>Complaint</th>
           <th>Reported By</th>
+          {% if show_assigned_column %}
+            <th>Assigned To</th>
+          {% endif %}
           <th>Instrument / App</th>
           <th>Client</th>
           <th>Date Needed</th>
@@ -603,6 +607,9 @@
           </td>
           <td>{{ t.subject }}</td>
           <td>{{ t.reported_by.full_name or t.reported_by.username }}</td>
+          {% if show_assigned_column %}
+            <td>{{ t.assigned_engineer.full_name or t.assigned_engineer.username if t.assigned_engineer else 'Unassigned' }}</td>
+          {% endif %}
           <td>
             {% if t.ticket_for == 'app' %}
               <span class="badge badge-primary">CDS App</span>
@@ -641,6 +648,9 @@
           {% endif %}
           <td></td>
           <td></td>
+          {% if show_assigned_column %}
+            <td></td>
+          {% endif %}
           <td></td>
           <td></td>
           <td></td>

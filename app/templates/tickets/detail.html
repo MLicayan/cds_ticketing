@@ -443,6 +443,17 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
+  overflow: auto;
+}
+
+.attachment-preview-image-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100%;
+  min-height: 100%;
+  overflow: hidden;
+  cursor: default;
 }
 
 .attachment-preview-image {
@@ -450,6 +461,10 @@
   max-height: 72vh;
   border-radius: 10px;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+  transform-origin: center center;
+  transition: transform 0.15s ease;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .attachment-preview-frame {
@@ -458,6 +473,19 @@
   border: 0;
   border-radius: 10px;
   background: #fff;
+}
+
+.attachment-preview-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.attachment-preview-zoom-value {
+  min-width: 56px;
+  text-align: center;
+  color: #475569;
+  font-weight: 600;
 }
 
 .ticket-edit-modal .modal-content {
@@ -1058,6 +1086,11 @@
       </div>
       <div class="modal-body attachment-preview-body" id="attachmentPreviewBody"></div>
       <div class="modal-footer">
+        <div class="attachment-preview-controls mr-auto">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="attachmentZoomOut">Zoom Out</button>
+          <span class="attachment-preview-zoom-value" id="attachmentZoomValue">100%</span>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="attachmentZoomIn">Zoom In</button>
+        </div>
         <a href="#" class="btn btn-outline-primary" id="attachmentPreviewOpen" target="_blank" rel="noopener">Open File</a>
         <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
       </div>
@@ -1319,6 +1352,10 @@
     var attachmentPreviewBody = document.getElementById('attachmentPreviewBody');
     var attachmentPreviewTitle = document.getElementById('attachmentPreviewTitle');
     var attachmentPreviewOpen = document.getElementById('attachmentPreviewOpen');
+    var attachmentPreviewControls = document.querySelector('.attachment-preview-controls');
+    var attachmentZoomIn = document.getElementById('attachmentZoomIn');
+    var attachmentZoomOut = document.getElementById('attachmentZoomOut');
+    var attachmentZoomValue = document.getElementById('attachmentZoomValue');
     var attachmentsList = document.getElementById('ticket-attachments-list');
     var noAttachmentsMessage = document.getElementById('ticket-no-attachments');
     var ticketTimelineCollapse = document.getElementById('ticketTimelineCollapse');
@@ -1329,6 +1366,19 @@
     var confirmStartWorkBtn = document.getElementById('confirmStartWorkBtn');
     var suppressRealtimeReloadUntil = 0;
     var pendingRealtimeReload = null;
+    var activePreviewImage = null;
+    var activePreviewImageWrap = null;
+    var currentImageZoom = 1;
+    var currentImageOffsetX = 0;
+    var currentImageOffsetY = 0;
+    var isDraggingPreviewImage = false;
+    var dragPreviewStartX = 0;
+    var dragPreviewStartY = 0;
+    var dragPreviewOriginX = 0;
+    var dragPreviewOriginY = 0;
+    var MIN_IMAGE_ZOOM = 0.5;
+    var MAX_IMAGE_ZOOM = 3;
+    var IMAGE_ZOOM_STEP = 0.25;
 
     var reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
@@ -1467,9 +1517,77 @@
       }, delay || 500);
     }
 
+    function updateImageZoomState() {
+      if (attachmentPreviewControls) {
+        attachmentPreviewControls.classList.toggle('d-none', !activePreviewImage);
+      }
+      if (attachmentZoomValue) {
+        attachmentZoomValue.textContent = Math.round(currentImageZoom * 100) + '%';
+      }
+      if (attachmentZoomIn) {
+        attachmentZoomIn.disabled = !activePreviewImage || currentImageZoom >= MAX_IMAGE_ZOOM;
+      }
+      if (attachmentZoomOut) {
+        attachmentZoomOut.disabled = !activePreviewImage || currentImageZoom <= MIN_IMAGE_ZOOM;
+      }
+      if (activePreviewImageWrap) {
+        activePreviewImageWrap.style.cursor = activePreviewImage && currentImageZoom > 1
+          ? (isDraggingPreviewImage ? 'grabbing' : 'grab')
+          : 'default';
+      }
+      if (activePreviewImage) {
+        activePreviewImage.style.transform = 'translate(' + currentImageOffsetX + 'px, ' + currentImageOffsetY + 'px) scale(' + currentImageZoom + ')';
+      }
+    }
+
+    function resetAttachmentPreviewZoom() {
+      isDraggingPreviewImage = false;
+      activePreviewImage = null;
+      activePreviewImageWrap = null;
+      currentImageZoom = 1;
+      currentImageOffsetX = 0;
+      currentImageOffsetY = 0;
+      updateImageZoomState();
+    }
+
+    function setAttachmentPreviewZoom(nextZoom) {
+      if (!activePreviewImage) return;
+      currentImageZoom = Math.max(MIN_IMAGE_ZOOM, Math.min(MAX_IMAGE_ZOOM, nextZoom));
+      if (currentImageZoom <= 1) {
+        currentImageOffsetX = 0;
+        currentImageOffsetY = 0;
+      }
+      updateImageZoomState();
+    }
+
+    function startAttachmentPreviewDrag(event) {
+      if (!activePreviewImage || !activePreviewImageWrap || currentImageZoom <= 1) return;
+      isDraggingPreviewImage = true;
+      dragPreviewStartX = event.clientX;
+      dragPreviewStartY = event.clientY;
+      dragPreviewOriginX = currentImageOffsetX;
+      dragPreviewOriginY = currentImageOffsetY;
+      updateImageZoomState();
+      event.preventDefault();
+    }
+
+    function moveAttachmentPreviewDrag(event) {
+      if (!isDraggingPreviewImage || !activePreviewImage) return;
+      currentImageOffsetX = dragPreviewOriginX + (event.clientX - dragPreviewStartX);
+      currentImageOffsetY = dragPreviewOriginY + (event.clientY - dragPreviewStartY);
+      updateImageZoomState();
+    }
+
+    function stopAttachmentPreviewDrag() {
+      if (!isDraggingPreviewImage) return;
+      isDraggingPreviewImage = false;
+      updateImageZoomState();
+    }
+
     function openAttachmentPreview(url, name, contentType) {
       if (!attachmentPreviewModal || !attachmentPreviewBody) return;
       attachmentPreviewBody.innerHTML = '';
+      resetAttachmentPreviewZoom();
       if (attachmentPreviewTitle) {
         attachmentPreviewTitle.textContent = name || 'Attachment Preview';
       }
@@ -1478,17 +1596,24 @@
       }
 
       if ((contentType || '').indexOf('image/') === 0) {
+        var imageWrap = document.createElement('div');
+        imageWrap.className = 'attachment-preview-image-wrap';
         var image = document.createElement('img');
         image.src = url;
         image.alt = name || 'Attachment preview';
         image.className = 'attachment-preview-image';
-        attachmentPreviewBody.appendChild(image);
+        imageWrap.appendChild(image);
+        attachmentPreviewBody.appendChild(imageWrap);
+        activePreviewImage = image;
+        activePreviewImageWrap = imageWrap;
+        updateImageZoomState();
       } else {
         var frame = document.createElement('iframe');
         frame.src = url;
         frame.className = 'attachment-preview-frame';
         frame.setAttribute('title', name || 'Attachment preview');
         attachmentPreviewBody.appendChild(frame);
+        updateImageZoomState();
       }
 
       $('#attachmentPreviewModal').modal('show');
@@ -1873,8 +1998,30 @@
         if (attachmentPreviewOpen) {
           attachmentPreviewOpen.href = '#';
         }
+        resetAttachmentPreviewZoom();
       });
     }
+
+    if (attachmentZoomIn) {
+      attachmentZoomIn.addEventListener('click', function() {
+        setAttachmentPreviewZoom(currentImageZoom + IMAGE_ZOOM_STEP);
+      });
+    }
+
+    if (attachmentZoomOut) {
+      attachmentZoomOut.addEventListener('click', function() {
+        setAttachmentPreviewZoom(currentImageZoom - IMAGE_ZOOM_STEP);
+      });
+    }
+
+    if (attachmentPreviewBody) {
+      attachmentPreviewBody.addEventListener('mousedown', startAttachmentPreviewDrag);
+    }
+
+    document.addEventListener('mousemove', moveAttachmentPreviewDrag);
+    document.addEventListener('mouseup', stopAttachmentPreviewDrag);
+
+    resetAttachmentPreviewZoom();
 
     if (ticketTimelineCollapse && ticketTimelineToggleIcon) {
       $('#ticketTimelineCollapse').on('shown.bs.collapse', function() {
