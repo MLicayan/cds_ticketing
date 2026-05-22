@@ -446,21 +446,28 @@
   overflow: auto;
 }
 
+.attachment-preview-body.is-image-preview {
+  padding: 0;
+}
+
 .attachment-preview-image-wrap {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 100%;
-  min-height: 100%;
+  width: 100%;
+  height: 72vh;
   overflow: hidden;
   cursor: default;
 }
 
 .attachment-preview-image {
-  max-width: 100%;
-  max-height: 72vh;
-  border-radius: 10px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+  max-width: none;
+  max-height: none;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 0;
+  box-shadow: none;
   transform-origin: center center;
   transition: transform 0.15s ease;
   user-select: none;
@@ -475,15 +482,8 @@
   background: #fff;
 }
 
-.attachment-preview-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
 .attachment-preview-zoom-value {
-  min-width: 56px;
-  text-align: center;
+  margin-right: auto;
   color: #475569;
   font-weight: 600;
 }
@@ -1086,11 +1086,7 @@
       </div>
       <div class="modal-body attachment-preview-body" id="attachmentPreviewBody"></div>
       <div class="modal-footer">
-        <div class="attachment-preview-controls mr-auto">
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="attachmentZoomOut">Zoom Out</button>
-          <span class="attachment-preview-zoom-value" id="attachmentZoomValue">100%</span>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="attachmentZoomIn">Zoom In</button>
-        </div>
+        <span class="attachment-preview-zoom-value d-none" id="attachmentZoomValue">100%</span>
         <a href="#" class="btn btn-outline-primary" id="attachmentPreviewOpen" target="_blank" rel="noopener">Open File</a>
         <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
       </div>
@@ -1352,9 +1348,6 @@
     var attachmentPreviewBody = document.getElementById('attachmentPreviewBody');
     var attachmentPreviewTitle = document.getElementById('attachmentPreviewTitle');
     var attachmentPreviewOpen = document.getElementById('attachmentPreviewOpen');
-    var attachmentPreviewControls = document.querySelector('.attachment-preview-controls');
-    var attachmentZoomIn = document.getElementById('attachmentZoomIn');
-    var attachmentZoomOut = document.getElementById('attachmentZoomOut');
     var attachmentZoomValue = document.getElementById('attachmentZoomValue');
     var attachmentsList = document.getElementById('ticket-attachments-list');
     var noAttachmentsMessage = document.getElementById('ticket-no-attachments');
@@ -1518,17 +1511,9 @@
     }
 
     function updateImageZoomState() {
-      if (attachmentPreviewControls) {
-        attachmentPreviewControls.classList.toggle('d-none', !activePreviewImage);
-      }
       if (attachmentZoomValue) {
+        attachmentZoomValue.classList.toggle('d-none', !activePreviewImage);
         attachmentZoomValue.textContent = Math.round(currentImageZoom * 100) + '%';
-      }
-      if (attachmentZoomIn) {
-        attachmentZoomIn.disabled = !activePreviewImage || currentImageZoom >= MAX_IMAGE_ZOOM;
-      }
-      if (attachmentZoomOut) {
-        attachmentZoomOut.disabled = !activePreviewImage || currentImageZoom <= MIN_IMAGE_ZOOM;
       }
       if (activePreviewImageWrap) {
         activePreviewImageWrap.style.cursor = activePreviewImage && currentImageZoom > 1
@@ -1547,6 +1532,9 @@
       currentImageZoom = 1;
       currentImageOffsetX = 0;
       currentImageOffsetY = 0;
+      if (attachmentPreviewBody) {
+        attachmentPreviewBody.classList.remove('is-image-preview');
+      }
       updateImageZoomState();
     }
 
@@ -1558,6 +1546,13 @@
         currentImageOffsetY = 0;
       }
       updateImageZoomState();
+    }
+
+    function handleAttachmentPreviewWheel(event) {
+      if (!activePreviewImage) return;
+      event.preventDefault();
+      var direction = event.deltaY < 0 ? 1 : -1;
+      setAttachmentPreviewZoom(currentImageZoom + (direction * IMAGE_ZOOM_STEP));
     }
 
     function startAttachmentPreviewDrag(event) {
@@ -1596,6 +1591,7 @@
       }
 
       if ((contentType || '').indexOf('image/') === 0) {
+        attachmentPreviewBody.classList.add('is-image-preview');
         var imageWrap = document.createElement('div');
         imageWrap.className = 'attachment-preview-image-wrap';
         var image = document.createElement('img');
@@ -1608,6 +1604,7 @@
         activePreviewImageWrap = imageWrap;
         updateImageZoomState();
       } else {
+        attachmentPreviewBody.classList.remove('is-image-preview');
         var frame = document.createElement('iframe');
         frame.src = url;
         frame.className = 'attachment-preview-frame';
@@ -2002,20 +1999,9 @@
       });
     }
 
-    if (attachmentZoomIn) {
-      attachmentZoomIn.addEventListener('click', function() {
-        setAttachmentPreviewZoom(currentImageZoom + IMAGE_ZOOM_STEP);
-      });
-    }
-
-    if (attachmentZoomOut) {
-      attachmentZoomOut.addEventListener('click', function() {
-        setAttachmentPreviewZoom(currentImageZoom - IMAGE_ZOOM_STEP);
-      });
-    }
-
     if (attachmentPreviewBody) {
       attachmentPreviewBody.addEventListener('mousedown', startAttachmentPreviewDrag);
+      attachmentPreviewBody.addEventListener('wheel', handleAttachmentPreviewWheel, { passive: false });
     }
 
     document.addEventListener('mousemove', moveAttachmentPreviewDrag);
