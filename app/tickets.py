@@ -429,6 +429,13 @@ def _task_assignee_filters(user: Optional[User] = None):
     return [db.func.lower(User.user_type) == "support"]
 
 
+def _status_matches(column, raw_values):
+    normalized = [value.strip().lower() for value in raw_values if value and value.strip()]
+    if not normalized:
+        return None
+    return db.func.lower(db.cast(column, db.String)).in_(normalized)
+
+
 def _emit_comment_reaction(comment: TicketComment) -> None:
     socketio.emit(
         "ticket_comment_reacted",
@@ -742,7 +749,13 @@ def _apply_my_ticket_scope(query):
 def _apply_my_task_scope(query):
     user_type = (current_user.user_type or "").strip().lower()
     if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
-        return query.filter(TicketTask.assigned_engineer_id == current_user.id)
+        return query.filter(
+            db.or_(
+                TicketTask.reported_by_id == current_user.id,
+                TicketTask.assigned_engineer_id == current_user.id,
+                TicketTask.assigned_by_id == current_user.id,
+            )
+        )
     if _is_support_user(current_user):
         return query.filter(TicketTask.assigned_engineer_id == current_user.id)
     if current_user.role == UserRole.ADMIN or user_type == "administrator":
@@ -879,13 +892,6 @@ def _render_ticket_index(my_tickets_only=False):
         except ValueError:
             continue
 
-    valid_status_values = []
-    for status_raw in effective_status_values:
-        try:
-            valid_status_values.append(TicketStatus(status_raw))
-        except ValueError:
-            continue
-
     if using_default_open_not_set_scope:
         query = query.filter(
             list_model.priority == TicketPriority.NOT_SET,
@@ -895,10 +901,11 @@ def _render_ticket_index(my_tickets_only=False):
         if valid_priority_values:
             query = query.filter(list_model.priority.in_(valid_priority_values))
 
-        if valid_status_values:
-            query = query.filter(list_model.status.in_(valid_status_values))
+        status_filter = _status_matches(list_model.status, effective_status_values)
+        if status_filter is not None:
+            query = query.filter(status_filter)
         else:
-            query = query.filter(list_model.status != TicketStatus.CLOSED)
+            query = query.filter(~_status_matches(list_model.status, ["closed", "cancelled"]))
 
     if date_from_raw:
         try:
@@ -942,7 +949,7 @@ def _render_ticket_index(my_tickets_only=False):
             "assignee_id": assignee_id,
             "reported_by_ids": reported_by_ids,
             "priority": [] if using_default_open_not_set_scope else priority_values,
-            "status": [] if using_default_open_not_set_scope else [status.value for status in valid_status_values],
+            "status": [] if using_default_open_not_set_scope else [status.strip().lower() for status in effective_status_values if status.strip()],
             "date_from": date_from_raw,
             "date_to": date_to_raw,
         },
@@ -1899,16 +1906,11 @@ def developer_tasks():
     if valid_priority_values:
         query = query.filter(TicketTask.priority.in_(valid_priority_values))
 
-    valid_status_values = []
-    for status_raw in status_values:
-        try:
-            valid_status_values.append(TicketStatus(status_raw))
-        except ValueError:
-            continue
-    if valid_status_values:
-        query = query.filter(TicketTask.status.in_(valid_status_values))
+    status_filter = _status_matches(TicketTask.status, status_values)
+    if status_filter is not None:
+        query = query.filter(status_filter)
     else:
-        query = query.filter(TicketTask.status != TicketStatus.CLOSED)
+        query = query.filter(~_status_matches(TicketTask.status, ["closed", "cancelled"]))
 
     if date_from_raw:
         try:
@@ -1943,7 +1945,7 @@ def developer_tasks():
             "client_ids": client_ids,
             "assignee_ids": assignee_ids,
             "priority": priority_values,
-            "status": [status.value for status in valid_status_values],
+            "status": [status.strip().lower() for status in status_values if status.strip()],
             "date_from": date_from_raw,
             "date_to": date_to_raw,
         },
@@ -2219,6 +2221,7 @@ def detail(ticket_id):
         (TicketStatus.RESOLVED, "Fix/Completed"),
         (TicketStatus.REOPENED, "Re-Open"),
         (TicketStatus.CLOSED, "Closed"),
+        (TicketStatus.CANCELLED, "Cancelled"),
     ]
     status_labels = {k: v for k, v in status_options}
     priority_options = [
@@ -2432,6 +2435,7 @@ def task_detail(task_id):
         (TicketStatus.RESOLVED, "Fix/Completed"),
         (TicketStatus.REOPENED, "Re-Open"),
         (TicketStatus.CLOSED, "Closed"),
+        (TicketStatus.CANCELLED, "Cancelled"),
     ]
     priority_options = [
         (TicketPriority.NOT_SET, "Not Set"),
@@ -2689,6 +2693,7 @@ def update_status(ticket_id):
         TicketStatus.RESOLVED.value: TicketStatus.RESOLVED,
         TicketStatus.REOPENED.value: TicketStatus.REOPENED,
         TicketStatus.CLOSED.value: TicketStatus.CLOSED,
+        TicketStatus.CANCELLED.value: TicketStatus.CANCELLED,
     }
 
     new_status = valid_statuses.get(new_status_raw)
@@ -3241,6 +3246,7 @@ def update_task_info(task_id):
         TicketStatus.RESOLVED.value: TicketStatus.RESOLVED,
         TicketStatus.REOPENED.value: TicketStatus.REOPENED,
         TicketStatus.CLOSED.value: TicketStatus.CLOSED,
+        TicketStatus.CANCELLED.value: TicketStatus.CANCELLED,
     }
     new_status = valid_statuses.get((request.form.get("status") or "").strip())
     if not new_status:
@@ -3426,6 +3432,7 @@ def update_ticket_info(ticket_id):
         TicketStatus.RESOLVED.value: TicketStatus.RESOLVED,
         TicketStatus.REOPENED.value: TicketStatus.REOPENED,
         TicketStatus.CLOSED.value: TicketStatus.CLOSED,
+        TicketStatus.CANCELLED.value: TicketStatus.CANCELLED,
     }
 
     new_status = valid_statuses.get(new_status_raw)

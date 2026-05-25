@@ -338,6 +338,15 @@
           </li>
           {% endif %}
 
+          {% if current_user.is_authenticated and current_user.has_nav_access('developer_tasks') %}
+          <li class="nav-item">
+            <a href="{{ url_for('tickets.developer_tasks') }}" class="nav-link {% if request.endpoint == 'tickets.developer_tasks' %}active{% endif %}">
+              <i class="nav-icon fas fa-tasks"></i>
+              <p>Developer Tasks</p>
+            </a>
+          </li>
+          {% endif %}
+
           {% if current_user.is_authenticated and current_user.has_nav_access('app_monitoring') %}
           <li class="nav-item">
             <a href="{{ url_for('monitoring.apps') }}" target="_blank" rel="noopener" class="nav-link {% if request.endpoint in ['monitoring.apps', 'monitoring.apps_data'] %}active{% endif %}">
@@ -351,15 +360,6 @@
             <a href="{{ url_for('monitoring.apps_daily') }}" target="_blank" rel="noopener" class="nav-link {% if request.endpoint in ['monitoring.apps_daily', 'monitoring.apps_daily_data'] %}active{% endif %}">
               <i class="nav-icon fas fa-calendar-day"></i>
               <p>Daily Monitoring</p>
-            </a>
-          </li>
-          {% endif %}
-
-          {% if current_user.is_authenticated and current_user.has_nav_access('developer_tasks') %}
-          <li class="nav-item">
-            <a href="{{ url_for('tickets.developer_tasks') }}" class="nav-link {% if request.endpoint == 'tickets.developer_tasks' %}active{% endif %}">
-              <i class="nav-icon fas fa-tasks"></i>
-              <p>Developer Tasks</p>
             </a>
           </li>
           {% endif %}

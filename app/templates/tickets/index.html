@@ -646,29 +646,6 @@
           </td>
           <td>{{ to_localtime(t.created_at).strftime('%Y-%m-%d %H:%M') if t.created_at else '' }}</td>
         </tr>
-        {% else %}
-        <tr>
-          <td></td>
-          {% if current_user.role.value not in ['client', 'client_admin'] %}
-            <td></td>
-          {% endif %}
-          <td></td>
-          {% if is_task_list %}
-            <td></td>
-          {% endif %}
-          <td></td>
-          <td></td>
-          {% if show_assigned_column %}
-            <td></td>
-          {% endif %}
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-          <td></td>
-        </tr>
         {% endfor %}
       </tbody>
       </table>
