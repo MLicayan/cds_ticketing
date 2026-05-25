@@ -375,7 +375,7 @@ class TicketComment(db.Model):
     __tablename__ = "ticket_comments"
 
     id = db.Column(db.Integer, primary_key=True)
-    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=True)
     parent_comment_id = db.Column(db.Integer, db.ForeignKey("ticket_comments.id"), nullable=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     comment_text = db.Column(db.Text, nullable=False)

@@ -6,6 +6,7 @@ import io
 import calendar
 import base64
 import json
+from typing import Optional
 from collections import defaultdict
 from datetime import datetime, date, timedelta, time
 
@@ -54,6 +55,7 @@ def require_ticket_nav_access():
         "tickets.update_task_info",
         "tickets.toggle_task_work_state",
         "tickets.react_task_comment",
+        "tickets.create_task",
     }
     if request.endpoint in task_endpoints:
         if not (current_user.has_nav_access("developer_tasks") or current_user.has_nav_access("my_tickets")):
@@ -413,6 +415,20 @@ def _is_support_user(user: User) -> bool:
     )
 
 
+def _can_create_tasks(user: User) -> bool:
+    return bool(user and (user.role == UserRole.ADMIN or user.role == UserRole.ENGINEER))
+
+
+def _task_assignee_filters(user: Optional[User] = None):
+    if not user:
+        return [db.func.lower(User.user_type) == "support"]
+    if user.role == UserRole.ADMIN or _is_support_user(user):
+        return [db.true()]
+    if user.role == UserRole.ENGINEER:
+        return [User.id == user.id]
+    return [db.func.lower(User.user_type) == "support"]
+
+
 def _emit_comment_reaction(comment: TicketComment) -> None:
     socketio.emit(
         "ticket_comment_reacted",
@@ -759,6 +775,7 @@ def _render_ticket_index(my_tickets_only=False):
 
     list_model = TicketTask if my_tickets_only and current_user.role not in CLIENT_SCOPED_ROLES else Ticket
     is_task_list = list_model is TicketTask
+    can_create_task = _can_create_tasks(current_user)
     query = TicketTask.query if is_task_list else _exclude_task_tickets(Ticket.query)
 
     client_ids = request.args.getlist("client_id")
@@ -916,6 +933,7 @@ def _render_ticket_index(my_tickets_only=False):
         ticket_list_title="My Task" if my_tickets_only else "All Tickets",
         ticket_list_endpoint="tickets.my_tickets" if my_tickets_only else "tickets.index",
         is_task_list=is_task_list,
+        can_create_task=can_create_task,
         selected_filters={
             "client_ids": client_ids,
             "instrument_ids": instrument_ids,
@@ -1568,6 +1586,262 @@ def create():
         instruments=instruments,
         apps=apps,
         default_ticket_for=default_ticket_for
+    )
+
+
+@tickets_bp.route("/tasks/new", methods=["GET", "POST"])
+@login_required
+def create_task():
+    can_create_tasks = _can_create_tasks(current_user)
+    if not can_create_tasks:
+        abort(403)
+
+    clients = Client.query.order_by(Client.name.asc()).all()
+    instruments = Instrument.query.order_by(Instrument.name.asc()).all()
+    apps = App.query.order_by(App.name.asc()).all()
+    parent_tickets_query = _exclude_task_tickets(Ticket.query).filter(
+        Ticket.status.notin_([TicketStatus.RESOLVED, TicketStatus.CLOSED])
+    )
+    if current_user.role in CLIENT_SCOPED_ROLES:
+        parent_tickets_query = _apply_client_ticket_scope(parent_tickets_query)
+
+    parent_tickets = parent_tickets_query.order_by(Ticket.created_at.desc(), Ticket.id.desc()).all()
+    task_assignees = (
+        User.query.filter(
+            User.role == UserRole.ENGINEER,
+            db.or_(*_task_assignee_filters(current_user)),
+        )
+        .order_by(User.full_name.asc(), User.username.asc())
+        .all()
+    )
+
+    if request.method == "POST":
+        parent_ticket_id_raw = (request.form.get("ticket_id") or "").strip()
+        client_id_raw = (request.form.get("client_id") or "").strip()
+        ticket_for = (request.form.get("ticket_for") or "instrument").strip()
+        instrument_id_raw = (request.form.get("instrument_id") or "").strip()
+        app_id_raw = (request.form.get("app_id") or "").strip()
+        subject = (request.form.get("subject") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        engineer_id_raw = (request.form.get("assigned_engineer_id") or "").strip()
+        priority_raw = (request.form.get("priority") or "").strip()
+        photos = request.files.getlist("photos")
+
+        try:
+            parent_ticket_id = int(parent_ticket_id_raw)
+        except ValueError:
+            parent_ticket_id = None
+
+        try:
+            client_id = int(client_id_raw) if client_id_raw else None
+        except ValueError:
+            client_id = None
+
+        try:
+            instrument_id = int(instrument_id_raw) if instrument_id_raw else None
+        except ValueError:
+            instrument_id = None
+
+        try:
+            app_id = int(app_id_raw) if app_id_raw else None
+        except ValueError:
+            app_id = None
+
+        if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
+            engineer_id = current_user.id
+        else:
+            try:
+                engineer_id = int(engineer_id_raw)
+            except ValueError:
+                engineer_id = None
+
+        parent_ticket = Ticket.query.get(parent_ticket_id) if parent_ticket_id else None
+        client = Client.query.get(client_id) if client_id else None
+        instrument = Instrument.query.get(instrument_id) if instrument_id else None
+        app_obj = App.query.get(app_id) if app_id else None
+        engineer = None
+        if engineer_id:
+            engineer = User.query.filter(
+                User.id == engineer_id,
+                User.role == UserRole.ENGINEER,
+                db.or_(*_task_assignee_filters(current_user)),
+            ).first()
+
+        if parent_ticket and _is_task_ticket(parent_ticket):
+            flash("Select a valid parent ticket.", "danger")
+            return render_template(
+                "tickets/new_task.html",
+                clients=clients,
+                instruments=instruments,
+                apps=apps,
+                parent_tickets=parent_tickets,
+                task_assignees=task_assignees,
+            )
+
+        if parent_ticket and parent_ticket.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+            flash("Tasks cannot be created for completed or closed tickets.", "warning")
+            return render_template(
+                "tickets/new_task.html",
+                clients=clients,
+                instruments=instruments,
+                apps=apps,
+                parent_tickets=parent_tickets,
+                task_assignees=task_assignees,
+            )
+
+        if current_user.role in CLIENT_SCOPED_ROLES and parent_ticket:
+            _ensure_client_ticket_access(parent_ticket)
+
+        if not engineer:
+            flash("Assign the task to a valid IT or Support user.", "danger")
+            return render_template(
+                "tickets/new_task.html",
+                clients=clients,
+                instruments=instruments,
+                apps=apps,
+                parent_tickets=parent_tickets,
+                task_assignees=task_assignees,
+            )
+
+        if parent_ticket:
+            try:
+                priority = TicketPriority(priority_raw) if priority_raw else (parent_ticket.priority or TicketPriority.NOT_SET)
+            except ValueError:
+                priority = parent_ticket.priority or TicketPriority.NOT_SET
+
+            task_subject = subject or parent_ticket.subject
+            task_description = (
+                f"Task from ticket {parent_ticket.ticket_no}.\n\n"
+                f"{description or parent_ticket.description or ''}"
+            ).strip()
+            task_client_id = parent_ticket.client_id
+            task_instrument_id = parent_ticket.instrument_id if parent_ticket.ticket_for == "instrument" else None
+            task_app_id = parent_ticket.app_id if parent_ticket.ticket_for == "app" else None
+            task_ticket_for = parent_ticket.ticket_for
+            task_ticket_id = parent_ticket.id
+            task_target_date = parent_ticket.target_date
+            task_date_needed = parent_ticket.date_needed
+        else:
+            if not client:
+                flash("Client is required when no parent ticket is selected.", "danger")
+                return render_template(
+                    "tickets/new_task.html",
+                    clients=clients,
+                    instruments=instruments,
+                    apps=apps,
+                    parent_tickets=parent_tickets,
+                    task_assignees=task_assignees,
+                )
+
+            if not subject:
+                flash("Task is required when no parent ticket is selected.", "danger")
+                return render_template(
+                    "tickets/new_task.html",
+                    clients=clients,
+                    instruments=instruments,
+                    apps=apps,
+                    parent_tickets=parent_tickets,
+                    task_assignees=task_assignees,
+                )
+
+            if ticket_for == "instrument" and instrument and instrument.client_id != client.id:
+                flash("Selected instrument does not belong to the chosen client.", "danger")
+                return render_template(
+                    "tickets/new_task.html",
+                    clients=clients,
+                    instruments=instruments,
+                    apps=apps,
+                    parent_tickets=parent_tickets,
+                    task_assignees=task_assignees,
+                )
+
+            if ticket_for == "app" and app_obj and client not in app_obj.clients:
+                flash("Selected application is not available for the chosen client.", "danger")
+                return render_template(
+                    "tickets/new_task.html",
+                    clients=clients,
+                    instruments=instruments,
+                    apps=apps,
+                    parent_tickets=parent_tickets,
+                    task_assignees=task_assignees,
+                )
+
+            try:
+                priority = TicketPriority(priority_raw) if priority_raw else TicketPriority.NOT_SET
+            except ValueError:
+                priority = TicketPriority.NOT_SET
+
+            task_subject = subject
+            task_description = description
+            task_client_id = client.id
+            task_instrument_id = instrument.id if ticket_for == "instrument" and instrument else None
+            task_app_id = app_obj.id if ticket_for == "app" and app_obj else None
+            task_ticket_for = ticket_for
+            task_ticket_id = None
+            task_target_date = None
+            task_date_needed = None
+
+        task_ticket = TicketTask(
+            task_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
+            ticket_id=task_ticket_id,
+            client_id=task_client_id,
+            instrument_id=task_instrument_id,
+            app_id=task_app_id,
+            ticket_for=task_ticket_for,
+            reported_by_id=current_user.id,
+            assigned_engineer_id=engineer.id,
+            assigned_by_id=current_user.id,
+            priority=priority,
+            subject=task_subject,
+            description=task_description,
+            status=TicketStatus.OPEN,
+            started_date=None,
+            is_working=False,
+            target_date=task_target_date,
+            date_needed=task_date_needed,
+        )
+        db.session.add(task_ticket)
+        db.session.flush()
+        task_ticket.task_no = generate_task_ticket_no(task_ticket.id)
+        if parent_ticket:
+            _clone_ticket_attachments(parent_ticket, task_ticket, uploaded_at=task_ticket.created_at)
+
+        upload_folder = current_app.config.get("UPLOAD_FOLDER_TICKETS")
+        if upload_folder:
+            os.makedirs(upload_folder, exist_ok=True)
+
+        for photo in photos:
+            if photo and photo.filename:
+                safe_name = secure_filename(photo.filename)
+                stored_name = f"{task_ticket.id}_{int(datetime.utcnow().timestamp() * 1000)}_{safe_name}"
+                filepath = os.path.join(upload_folder, stored_name)
+                photo.save(filepath)
+
+                attachment = TicketTaskAttachment(
+                    ticket_task_id=task_ticket.id,
+                    user_id=current_user.id,
+                    stored_filename=stored_name,
+                    original_filename=photo.filename,
+                    content_type=photo.mimetype,
+                    file_size=os.path.getsize(filepath),
+                    uploaded_at=task_ticket.created_at,
+                )
+                db.session.add(attachment)
+        db.session.commit()
+
+        _emit_ticket_changed(task_ticket, "created")
+        if parent_ticket:
+            _emit_ticket_changed(parent_ticket, "updated")
+        flash("Task created.", "success")
+        return redirect(url_for("tickets.task_detail", task_id=task_ticket.id))
+
+    return render_template(
+        "tickets/new_task.html",
+        clients=clients,
+        instruments=instruments,
+        apps=apps,
+        parent_tickets=parent_tickets,
+        task_assignees=task_assignees,
     )
 
 
@@ -2275,8 +2549,18 @@ def react_task_comment(comment_id):
             "comment_id": comment.id,
             "reactions": comment.reaction_summary(),
         },
-        room=f"ticket:{task.ticket_id}",
+        room=f"ticket:{task.id}",
     )
+    if task.ticket_id:
+        socketio.emit(
+            "ticket_comment_reacted",
+            {
+                "ticket_id": comment.ticket_task_id,
+                "comment_id": comment.id,
+                "reactions": comment.reaction_summary(),
+            },
+            room=f"ticket:{task.ticket_id}",
+        )
     return jsonify(_task_comment_reaction_payload(comment))
 
 
@@ -2287,10 +2571,7 @@ def create_tasks(ticket_id):
     closed_redirect = _ensure_ticket_not_closed(ticket)
     if closed_redirect:
         return closed_redirect
-    can_create_tasks = (
-        current_user.role == UserRole.ADMIN
-        or (current_user.role == UserRole.ENGINEER and (current_user.user_type or "").strip().lower() == "support")
-    )
+    can_create_tasks = _can_create_tasks(current_user)
     if not can_create_tasks:
         abort(403)
     if _is_task_ticket(ticket):
@@ -2316,7 +2597,7 @@ def create_tasks(ticket_id):
         if not subject and not engineer_id and not description:
             continue
         if not engineer_id:
-            flash("Each task must be assigned to an IT or Support user.", "danger")
+            flash("Each task must be assigned to a valid engineer.", "danger")
             return redirect(url_for("tickets.detail", ticket_id=ticket.id))
 
         try:
@@ -2329,12 +2610,7 @@ def create_tasks(ticket_id):
             User.id == engineer_id_int,
             User.role == UserRole.ENGINEER,
         )
-        engineer_query = engineer_query.filter(
-            db.or_(
-                db.func.lower(User.user_type) == "it",
-                db.func.lower(User.user_type) == "support",
-            )
-        )
+        engineer_query = engineer_query.filter(db.or_(*_task_assignee_filters(current_user)))
         engineer = engineer_query.first()
         if not engineer:
             flash("Invalid task assignment selected.", "danger")

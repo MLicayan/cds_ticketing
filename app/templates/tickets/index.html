@@ -281,9 +281,19 @@
       <a href="{{ url_for('tickets.kanban') }}" class="btn btn-outline-info">
         <i class="fas fa-th-large"></i> Kanban
       </a>
+      {% if is_task_list and can_create_task %}
+      <a href="{{ url_for('tickets.create_task') }}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> New Task
+      </a>
+      {% elif is_task_list %}
+      <button type="button" class="btn btn-primary" disabled>
+        <i class="fas fa-plus"></i> New Task
+      </button>
+      {% else %}
       <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">
         <i class="fas fa-plus"></i> New Ticket
       </a>
+      {% endif %}
     </div>
   </div>
 </div>

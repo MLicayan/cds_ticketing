@@ -1,0 +1,542 @@
+{% extends "base.html" %}
+{% block title %}New Task - Instrument Monitoring{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+<style>
+  .select2-container--default .select2-selection--single {
+    height: 38px;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 24px;
+  }
+  .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 36px;
+  }
+  .ticket-upload-list {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .ticket-upload-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 8px 10px;
+    background: #fff;
+  }
+  .ticket-upload-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .ticket-upload-preview {
+    width: 46px;
+    height: 46px;
+    border-radius: 6px;
+    border: 1px solid #dee2e6;
+    overflow: hidden;
+    background: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 46px;
+  }
+  .ticket-upload-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .ticket-upload-fileicon {
+    color: #6c757d;
+    font-size: 18px;
+  }
+  .ticket-upload-text {
+    min-width: 0;
+  }
+  .ticket-upload-name {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 420px;
+  }
+  .ticket-upload-size {
+    font-size: 12px;
+    color: #6c757d;
+  }
+  .ticket-upload-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+  .ticket-upload-empty {
+    margin-top: 10px;
+    color: #6c757d;
+    font-size: 13px;
+  }
+  .task-standalone-hint {
+    font-size: 12px;
+    color: #6c757d;
+    margin-top: 6px;
+  }
+  .attachment-preview-modal .modal-dialog {
+    max-width: min(1100px, calc(100vw - 2rem));
+  }
+  .attachment-preview-modal .modal-content {
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .attachment-preview-body {
+    min-height: 60vh;
+    padding: 1rem;
+    background: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .attachment-preview-image {
+    max-width: 100%;
+    max-height: 70vh;
+    object-fit: contain;
+  }
+  .attachment-preview-frame {
+    width: 100%;
+    height: 70vh;
+    border: 0;
+    background: #fff;
+  }
+  .attachment-preview-unavailable {
+    max-width: 520px;
+    text-align: center;
+    color: #6c757d;
+  }
+  .attachment-preview-unavailable i {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 42px;
+    color: #adb5bd;
+  }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2 ml-3">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-tasks text-primary mr-2"></i>New Task</h1>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <form method="post" enctype="multipart/form-data">
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group col-md-6">
+          <label for="ticket_id">Parent Ticket</label>
+          <select name="ticket_id" id="ticket_id" class="form-control select2">
+            <option value="" {% if not request.form.get('ticket_id') %}selected{% endif %}>-- no parent ticket --</option>
+            {% for ticket in parent_tickets %}
+            <option value="{{ ticket.id }}" {% if request.form.get('ticket_id') == ticket.id|string %}selected{% endif %}>
+              {{ ticket.ticket_no }} - {{ ticket.subject }}{% if ticket.client %} | {{ ticket.client.name }}{% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          <div class="task-standalone-hint">Leave this empty to create a standalone task.</div>
+        </div>
+        <div class="form-group col-md-3">
+          <label for="assigned_engineer_id">Assign To</label>
+          {% set is_developer_creator = current_user.role.value == 'engineer' and (current_user.user_type or '')|lower != 'support' %}
+          {% set selected_assignee_id = request.form.get('assigned_engineer_id') or (current_user.id|string if is_developer_creator else '') %}
+          <select name="assigned_engineer_id" id="assigned_engineer_id" class="form-control select2" required {% if is_developer_creator %}disabled{% endif %}>
+            <option value="">-- select assignee --</option>
+            {% for user in task_assignees %}
+            <option value="{{ user.id }}" {% if selected_assignee_id == user.id|string %}selected{% endif %}>
+              {{ user.full_name or user.username }}{% if user.user_type %} ({{ user.user_type }}){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+          {% if is_developer_creator %}
+          <input type="hidden" name="assigned_engineer_id" value="{{ current_user.id }}">
+          {% endif %}
+        </div>
+        <div class="form-group col-md-3">
+          <label for="priority">Priority</label>
+          <select name="priority" id="priority" class="form-control">
+            {% set selected_priority = request.form.get('priority', '') %}
+            <option value="" {% if not selected_priority %}selected{% endif %}>Inherit from parent ticket</option>
+            <option value="NOT_SET" {% if selected_priority == 'NOT_SET' %}selected{% endif %}>Not set yet</option>
+            <option value="low" {% if selected_priority == 'low' %}selected{% endif %}>Low</option>
+            <option value="medium" {% if selected_priority == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="high" {% if selected_priority == 'high' %}selected{% endif %}>High</option>
+            <option value="critical" {% if selected_priority == 'critical' %}selected{% endif %}>Critical</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="standalone-task-fields">
+        <div class="form-row">
+          <div class="form-group col-md-4">
+            <label for="client_id">Client</label>
+            <select name="client_id" id="client_id" class="form-control select2">
+              <option value="">-- select client --</option>
+              {% for client in clients %}
+              <option value="{{ client.id }}" {% if request.form.get('client_id') == client.id|string %}selected{% endif %}>
+                {{ client.name }}{% if client.client_code %} - {{ client.client_code }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group col-md-4">
+            <label for="ticket_for">Task For</label>
+            {% set selected_ticket_for = request.form.get('ticket_for', 'instrument') %}
+            <select name="ticket_for" id="ticket_for" class="form-control">
+              <option value="instrument" {% if selected_ticket_for == 'instrument' %}selected{% endif %}>Instrument</option>
+              <option value="app" {% if selected_ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
+            </select>
+          </div>
+          <div class="form-group col-md-4 standalone-target standalone-instrument">
+            <label for="instrument_id">Instrument</label>
+            <select name="instrument_id" id="instrument_id" class="form-control select2">
+              <option value="">-- optional instrument --</option>
+              {% for instrument in instruments %}
+              <option value="{{ instrument.id }}" data-client-id="{{ instrument.client_id }}" {% if request.form.get('instrument_id') == instrument.id|string %}selected{% endif %}>
+                {{ instrument.display_label() }}{% if instrument.serial_number %} (SN: {{ instrument.serial_number }}){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group col-md-4 standalone-target standalone-app d-none">
+            <label for="app_id">CDS Application</label>
+            <select name="app_id" id="app_id" class="form-control select2">
+              <option value="">-- optional application --</option>
+              {% for app in apps %}
+              <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if request.form.get('app_id') == app.id|string %}selected{% endif %}>
+                {{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="subject">Task</label>
+        <input
+          type="text"
+          name="subject"
+          id="subject"
+          class="form-control"
+          maxlength="255"
+          value="{{ request.form.get('subject', '') }}"
+          placeholder="Leave blank to reuse the parent ticket subject">
+      </div>
+
+      <div class="form-group">
+        <label for="description">Task Note</label>
+        <textarea
+          name="description"
+          id="description"
+          class="form-control"
+          rows="5"
+          placeholder="Optional task note">{{ request.form.get('description', '') }}</textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="photos">Attachments</label>
+        <input type="file" name="photos" id="photos" class="form-control-file" multiple>
+        <small class="form-text text-muted">You can select multiple files.</small>
+        <div id="ticket-upload-empty" class="ticket-upload-empty">No files selected.</div>
+        <div id="ticket-upload-list" class="ticket-upload-list"></div>
+      </div>
+
+      <div class="form-group mb-0">
+        <label>Created By</label>
+        <input class="form-control" value="{{ current_user.full_name or current_user.username }}" readonly>
+      </div>
+    </div>
+    <div class="card-footer">
+      <button type="submit" class="btn btn-primary">
+        <i class="fas fa-save"></i> Create Task
+      </button>
+      <a href="{{ url_for('tickets.my_tickets') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+<div class="modal fade attachment-preview-modal" id="newTaskAttachmentPreviewModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="newTaskAttachmentPreviewTitle">Attachment Preview</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body attachment-preview-body" id="newTaskAttachmentPreviewBody"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+(function() {
+  function filterInstruments() {
+    var clientSelect = document.getElementById('client_id');
+    var insSelect = document.getElementById('instrument_id');
+    if (!clientSelect || !insSelect) return;
+    var cid = clientSelect.value;
+    Array.from(insSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var match = !cid || opt.getAttribute('data-client-id') === cid;
+      opt.hidden = !match;
+    });
+    if (insSelect.selectedOptions.length && insSelect.selectedOptions[0].hidden) {
+      insSelect.value = '';
+    }
+  }
+
+  function filterApps() {
+    var clientSelect = document.getElementById('client_id');
+    var appSelect = document.getElementById('app_id');
+    if (!clientSelect || !appSelect) return;
+    var cid = clientSelect.value;
+    Array.from(appSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var ids = (opt.getAttribute('data-client-ids') || '').split(',').filter(Boolean);
+      var match = !cid || ids.indexOf(cid) >= 0 || ids.length === 0;
+      opt.hidden = !match;
+    });
+    if (appSelect.selectedOptions.length && appSelect.selectedOptions[0].hidden) {
+      appSelect.value = '';
+    }
+  }
+
+  function toggleStandaloneFields() {
+    var ticketId = document.getElementById('ticket_id');
+    var hasParent = ticketId && ticketId.value;
+    var standaloneFields = document.getElementById('standalone-task-fields');
+    var subject = document.getElementById('subject');
+    if (standaloneFields) standaloneFields.style.display = hasParent ? 'none' : '';
+    if (subject) {
+      subject.setAttribute('placeholder', hasParent ? 'Leave blank to reuse the parent ticket subject' : 'Enter task title');
+    }
+  }
+
+  function toggleTargets() {
+    var ticketFor = document.getElementById('ticket_for');
+    var target = ticketFor ? ticketFor.value : 'instrument';
+    var instrumentGrp = document.querySelector('.standalone-instrument');
+    var appGrp = document.querySelector('.standalone-app');
+    if (instrumentGrp) instrumentGrp.classList.toggle('d-none', target !== 'instrument');
+    if (appGrp) appGrp.classList.toggle('d-none', target !== 'app');
+  }
+
+  var clientSelect = document.getElementById('client_id');
+  if (clientSelect) {
+    var onClientChange = function() { filterInstruments(); filterApps(); };
+    clientSelect.addEventListener('change', onClientChange);
+    if (window.$) {
+      $('#client_id').select2({ width: '100%', placeholder: '-- select client --' }).on('change', onClientChange);
+    }
+    filterInstruments();
+    filterApps();
+  }
+
+  if (window.$) {
+    $('#ticket_id').select2({ width: '100%', minimumResultsForSearch: 0 }).on('change', toggleStandaloneFields);
+    $('#assigned_engineer_id').select2({ width: '100%', placeholder: '-- select assignee --' });
+    $('#instrument_id').select2({ width: '100%', placeholder: '-- optional instrument --' });
+    $('#app_id').select2({ width: '100%', placeholder: '-- optional application --' });
+  }
+
+  var ticketId = document.getElementById('ticket_id');
+  if (ticketId) ticketId.addEventListener('change', toggleStandaloneFields);
+
+  var ticketFor = document.getElementById('ticket_for');
+  if (ticketFor) ticketFor.addEventListener('change', toggleTargets);
+  toggleStandaloneFields();
+  toggleTargets();
+
+  var photosInput = document.getElementById('photos');
+  var uploadList = document.getElementById('ticket-upload-list');
+  var uploadEmpty = document.getElementById('ticket-upload-empty');
+  var attachmentPreviewBody = document.getElementById('newTaskAttachmentPreviewBody');
+  var attachmentPreviewTitle = document.getElementById('newTaskAttachmentPreviewTitle');
+  var activePreviewUrl = null;
+  var selectedFiles = [];
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    var units = ['B', 'KB', 'MB', 'GB'];
+    var size = bytes;
+    var unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size = size / 1024;
+      unitIndex += 1;
+    }
+    return (size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1)) + ' ' + units[unitIndex];
+  }
+
+  function syncFilesToInput() {
+    if (!photosInput || typeof DataTransfer === 'undefined') return;
+    var transfer = new DataTransfer();
+    selectedFiles.forEach(function(file) {
+      transfer.items.add(file);
+    });
+    photosInput.files = transfer.files;
+  }
+
+  function renderFilePreview(file) {
+    if (file.type && file.type.indexOf('image/') === 0) {
+      var img = document.createElement('img');
+      img.alt = file.name;
+      img.src = URL.createObjectURL(file);
+      img.onload = function() {
+        URL.revokeObjectURL(img.src);
+      };
+      return img;
+    }
+    var icon = document.createElement('i');
+    icon.className = 'fas fa-paperclip ticket-upload-fileicon';
+    icon.setAttribute('aria-hidden', 'true');
+    return icon;
+  }
+
+  function clearAttachmentPreview() {
+    if (attachmentPreviewBody) {
+      attachmentPreviewBody.innerHTML = '';
+    }
+    if (activePreviewUrl) {
+      URL.revokeObjectURL(activePreviewUrl);
+      activePreviewUrl = null;
+    }
+  }
+
+  function openAttachmentPreview(file) {
+    if (!file || !attachmentPreviewBody) return;
+    clearAttachmentPreview();
+    activePreviewUrl = URL.createObjectURL(file);
+    if (attachmentPreviewTitle) {
+      attachmentPreviewTitle.textContent = file.name || 'Attachment Preview';
+    }
+
+    var fileType = file.type || '';
+    if (fileType.indexOf('image/') === 0) {
+      var image = document.createElement('img');
+      image.src = activePreviewUrl;
+      image.alt = file.name || 'Attachment';
+      image.className = 'attachment-preview-image';
+      attachmentPreviewBody.appendChild(image);
+    } else if (fileType === 'application/pdf' || fileType.indexOf('text/') === 0) {
+      var frame = document.createElement('iframe');
+      frame.src = activePreviewUrl;
+      frame.className = 'attachment-preview-frame';
+      frame.setAttribute('title', file.name || 'Attachment preview');
+      attachmentPreviewBody.appendChild(frame);
+    } else {
+      var unavailable = document.createElement('div');
+      unavailable.className = 'attachment-preview-unavailable';
+      unavailable.innerHTML = '<i class="fas fa-file" aria-hidden="true"></i><div class="font-weight-bold mb-1"></div><div>Preview is not available for this file type.</div>';
+      unavailable.querySelector('.font-weight-bold').textContent = file.name || 'Attachment';
+      attachmentPreviewBody.appendChild(unavailable);
+    }
+
+    if (window.$) {
+      $('#newTaskAttachmentPreviewModal').modal('show');
+    }
+  }
+
+  if (window.$) {
+    $('#newTaskAttachmentPreviewModal').on('hidden.bs.modal', clearAttachmentPreview);
+  }
+
+  function renderUploadList() {
+    if (!uploadList || !uploadEmpty) return;
+    uploadList.innerHTML = '';
+    uploadEmpty.style.display = selectedFiles.length ? 'none' : 'block';
+
+    selectedFiles.forEach(function(file, index) {
+      var row = document.createElement('div');
+      row.className = 'ticket-upload-item';
+
+      var meta = document.createElement('div');
+      meta.className = 'ticket-upload-meta';
+
+      var preview = document.createElement('div');
+      preview.className = 'ticket-upload-preview';
+      preview.appendChild(renderFilePreview(file));
+
+      var text = document.createElement('div');
+      text.className = 'ticket-upload-text';
+
+      var name = document.createElement('div');
+      name.className = 'ticket-upload-name';
+      name.textContent = file.name;
+
+      var size = document.createElement('div');
+      size.className = 'ticket-upload-size';
+      size.textContent = formatBytes(file.size);
+
+      text.appendChild(name);
+      text.appendChild(size);
+      meta.appendChild(preview);
+      meta.appendChild(text);
+
+      var actions = document.createElement('div');
+      actions.className = 'ticket-upload-actions';
+
+      var previewBtn = document.createElement('button');
+      previewBtn.type = 'button';
+      previewBtn.className = 'btn btn-sm btn-outline-primary';
+      previewBtn.textContent = 'Preview';
+      previewBtn.addEventListener('click', function() {
+        openAttachmentPreview(file);
+      });
+
+      var removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.className = 'btn btn-sm btn-outline-danger';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', function() {
+        selectedFiles.splice(index, 1);
+        syncFilesToInput();
+        renderUploadList();
+      });
+
+      actions.appendChild(previewBtn);
+      actions.appendChild(removeBtn);
+
+      row.appendChild(meta);
+      row.appendChild(actions);
+      uploadList.appendChild(row);
+    });
+  }
+
+  if (photosInput) {
+    photosInput.addEventListener('change', function(event) {
+      var incomingFiles = Array.from((event.target && event.target.files) || []);
+      selectedFiles = selectedFiles.concat(incomingFiles);
+      syncFilesToInput();
+      renderUploadList();
+    });
+    renderUploadList();
+  }
+})();
+</script>
+{% endblock %}
