@@ -37,7 +37,7 @@
 .timeline::before {
   content: "";
   position: absolute;
-  left: 173px;
+  left: 198px;
   top: 0;
   bottom: 0;
   width: 2px;
@@ -56,7 +56,7 @@
 }
 
 .timeline-date {
-    width: 125px;
+    width: 150px;
     text-align: center;
     align-self: flex-start;
     background: #b4130012;
@@ -67,6 +67,12 @@
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: #b41300;
+}
+
+.timeline-date-line,
+.timeline-time-line {
+  display: block;
+  white-space: nowrap;
 }
 
 .timeline-marker {
@@ -535,7 +541,7 @@
 @media (max-width: 640px) {
   .timeline::before { left: 26px; }
   .timeline-item { padding-left: 8px; }
-  .timeline-date { width: 90px; font-size: 10px; margin-left: -6px; }
+  .timeline-date { width: 115px; font-size: 10px; margin-left: -6px; }
   .timeline-marker { width: 22px; }
   .timeline-title { font-size: 16px; }
   .ticket-chat-item { max-width: 92%; }
@@ -638,8 +644,8 @@
               {% if (current_user.user_type or '').lower() == 'it' %}
               <dt class="col-sm-4">Work Status</dt>
               <dd class="col-sm-8">
-                {% set work_badge = 'success' if ticket.is_working else 'secondary' %}
-                {% set work_label = 'Working' if ticket.is_working else 'Not Working' %}
+                {% set work_badge = 'success' if ticket.is_working else 'warning' if is_task_ticket and task_work_session_state == 'paused' else 'secondary' %}
+                {% set work_label = 'Working' if ticket.is_working else 'Paused' if is_task_ticket and task_work_session_state == 'paused' else 'Not Working' %}
                 <span class="badge badge-{{ work_badge }}">{{ work_label }}</span>
                 {% if ticket.started_date %}
                   <small class="text-muted ml-1">since {{ ticket.started_date.strftime('%Y-%m-%d') }}</small>
@@ -738,18 +744,40 @@
                 {% set is_assigned_worker = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() in ['it', 'support'] %}
 
                 {% if is_assigned_worker and ticket.status != TicketStatus.CLOSED %}
+                  {% if is_task_ticket and ticket.is_working %}
+                  <form
+                    method="post"
+                    action="{{ url_for('tickets.toggle_task_work_state', task_id=ticket.id) }}"
+                    class="mb-2">
+                    <input type="hidden" name="action" value="pause">
+                    <input type="hidden" name="pause_reason" value="Manual pause">
+                    <button type="submit" class="btn btn-warning btn-sm btn-block">
+                      Pause Work
+                    </button>
+                  </form>
+                  <form
+                    method="post"
+                    action="{{ url_for('tickets.toggle_task_work_state', task_id=ticket.id) }}"
+                    data-done-work-form>
+                    <input type="hidden" name="action" value="stop">
+                    <button type="submit" class="btn btn-danger btn-sm btn-block">
+                      Done Work
+                    </button>
+                  </form>
+                  {% else %}
                   <form
                     method="post"
                     action="{{ url_for('tickets.toggle_task_work_state', task_id=ticket.id) if is_task_ticket else url_for('tickets.toggle_work_state', ticket_id=ticket.id) }}"
-                    {% if is_task_ticket and not ticket.is_working %}data-start-work-form{% endif %}>
+                    {% if is_task_ticket %}data-start-work-form{% endif %}>
                     <input type="hidden" name="action" value="{{ 'stop' if ticket.is_working else 'start' }}">
                     <button type="submit" class="btn btn-{{ 'danger' if ticket.is_working else 'success' }} btn-sm btn-block">
-                      {{ 'Stop Work' if ticket.is_working else 'Start Work' }}
+                      {{ 'Resume Work' if is_task_ticket and task_work_session_state == 'paused' else 'Stop Work' if ticket.is_working else 'Start Work' }}
                     </button>
+                  </form>
+                  {% endif %}
                     {% if ticket.started_date %}
                       <small class="text-muted d-block mt-1">Started {{ ticket.started_date.strftime('%Y-%m-%d') }}</small>
                     {% endif %}
-                  </form>
                   <hr>
                 {% endif %}
 
@@ -938,7 +966,10 @@
           <div class="timeline">
             {% for event in timeline_events %}
               <div class="timeline-item">
-                <div class="timeline-date">{{ to_localtime(event.timestamp).strftime('%b %d, %Y').upper() }}</div>
+                <div class="timeline-date">
+                  <span class="timeline-date-line">{{ to_localtime(event.timestamp).strftime('%b %d, %Y').upper() }}</span>
+                  <span class="timeline-time-line">{{ to_localtime(event.timestamp).strftime('%I:%M %p').upper() }}</span>
+                </div>
                 <div class="timeline-marker timeline-{{ event.type }}"></div>
                 <div class="timeline-content">
                   <div class="timeline-title">{{ event.title }}</div>
@@ -1177,18 +1208,55 @@
   <div class="modal-dialog modal-dialog-centered" role="document">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-play-circle mr-2 text-success"></i>Start Work</h5>
+        <h5 class="modal-title"><i class="fas fa-play-circle mr-2 text-success"></i>{{ 'Resume Work' if task_work_session_state == 'paused' else 'Start Work' }}</h5>
         <button type="button" class="close" data-dismiss="modal" aria-label="Close">
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
       <div class="modal-body">
-        Start work on this ticket task?
+        {% if not ticket.target_date %}
+          <div class="alert alert-warning py-2 px-3">
+            Set a target schedule before starting work on this ticket task.
+          </div>
+          <div class="form-group mb-0">
+            <label for="start_work_target_date">Target Schedule</label>
+            <input
+              type="date"
+              id="start_work_target_date"
+              class="form-control"
+              required>
+          </div>
+        {% else %}
+          {{ 'Resume work on this ticket task?' if task_work_session_state == 'paused' else 'Start work on this ticket task?' }}
+        {% endif %}
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-success" id="confirmStartWorkBtn">
-          <i class="fas fa-play mr-1"></i> Start Work
+          <i class="fas fa-play mr-1"></i> {{ 'Resume Work' if task_work_session_state == 'paused' else 'Start Work' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% if is_task_ticket and ticket.status != TicketStatus.CLOSED and ticket.is_working %}
+<div class="modal fade" id="doneWorkConfirmModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-check-circle mr-2 text-success"></i>Done Work</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        Are you sure this ticket task is done? This will change the status to Fix/Completed.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="confirmDoneWorkBtn">
+          <i class="fas fa-check mr-1"></i> Done Work
         </button>
       </div>
     </div>
@@ -1357,6 +1425,9 @@
     var ticketAttachmentsToggleIcon = document.getElementById('ticketAttachmentsToggleIcon');
     var startWorkForm = document.querySelector('[data-start-work-form]');
     var confirmStartWorkBtn = document.getElementById('confirmStartWorkBtn');
+    var startWorkTargetDate = document.getElementById('start_work_target_date');
+    var doneWorkForm = document.querySelector('[data-done-work-form]');
+    var confirmDoneWorkBtn = document.getElementById('confirmDoneWorkBtn');
     var suppressRealtimeReloadUntil = 0;
     var pendingRealtimeReload = null;
     var activePreviewImage = null;
@@ -1400,11 +1471,47 @@
 
     if (confirmStartWorkBtn && startWorkForm) {
       confirmStartWorkBtn.addEventListener('click', function() {
+        if (startWorkTargetDate) {
+          if (!startWorkTargetDate.value) {
+            startWorkTargetDate.reportValidity();
+            return;
+          }
+          var targetDateInput = startWorkForm.querySelector('input[name="target_date"]');
+          if (!targetDateInput) {
+            targetDateInput = document.createElement('input');
+            targetDateInput.type = 'hidden';
+            targetDateInput.name = 'target_date';
+            startWorkForm.appendChild(targetDateInput);
+          }
+          targetDateInput.value = startWorkTargetDate.value;
+        }
         startWorkForm.setAttribute('data-start-work-confirmed', 'true');
         if (window.jQuery && $('#startWorkConfirmModal').modal) {
           $('#startWorkConfirmModal').modal('hide');
         }
         startWorkForm.submit();
+      });
+    }
+
+    if (doneWorkForm) {
+      doneWorkForm.addEventListener('submit', function(e) {
+        if (doneWorkForm.getAttribute('data-done-work-confirmed') === 'true') {
+          return;
+        }
+        e.preventDefault();
+        if (window.jQuery && $('#doneWorkConfirmModal').modal) {
+          $('#doneWorkConfirmModal').modal('show');
+        }
+      });
+    }
+
+    if (confirmDoneWorkBtn && doneWorkForm) {
+      confirmDoneWorkBtn.addEventListener('click', function() {
+        doneWorkForm.setAttribute('data-done-work-confirmed', 'true');
+        if (window.jQuery && $('#doneWorkConfirmModal').modal) {
+          $('#doneWorkConfirmModal').modal('hide');
+        }
+        doneWorkForm.submit();
       });
     }
 

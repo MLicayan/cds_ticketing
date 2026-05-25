@@ -490,6 +490,7 @@ class TicketTask(db.Model):
     assigned_by = db.relationship("User", foreign_keys=[assigned_by_id])
     comments = db.relationship("TicketTaskComment", backref="task", lazy=True, cascade="all, delete-orphan")
     attachments = db.relationship("TicketTaskAttachment", backref="task", lazy=True, cascade="all, delete-orphan")
+    work_sessions = db.relationship("TicketTaskWorkSession", backref="task", lazy=True, cascade="all, delete-orphan")
 
     @property
     def ticket_no(self):
@@ -516,6 +517,26 @@ class TicketTask(db.Model):
 
     def __repr__(self):
         return f"<TicketTask {self.task_no}>"
+
+
+class TicketTaskWorkSession(db.Model):
+    __tablename__ = "ticket_task_work_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_task_id = db.Column(db.Integer, db.ForeignKey("ticket_tasks.id"), nullable=False)
+    developer_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    started_at = db.Column(db.DateTime, nullable=False, default=_local_now_naive)
+    paused_at = db.Column(db.DateTime, nullable=True)
+    ended_at = db.Column(db.DateTime, nullable=True)
+    pause_reason = db.Column(db.String(255), nullable=True)
+    pause_type = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.DateTime, default=_local_now_naive, nullable=False)
+    updated_at = db.Column(db.DateTime, default=_local_now_naive, onupdate=_local_now_naive)
+
+    developer = db.relationship("User")
+
+    def __repr__(self):
+        return f"<TicketTaskWorkSession {self.id}>"
 
 
 class TicketTaskComment(db.Model):

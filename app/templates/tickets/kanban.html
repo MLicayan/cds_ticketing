@@ -1,24 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Ticket Kanban - Instrument Monitoring{% endblock %}
+{% block title %}{{ 'My Task Kanban' if is_task_kanban else 'Ticket Kanban' }} - Instrument Monitoring{% endblock %}
 {% block page_header %}
 <div class="row mb-2">
   <div class="col-sm-6">
-    <h1 class="m-0 text-dark"><i class="fas fa-th-large text-primary mr-2"></i>Ticket Kanban</h1>
+    <h1 class="m-0 text-dark"><i class="fas fa-th-large text-primary mr-2"></i>{{ 'My Task Kanban' if is_task_kanban else 'Ticket Kanban' }}</h1>
     <p class="text-muted small mb-0">BACKLOG > NEW TASK > IN-PROGRESS > COMPLETED > CLOSED.</p>
   </div>
   <div class="col-sm-6 text-right">
-    <a href="{{ url_for('tickets.index') }}" class="btn btn-outline-secondary mr-2">
+    <a href="{{ url_for('tickets.my_tickets') if is_task_kanban else url_for('tickets.index') }}" class="btn btn-outline-secondary mr-2">
       <i class="fas fa-list"></i> List View
     </a>
-    <a href="{{ url_for('tickets.gantt_view') }}" class="btn btn-outline-primary mr-2">
+    <a href="{{ url_for('tickets.gantt_view', scope=kanban_scope) if is_task_kanban else url_for('tickets.gantt_view') }}" class="btn btn-outline-primary mr-2">
       <i class="fas fa-project-diagram"></i> Gantt
     </a>
-    <a href="{{ url_for('tickets.calendar_view') }}" class="btn btn-outline-info mr-2">
+    <a href="{{ url_for('tickets.calendar_view', scope=kanban_scope) if is_task_kanban else url_for('tickets.calendar_view') }}" class="btn btn-outline-info mr-2">
       <i class="fas fa-calendar-alt"></i> Calendar
     </a>
+    {% if not is_task_kanban %}
     <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">
       <i class="fas fa-plus"></i> New Ticket
     </a>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
@@ -149,7 +151,8 @@
       var formData = new FormData();
       formData.append('column', targetStatus);
 
-      fetch('{{ url_for("tickets.update_kanban_status", ticket_id=0) }}'.replace('0', ticketId), {
+      var updateUrl = draggedCard.getAttribute('data-update-url') || '{{ url_for("tickets.update_kanban_status", ticket_id=0) }}'.replace('0', ticketId);
+      fetch(updateUrl, {
         method: 'POST',
         body: formData,
         credentials: 'same-origin'
@@ -264,11 +267,14 @@
     <form method="get" class="form-inline mb-3 flex-wrap">
       <label for="filter_by" class="mr-2 font-weight-bold">Filter By</label>
       <select name="filter_by" id="filter_by" class="form-control mr-2 mb-2">
-        <option value="" {% if not selected_filter.filter_by %}selected{% endif %}>All Tickets</option>
-        <option value="my" {% if selected_filter.filter_by == 'my' %}selected{% endif %}>My Tickets</option>
+        <option value="" {% if not selected_filter.filter_by %}selected{% endif %}>{{ 'All Tasks' if is_task_kanban else 'All Tickets' }}</option>
+        <option value="my" {% if selected_filter.filter_by == 'my' %}selected{% endif %}>{{ 'My Tasks' if is_task_kanban else 'My Tickets' }}</option>
         <option value="assigned" {% if selected_filter.filter_by == 'assigned' %}selected{% endif %}>Assigned</option>
         <option value="client" {% if selected_filter.filter_by == 'client' %}selected{% endif %}>Client</option>
       </select>
+      {% if is_task_kanban %}
+      <input type="hidden" name="scope" value="{{ kanban_scope or 'my_tasks' }}">
+      {% endif %}
 
       <div id="engineer_type_filter_group" class="mr-2 mb-2">
         <select name="filter_user_type" id="filter_user_type" class="form-control">
@@ -307,7 +313,7 @@
       <button type="submit" class="btn btn-primary mr-2 mb-2">
         <i class="fas fa-filter"></i> Apply
       </button>
-      <a href="{{ url_for('tickets.kanban') }}" class="btn btn-secondary mb-2">Reset</a>
+      <a href="{{ url_for('tickets.kanban', scope=kanban_scope) if is_task_kanban else url_for('tickets.kanban') }}" class="btn btn-secondary mb-2">Reset</a>
     </form>
 
     <div class="kanban-wrapper">
@@ -336,10 +342,10 @@
           {% set priority_value = t.priority.value if t.priority else '' %}
           {% set priority_badge = 'secondary' if priority_value == '' else 'danger' if priority_value == 'critical' else 'warning' if priority_value == 'high' else 'info' if priority_value == 'medium' else 'secondary' %}
           {% set latest_log = (t.service_logs|sort(attribute='created_at'))[-1] if t.service_logs else None %}
-          <div class="kanban-card" {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and status_value != 'closed' %}draggable="true" data-ticket-id="{{ t.id }}" data-status="{{ drop_status or status_value }}"{% endif %}>
+          <div class="kanban-card" {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and status_value != 'closed' %}draggable="true" data-ticket-id="{{ t.id }}" data-update-url="{{ url_for('tickets.update_task_kanban_status', task_id=t.id) if is_task_kanban else url_for('tickets.update_kanban_status', ticket_id=t.id) }}" data-status="{{ drop_status or status_value }}"{% endif %}>
             <div class="d-flex justify-content-between align-items-center mb-1">
               <div class="title">
-                <a href="{{ url_for('tickets.detail', ticket_id=t.id) }}">{{ t.ticket_no }}</a>
+                <a href="{{ url_for('tickets.task_detail', task_id=t.id) if is_task_kanban else url_for('tickets.detail', ticket_id=t.id) }}">{{ t.ticket_no }}</a>
               </div>
               <span class="badge badge-{{ badge }}">
                 {{ status_labels.get(t.status, status_value.replace('_', ' ')|title) }}

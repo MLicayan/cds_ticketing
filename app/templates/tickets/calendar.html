@@ -1,24 +1,26 @@
 {% extends "base.html" %}
-{% block title %}Ticket Calendar - Instrument Monitoring{% endblock %}
+{% block title %}{{ 'My Task Calendar' if is_task_calendar else 'Ticket Calendar' }} - Instrument Monitoring{% endblock %}
 {% block page_header %}
 <div class="row mb-2">
   <div class="col-sm-6">
-    <h1 class="m-0 text-dark"><i class="fas fa-calendar-alt text-primary mr-2"></i>Ticket Calendar</h1>
+    <h1 class="m-0 text-dark"><i class="fas fa-calendar-alt text-primary mr-2"></i>{{ 'My Task Calendar' if is_task_calendar else 'Ticket Calendar' }}</h1>
     <p class="text-muted small mb-0">Monthly view based on target dates.</p>
   </div>
   <div class="col-sm-6 text-right">
-    <a href="{{ url_for('tickets.index') }}" class="btn btn-outline-secondary mr-2">
+    <a href="{{ url_for('tickets.my_tickets') if is_task_calendar else url_for('tickets.index') }}" class="btn btn-outline-secondary mr-2">
       <i class="fas fa-list"></i> List View
     </a>
-    <a href="{{ url_for('tickets.gantt_view') }}" class="btn btn-outline-primary mr-2">
+    <a href="{{ url_for('tickets.gantt_view', scope=calendar_scope) if is_task_calendar else url_for('tickets.gantt_view') }}" class="btn btn-outline-primary mr-2">
       <i class="fas fa-project-diagram"></i> Gantt
     </a>
-    <a href="{{ url_for('tickets.kanban') }}" class="btn btn-outline-info mr-2">
+    <a href="{{ url_for('tickets.kanban', scope=calendar_scope) if is_task_calendar else url_for('tickets.kanban') }}" class="btn btn-outline-info mr-2">
       <i class="fas fa-th-large"></i> Kanban
     </a>
+    {% if not is_task_calendar %}
     <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">
       <i class="fas fa-plus"></i> New Ticket
     </a>
+    {% endif %}
 
   </div>
 </div>
@@ -132,16 +134,19 @@
       <div>
         <a class="btn btn-outline-secondary" href="{{ url_for('tickets.calendar_view', **prev_month_query) }}"><i class="fas fa-chevron-left"></i></a>
         <a class="btn btn-outline-secondary" href="{{ url_for('tickets.calendar_view', **next_month_query) }}"><i class="fas fa-chevron-right"></i></a>
-        <a class="btn btn-outline-secondary" href="{{ url_for('tickets.calendar_view') }}">Today</a>
+        <a class="btn btn-outline-secondary" href="{{ url_for('tickets.calendar_view', scope=calendar_scope) if is_task_calendar else url_for('tickets.calendar_view') }}">Today</a>
         <span class="h5 mb-0 ml-2">{{ month_start.strftime('%B %Y') }}</span>
       </div>
       <form method="get" class="mini-filter">
         <label for="filter_by" class="mb-0 font-weight-bold">Filter By</label>
         <input type="hidden" name="year" value="{{ month_start.year }}">
         <input type="hidden" name="month" value="{{ month_start.month }}">
+        {% if is_task_calendar %}
+        <input type="hidden" name="scope" value="{{ calendar_scope or 'my_tasks' }}">
+        {% endif %}
         <select name="filter_by" id="filter_by" class="form-control form-control-sm">
-          <option value="" {% if not selected_filter.filter_by %}selected{% endif %}>All Tickets</option>
-          <option value="my" {% if selected_filter.filter_by == 'my' %}selected{% endif %}>My Tickets</option>
+          <option value="" {% if not selected_filter.filter_by %}selected{% endif %}>{{ 'All Tasks' if is_task_calendar else 'All Tickets' }}</option>
+          <option value="my" {% if selected_filter.filter_by == 'my' %}selected{% endif %}>{{ 'My Tasks' if is_task_calendar else 'My Tickets' }}</option>
           <option value="engineer" {% if selected_filter.filter_by == 'engineer' %}selected{% endif %}>Assigned Engineer/IT</option>
           <option value="client" {% if selected_filter.filter_by == 'client' %}selected{% endif %}>Client</option>
         </select>
@@ -163,7 +168,7 @@
           {% endfor %}
         </select>
         <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Apply</button>
-        <a href="{{ url_for('tickets.calendar_view', year=month_start.year, month=month_start.month) }}" class="btn btn-secondary btn-sm">Reset</a>
+        <a href="{{ url_for('tickets.calendar_view', scope=calendar_scope, year=month_start.year, month=month_start.month) if is_task_calendar else url_for('tickets.calendar_view', year=month_start.year, month=month_start.month) }}" class="btn btn-secondary btn-sm">Reset</a>
       </form>
     </div>
 
@@ -199,7 +204,7 @@
               {% for t in events %}
                 {% set priority_value = t.priority.value if t.priority else 'low' %}
                 {% set priority_class = 'priority-' + priority_value %}
-                <a class="event-chip {{ priority_class }}" href="{{ url_for('tickets.detail', ticket_id=t.id) }}">
+                <a class="event-chip {{ priority_class }}" href="{{ url_for('tickets.task_detail', task_id=t.id) if is_task_calendar else url_for('tickets.detail', ticket_id=t.id) }}">
                   <div class="title">{{ t.ticket_no }}</div>
                   <div>{{ t.subject or 'No subject' }}</div>
                   <div class="event-meta">
@@ -209,7 +214,7 @@
                 </a>
               {% endfor %}
               {% if not events %}
-                <div class="text-muted small">No tickets</div>
+                <div class="text-muted small">No {{ 'tasks' if is_task_calendar else 'tickets' }}</div>
               {% endif %}
             </div>
           </div>

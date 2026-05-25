@@ -181,6 +181,9 @@
     <h1 class="m-0 text-dark"><i class="fas fa-tasks text-primary mr-2"></i>Developer Tasks</h1>
   </div>
   <div class="col-sm-6 text-right">
+    <a href="{{ url_for('tickets.developer_workload') }}" class="btn btn-outline-primary mr-2">
+      <i class="fas fa-chart-pie"></i> Workload
+    </a>
     <a href="{{ url_for('tickets.index') }}" class="btn btn-secondary">
       <i class="fas fa-ticket-alt"></i> Tickets
     </a>
