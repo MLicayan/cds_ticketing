@@ -272,13 +272,13 @@
       <a href="{{ url_for('tickets.export') }}" class="btn btn-outline-secondary">
         <i class="fas fa-file-export"></i> Export CSV
       </a>
-      <a href="{{ url_for('tickets.gantt_view') }}" class="btn btn-outline-primary">
+      <a href="{{ url_for('tickets.gantt_view', scope='my_tasks') if is_task_list else url_for('tickets.gantt_view') }}" class="btn btn-outline-primary">
         <i class="fas fa-project-diagram"></i> Gantt
       </a>
-      <a href="{{ url_for('tickets.calendar_view') }}" class="btn btn-outline-info">
+      <a href="{{ url_for('tickets.calendar_view', scope='my_tasks') if is_task_list else url_for('tickets.calendar_view') }}" class="btn btn-outline-info">
         <i class="fas fa-calendar-alt"></i> Calendar
       </a>
-      <a href="{{ url_for('tickets.kanban') }}" class="btn btn-outline-info">
+      <a href="{{ url_for('tickets.kanban', scope='my_tasks') if is_task_list else url_for('tickets.kanban') }}" class="btn btn-outline-info">
         <i class="fas fa-th-large"></i> Kanban
       </a>
       {% if is_task_list and can_create_task %}

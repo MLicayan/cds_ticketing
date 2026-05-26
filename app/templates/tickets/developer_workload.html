@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}Developer Workload - Instrument Monitoring{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<style>
+  .workload-page { color: #1c2b4d; }
+  .workload-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .workload-kpis {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .workload-kpi {
+    background: #fff;
+    border: 1px solid #e3e9f4;
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-height: 92px;
+  }
+  .workload-kpi span {
+    display: block;
+    color: #65758c;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .workload-kpi strong {
+    display: block;
+    color: #0f2544;
+    font-size: 28px;
+    line-height: 1.1;
+    margin-top: 8px;
+  }
+  .developer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 14px;
+  }
+  .developer-card {
+    border: 1px solid #dde6f2;
+    border-radius: 8px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .developer-card-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    border-bottom: 1px solid #edf2f7;
+  }
+  .developer-avatar {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e7f0ff;
+    color: #0d6efd;
+    font-weight: 800;
+    flex: 0 0 auto;
+  }
+  .developer-name { font-weight: 800; margin-bottom: 2px; }
+  .developer-role { color: #6b7b90; font-size: 13px; }
+  .load-pill {
+    margin-left: auto;
+    border-radius: 999px;
+    padding: 5px 10px;
+    background: #f1f5f9;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .load-pill.hot { background: #fff1f2; color: #be123c; }
+  .load-pill.busy { background: #fff7ed; color: #c2410c; }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-bottom: 1px solid #edf2f7;
+  }
+  .metric-box {
+    padding: 12px;
+    border-right: 1px solid #edf2f7;
+  }
+  .metric-box:last-child { border-right: 0; }
+  .metric-box span {
+    display: block;
+    color: #64748b;
+    font-size: 12px;
+  }
+  .metric-box strong {
+    display: block;
+    font-size: 20px;
+    color: #0f2544;
+  }
+  .developer-body { padding: 14px 16px 16px; }
+  .work-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 9px;
+    color: #334155;
+    font-size: 14px;
+  }
+  .work-row strong { color: #0f2544; }
+  .progress {
+    height: 8px;
+    border-radius: 999px;
+    background: #edf2f7;
+    margin-bottom: 14px;
+  }
+  .task-mini-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .task-mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 10px;
+    border: 1px solid #edf2f7;
+    border-radius: 8px;
+    color: #1f334d;
+    text-decoration: none;
+    background: #fbfdff;
+  }
+  .task-mini:hover {
+    color: #0d6efd;
+    text-decoration: none;
+    border-color: #b8d4ff;
+    background: #f8fbff;
+  }
+  .task-mini-main {
+    min-width: 0;
+    flex: 1;
+  }
+  .task-mini-title {
+    display: block;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-mini-meta {
+    color: #64748b;
+    font-size: 12px;
+  }
+  @media (max-width: 992px) {
+    .workload-kpis { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 576px) {
+    .workload-kpis, .developer-grid { grid-template-columns: 1fr; }
+    .metric-grid { grid-template-columns: repeat(2, 1fr); }
+    .metric-box:nth-child(2) { border-right: 0; }
+  }
+</style>
+{% endblock %}
+{% block page_header %}
+<div class="row mb-2 workload-page">
+  <div class="col-sm-7">
+    <h1 class="m-0 text-dark"><i class="fas fa-chart-pie text-primary mr-2"></i>Developer Workload</h1>
+    <small class="text-muted">Live task load, active work, paused work, and session-based KPI tracking.</small>
+  </div>
+  <div class="col-sm-5 text-right">
+    <a href="{{ url_for('tickets.developer_tasks') }}" class="btn btn-secondary">
+      <i class="fas fa-tasks"></i> Developer Tasks
+    </a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="workload-page">
+  <div class="card mb-3">
+    <div class="card-body workload-toolbar">
+      <div>
+        <strong>{{ 'All developers and support' if can_view_all else 'My workload' }}</strong>
+        <div class="text-muted small">Updated {{ to_localtime(now).strftime('%Y-%m-%d %I:%M %p') }}</div>
+      </div>
+      <form method="get" class="form-inline">
+        <label for="period" class="mr-2 text-muted">KPI period</label>
+        <select name="period" id="period" class="form-control" onchange="this.form.submit()">
+          <option value="1" {% if period_days == 1 %}selected{% endif %}>Today</option>
+          <option value="7" {% if period_days == 7 %}selected{% endif %}>Last 7 days</option>
+          <option value="30" {% if period_days == 30 %}selected{% endif %}>Last 30 days</option>
+          <option value="90" {% if period_days == 90 %}selected{% endif %}>Last 90 days</option>
+          <option value="0" {% if period_days == 0 %}selected{% endif %}>All time</option>
+        </select>
+      </form>
+    </div>
+  </div>
+
+  <div class="workload-kpis">
+    <div class="workload-kpi"><span>Active Tasks</span><strong>{{ totals.active }}</strong></div>
+    <div class="workload-kpi"><span>Working Now</span><strong>{{ totals.working }}</strong></div>
+    <div class="workload-kpi"><span>Paused</span><strong>{{ totals.paused }}</strong></div>
+    <div class="workload-kpi"><span>Completed</span><strong>{{ totals.completed }}</strong></div>
+    <div class="workload-kpi"><span>Overdue</span><strong>{{ totals.overdue }}</strong></div>
+    <div class="workload-kpi"><span>Tracked Work</span><strong>{{ totals.work_label }}</strong></div>
+  </div>
+
+  <div class="developer-grid">
+    {% for row in rows %}
+      {% set dev = row.developer %}
+      {% set name = dev.full_name or dev.username %}
+      {% set initials = (name.split()[0][0] ~ (name.split()[1][0] if name.split()|length > 1 else name.split()[0][1:2]))|upper %}
+      {% set load_class = 'hot' if row.workload_score >= 12 else 'busy' if row.workload_score >= 7 else '' %}
+      <div class="developer-card">
+        <div class="developer-card-head">
+          <div class="developer-avatar">{{ initials }}</div>
+          <div>
+            <div class="developer-name">{{ name }}</div>
+            <div class="developer-role">{{ dev.user_type or 'Developer' }}</div>
+          </div>
+          <div class="load-pill {{ load_class }}">Load {{ row.workload_score }}</div>
+        </div>
+        <div class="metric-grid">
+          <div class="metric-box"><span>Active</span><strong>{{ row.active }}</strong></div>
+          <div class="metric-box"><span>Working</span><strong>{{ row.working }}</strong></div>
+          <div class="metric-box"><span>Paused</span><strong>{{ row.paused }}</strong></div>
+          <div class="metric-box"><span>Overdue</span><strong>{{ row.overdue }}</strong></div>
+        </div>
+        <div class="developer-body">
+          <div class="work-row"><span>Completion rate</span><strong>{{ row.completion_rate }}%</strong></div>
+          <div class="progress">
+            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ row.completion_rate }}%" aria-valuenow="{{ row.completion_rate }}" aria-valuemin="0" aria-valuemax="100"></div>
+          </div>
+          <div class="work-row"><span>Completed this period</span><strong>{{ row.completed }}</strong></div>
+          <div class="work-row"><span>Tracked work time</span><strong>{{ row.total_work_label }}</strong></div>
+          <div class="work-row"><span>Avg completed task time</span><strong>{{ row.avg_work_label }}</strong></div>
+          <div class="work-row"><span>High / Critical active</span><strong>{{ row.high_priority }}</strong></div>
+          <div class="work-row"><span>Due today</span><strong>{{ row.due_today }}</strong></div>
+
+          <div class="task-mini-list mt-3">
+            {% for task in row.recent_tasks %}
+              {% set status_label = status_labels.get(task.status) if task.status in status_labels else (task.status.value.replace('_', ' ')|title if task.status else '') %}
+              <a class="task-mini" href="{{ url_for('tickets.task_detail', task_id=task.id) }}">
+                <i class="fas fa-ticket-alt text-primary"></i>
+                <span class="task-mini-main">
+                  <span class="task-mini-title">{{ task.task_no }} - {{ task.subject }}</span>
+                  <span class="task-mini-meta">{{ status_label }}{% if task.target_date %} - Target {{ task.target_date.strftime('%Y-%m-%d') }}{% endif %}</span>
+                </span>
+                {% if task.is_working %}
+                  <span class="badge badge-success">Working</span>
+                {% elif task.target_date and task.target_date < now.date() %}
+                  <span class="badge badge-danger">Overdue</span>
+                {% endif %}
+              </a>
+            {% else %}
+              <div class="text-muted small">No active tasks.</div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    {% else %}
+      <div class="card">
+        <div class="card-body text-muted">No developers found for this view.</div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

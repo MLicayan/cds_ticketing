@@ -23,6 +23,7 @@ from .models import (
     TicketComment,
     TicketAttachment,
     TicketTask,
+    TicketTaskWorkSession,
     TicketTaskAttachment,
     TicketTaskComment,
     UserRole,
@@ -51,9 +52,11 @@ def require_ticket_nav_access():
         return
     task_endpoints = {
         "tickets.developer_tasks",
+        "tickets.developer_workload",
         "tickets.task_detail",
         "tickets.update_task_info",
         "tickets.toggle_task_work_state",
+        "tickets.update_task_kanban_status",
         "tickets.react_task_comment",
         "tickets.create_task",
     }
@@ -148,6 +151,24 @@ def _update_ticket_status_value(ticket: Ticket, new_status, actor_name: str) -> 
     return True
 
 
+def _update_task_status_value(task: TicketTask, new_status, actor_name: str) -> bool:
+    old_status = task.status
+    if old_status == new_status:
+        return False
+    task.status = new_status
+    if new_status in (TicketStatus.OPEN, TicketStatus.IN_PROGRESS, TicketStatus.REOPENED, TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        task.kanban_bucket = None
+    if new_status in (TicketStatus.RESOLVED, TicketStatus.CLOSED):
+        task.closed_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    elif new_status == TicketStatus.REOPENED:
+        task.closed_at = None
+    _record_task_change(
+        task,
+        f"Status changed from {_enum_label(old_status)} to {_enum_label(new_status)} by {actor_name}.",
+    )
+    return True
+
+
 def _close_child_tasks(parent_ticket: Ticket, actor_name: str):
     if _is_task_ticket(parent_ticket):
         return []
@@ -169,6 +190,29 @@ def _close_child_tasks(parent_ticket: Ticket, actor_name: str):
         )
         closed_tasks.append(child_task)
     return closed_tasks
+
+
+def _active_task_work_session(task: TicketTask):
+    return TicketTaskWorkSession.query.filter(
+        TicketTaskWorkSession.ticket_task_id == task.id,
+        TicketTaskWorkSession.paused_at.is_(None),
+        TicketTaskWorkSession.ended_at.is_(None),
+    ).order_by(TicketTaskWorkSession.started_at.desc(), TicketTaskWorkSession.id.desc()).first()
+
+
+def _latest_task_work_session(task: TicketTask):
+    return TicketTaskWorkSession.query.filter(
+        TicketTaskWorkSession.ticket_task_id == task.id,
+    ).order_by(TicketTaskWorkSession.started_at.desc(), TicketTaskWorkSession.id.desc()).first()
+
+
+def _task_work_session_state(task: TicketTask) -> str:
+    if task.is_working or _active_task_work_session(task):
+        return "working"
+    latest_session = _latest_task_work_session(task)
+    if latest_session and latest_session.paused_at and not latest_session.ended_at:
+        return "paused"
+    return "not_started"
 
 
 def _scoped_ticket_query():
@@ -1007,6 +1051,8 @@ def kanban():
         TicketStatus.CANCELLED: "Cancelled",
     }
 
+    scope = request.args.get("scope", "").strip().lower()
+    is_task_kanban = scope in ("tasks", "my_tasks")
     filter_by = request.args.get("filter_by", "").strip()
     filter_value = request.args.get("filter_value", "").strip()
     filter_user_type = request.args.get("filter_user_type", "").strip().upper()
@@ -1014,44 +1060,57 @@ def kanban():
     engineers = User.query.filter(User.role == UserRole.ENGINEER).order_by(User.full_name.asc()).all()
     clients = Client.query.order_by(Client.name.asc()).all()
 
-    base_query = Ticket.query
-    if current_user.role in READ_ONLY_ROLES:
-        base_query = _exclude_task_tickets(base_query)
+    if is_task_kanban:
+        base_query = TicketTask.query
+        if scope == "my_tasks" or (current_user.role == UserRole.ENGINEER and not _is_support_user(current_user)):
+            base_query = _apply_my_task_scope(base_query)
+            filter_by = "my"
+            filter_value = ""
+            filter_user_type = ""
+    else:
+        base_query = Ticket.query
+        if current_user.role in READ_ONLY_ROLES:
+            base_query = _exclude_task_tickets(base_query)
 
-    if current_user.role in CLIENT_SCOPED_ROLES:
-        base_query = _apply_client_ticket_scope(base_query)
-        clients = [c for c in clients if c.id == current_user.client_id]
-    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
-        base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
-        filter_by = "my"
-        filter_value = ""
-        filter_user_type = ""
+        if current_user.role in CLIENT_SCOPED_ROLES:
+            base_query = _apply_client_ticket_scope(base_query)
+            clients = [c for c in clients if c.id == current_user.client_id]
+        elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
+            base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
+            filter_by = "my"
+            filter_value = ""
+            filter_user_type = ""
 
-    if filter_by == "my":
-        base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
+    assigned_column = TicketTask.assigned_engineer_id if is_task_kanban else Ticket.assigned_engineer_id
+    client_column = TicketTask.client_id if is_task_kanban else Ticket.client_id
+    created_column = TicketTask.created_at if is_task_kanban else Ticket.created_at
+    assigned_relation = TicketTask.assigned_engineer if is_task_kanban else Ticket.assigned_engineer
+
+    if filter_by == "my" and not (is_task_kanban and scope == "my_tasks"):
+        base_query = base_query.filter(assigned_column == current_user.id)
 
     elif filter_by == "assigned":
         if filter_value == "unassigned":
-            base_query = base_query.filter(Ticket.assigned_engineer_id.is_(None))
+            base_query = base_query.filter(assigned_column.is_(None))
         elif filter_value:
             try:
-                base_query = base_query.filter(Ticket.assigned_engineer_id == int(filter_value))
+                base_query = base_query.filter(assigned_column == int(filter_value))
             except ValueError:
                 pass
 
         if filter_user_type:
-            base_query = base_query.join(Ticket.assigned_engineer).filter(
+            base_query = base_query.join(assigned_relation).filter(
                 db.func.upper(User.user_type) == filter_user_type
             )
 
     elif filter_by == "client":
         if filter_value:
             try:
-                base_query = base_query.filter(Ticket.client_id == int(filter_value))
+                base_query = base_query.filter(client_column == int(filter_value))
             except ValueError:
                 pass
 
-    tickets = base_query.order_by(Ticket.created_at.desc()).all()
+    tickets = base_query.order_by(created_column.desc()).all()
 
     priority_order = {
         "critical": 0,
@@ -1117,10 +1176,13 @@ def kanban():
         today=today,
         engineers=engineers,
         clients=clients,
+        is_task_kanban=is_task_kanban,
+        kanban_scope=scope,
         selected_filter={
             "filter_by": filter_by,
             "filter_value": filter_value,
             "filter_user_type": filter_user_type,
+            "scope": scope,
         },
     )
 
@@ -1128,6 +1190,8 @@ def kanban():
 @tickets_bp.route("/gantt")
 @login_required
 def gantt_view():
+    scope = request.args.get("scope", "").strip().lower()
+    is_task_gantt = scope in ("tasks", "my_tasks")
     group_by = request.args.get("group_by", "client")
     view_mode = request.args.get("view_mode", "month")
     start_raw = request.args.get("start")
@@ -1197,15 +1261,21 @@ def gantt_view():
         TicketStatus.CANCELLED: "Cancelled",
     }
 
-    query = Ticket.query
-    if current_user.role in READ_ONLY_ROLES:
-        query = _exclude_task_tickets(query)
-    if current_user.role in CLIENT_SCOPED_ROLES:
-        query = _apply_client_ticket_scope(query)
-    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
-        query = query.filter(Ticket.assigned_engineer_id == current_user.id)
+    if is_task_gantt:
+        query = TicketTask.query
+        if scope == "my_tasks" or (current_user.role == UserRole.ENGINEER and not _is_support_user(current_user)):
+            query = _apply_my_task_scope(query)
+    else:
+        query = Ticket.query
+        if current_user.role in READ_ONLY_ROLES:
+            query = _exclude_task_tickets(query)
+        if current_user.role in CLIENT_SCOPED_ROLES:
+            query = _apply_client_ticket_scope(query)
+        elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
+            query = query.filter(Ticket.assigned_engineer_id == current_user.id)
 
-    tickets = query.order_by(Ticket.created_at.asc()).all()
+    created_column = TicketTask.created_at if is_task_gantt else Ticket.created_at
+    tickets = query.order_by(created_column.asc()).all()
 
     def grouping_label(ticket: Ticket) -> str:
         if group_by == "instrument":
@@ -1310,12 +1380,16 @@ def gantt_view():
         range_end_raw=range_end_raw,
         status_labels=status_labels,
         TicketStatus=TicketStatus,
+        is_task_gantt=is_task_gantt,
+        gantt_scope=scope,
     )
 
 
 @tickets_bp.route("/calendar")
 @login_required
 def calendar_view():
+    scope = request.args.get("scope", "").strip().lower()
+    is_task_calendar = scope in ("tasks", "my_tasks")
     filter_by = request.args.get("filter_by") or ""
     filter_value = request.args.get("filter_value") or ""
     year_raw = request.args.get("year")
@@ -1333,30 +1407,41 @@ def calendar_view():
     engineers = User.query.filter(User.role == UserRole.ENGINEER).order_by(User.full_name.asc()).all()
     clients = Client.query.order_by(Client.name.asc()).all()
 
-    base_query = Ticket.query
-    if current_user.role in READ_ONLY_ROLES:
-        base_query = _exclude_task_tickets(base_query)
-    if current_user.role in CLIENT_SCOPED_ROLES:
-        base_query = _apply_client_ticket_scope(base_query)
-        clients = [c for c in clients if c.id == current_user.client_id]
-    elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
-        base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
-        filter_by = "my"
-        filter_value = ""
+    if is_task_calendar:
+        base_query = TicketTask.query
+        if scope == "my_tasks" or (current_user.role == UserRole.ENGINEER and not _is_support_user(current_user)):
+            base_query = _apply_my_task_scope(base_query)
+            filter_by = "my"
+            filter_value = ""
+    else:
+        base_query = Ticket.query
+        if current_user.role in READ_ONLY_ROLES:
+            base_query = _exclude_task_tickets(base_query)
+        if current_user.role in CLIENT_SCOPED_ROLES:
+            base_query = _apply_client_ticket_scope(base_query)
+            clients = [c for c in clients if c.id == current_user.client_id]
+        elif current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
+            base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
+            filter_by = "my"
+            filter_value = ""
 
-    if filter_by == "my":
-        base_query = base_query.filter(Ticket.assigned_engineer_id == current_user.id)
+    assigned_column = TicketTask.assigned_engineer_id if is_task_calendar else Ticket.assigned_engineer_id
+    client_column = TicketTask.client_id if is_task_calendar else Ticket.client_id
+    target_column = TicketTask.target_date if is_task_calendar else Ticket.target_date
+
+    if filter_by == "my" and not (is_task_calendar and scope == "my_tasks"):
+        base_query = base_query.filter(assigned_column == current_user.id)
     elif filter_by == "engineer" and filter_value:
         if filter_value == "unassigned":
-            base_query = base_query.filter(Ticket.assigned_engineer_id.is_(None))
+            base_query = base_query.filter(assigned_column.is_(None))
         else:
             try:
-                base_query = base_query.filter(Ticket.assigned_engineer_id == int(filter_value))
+                base_query = base_query.filter(assigned_column == int(filter_value))
             except ValueError:
                 pass
     elif filter_by == "client" and filter_value:
         try:
-            base_query = base_query.filter(Ticket.client_id == int(filter_value))
+            base_query = base_query.filter(client_column == int(filter_value))
         except ValueError:
             pass
 
@@ -1371,9 +1456,9 @@ def calendar_view():
     }
 
     tickets = (
-        base_query.filter(Ticket.target_date.isnot(None))
-        .filter(Ticket.target_date >= month_start)
-        .filter(Ticket.target_date < next_month)
+        base_query.filter(target_column.isnot(None))
+        .filter(target_column >= month_start)
+        .filter(target_column < next_month)
         .all()
     )
 
@@ -1395,6 +1480,9 @@ def calendar_view():
     prev_month_query = {"year": prev_month_date.year, "month": prev_month_date.month, "filter_by": filter_by, "filter_value": filter_value}
     next_month_date = next_month
     next_month_query = {"year": next_month_date.year, "month": next_month_date.month, "filter_by": filter_by, "filter_value": filter_value}
+    if is_task_calendar:
+        prev_month_query["scope"] = scope
+        next_month_query["scope"] = scope
 
     return render_template(
         "tickets/calendar.html",
@@ -1410,6 +1498,8 @@ def calendar_view():
         },
         prev_month_query=prev_month_query,
         next_month_query=next_month_query,
+        is_task_calendar=is_task_calendar,
+        calendar_scope=scope,
     )
 
 
@@ -1952,6 +2042,201 @@ def developer_tasks():
     )
 
 
+@tickets_bp.route("/tasks/workload")
+@login_required
+def developer_workload():
+    if not current_user.has_nav_access("developer_tasks"):
+        abort(403)
+
+    status_labels = {
+        TicketStatus.OPEN: "Open",
+        TicketStatus.IN_PROGRESS: "In-Process",
+        TicketStatus.RESOLVED: "Fix/Completed",
+        TicketStatus.REOPENED: "Re-Open",
+        TicketStatus.CLOSED: "Closed",
+        TicketStatus.ON_HOLD: "On Hold",
+        TicketStatus.CANCELLED: "Cancelled",
+    }
+    period_raw = request.args.get("period", "30")
+    try:
+        period_days = int(period_raw)
+    except ValueError:
+        period_days = 30
+    if period_days not in (1, 7, 30, 90, 0):
+        period_days = 30
+
+    now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    today_start = datetime.combine(now.date(), time.min)
+    period_start = None if period_days == 0 else today_start if period_days == 1 else now - timedelta(days=period_days)
+    today = now.date()
+    can_view_all = current_user.role == UserRole.ADMIN or _is_support_user(current_user)
+
+    developer_query = User.query.filter(User.role == UserRole.ENGINEER)
+    if not can_view_all:
+        developer_query = developer_query.filter(User.id == current_user.id)
+    developers = developer_query.order_by(User.user_type.asc(), User.full_name.asc(), User.username.asc()).all()
+    developer_ids = [developer.id for developer in developers]
+
+    tasks = []
+    sessions = []
+    if developer_ids:
+        tasks = TicketTask.query.filter(TicketTask.assigned_engineer_id.in_(developer_ids)).all()
+        sessions = TicketTaskWorkSession.query.filter(TicketTaskWorkSession.developer_id.in_(developer_ids)).all()
+
+    tasks_by_developer = defaultdict(list)
+    for task in tasks:
+        tasks_by_developer[task.assigned_engineer_id].append(task)
+
+    sessions_by_developer = defaultdict(list)
+    for session in sessions:
+        sessions_by_developer[session.developer_id].append(session)
+
+    def _seconds_in_window(session, window_start):
+        started_at = session.started_at
+        if not started_at:
+            return 0
+        ended_at = session.ended_at or session.paused_at or now
+        effective_start = max(started_at, window_start or started_at)
+        effective_end = min(ended_at, now)
+        if effective_end <= effective_start:
+            return 0
+        return int((effective_end - effective_start).total_seconds())
+
+    def _seconds_in_period(session):
+        return _seconds_in_window(session, period_start)
+
+    def _seconds_today(session):
+        return _seconds_in_window(session, today_start)
+
+    def _format_duration(seconds):
+        hours = seconds / 3600
+        if hours >= 10:
+            return f"{hours:.0f}h"
+        if hours >= 1:
+            return f"{hours:.1f}h"
+        minutes = int(round(seconds / 60))
+        return f"{minutes}m"
+
+    def _completed_at(task):
+        return task.closed_at or task.updated_at or task.created_at
+
+    rows = []
+    for developer in developers:
+        developer_tasks = tasks_by_developer.get(developer.id, [])
+        developer_sessions = sessions_by_developer.get(developer.id, [])
+        active_tasks = [
+            task for task in developer_tasks
+            if task.status not in (TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED)
+        ]
+        completed_tasks = [
+            task for task in developer_tasks
+            if task.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
+            and (period_start is None or (_completed_at(task) and _completed_at(task) >= period_start))
+        ]
+        completed_today_tasks = [
+            task for task in developer_tasks
+            if task.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
+            and _completed_at(task)
+            and _completed_at(task) >= today_start
+        ]
+        working_tasks = [task for task in developer_tasks if task.is_working]
+        paused_tasks = [
+            task for task in active_tasks
+            if not task.is_working and _task_work_session_state(task) == "paused"
+        ]
+        overdue_tasks = [
+            task for task in active_tasks
+            if task.target_date and task.target_date < today
+        ]
+        due_today_tasks = [
+            task for task in active_tasks
+            if task.target_date == today
+        ]
+        high_priority_tasks = [
+            task for task in active_tasks
+            if task.priority in (TicketPriority.CRITICAL, TicketPriority.HIGH)
+        ]
+        open_count = sum(1 for task in developer_tasks if task.status in (TicketStatus.OPEN, TicketStatus.REOPENED))
+        in_progress_count = sum(1 for task in developer_tasks if task.status == TicketStatus.IN_PROGRESS)
+        resolved_count = sum(1 for task in developer_tasks if task.status == TicketStatus.RESOLVED)
+        total_work_seconds = sum(_seconds_in_period(session) for session in developer_sessions)
+        today_work_seconds = sum(_seconds_today(session) for session in developer_sessions)
+        completed_with_work = [
+            task for task in completed_tasks
+            if any(session.ticket_task_id == task.id for session in developer_sessions)
+        ]
+        avg_work_seconds = 0
+        if completed_with_work:
+            seconds_by_task = defaultdict(int)
+            for session in developer_sessions:
+                seconds_by_task[session.ticket_task_id] += _seconds_in_period(session)
+            avg_work_seconds = int(sum(seconds_by_task[task.id] for task in completed_with_work) / len(completed_with_work))
+        denominator = len(active_tasks) + len(completed_tasks)
+        completion_rate = round((len(completed_tasks) / denominator) * 100) if denominator else 0
+        workload_score = (
+            len(active_tasks)
+            + (len(high_priority_tasks) * 2)
+            + len(overdue_tasks)
+            + (len(working_tasks) * 2)
+            + len(paused_tasks)
+        )
+        recent_tasks = sorted(
+            active_tasks,
+            key=lambda task: (
+                0 if task.is_working else 1 if _task_work_session_state(task) == "paused" else 2,
+                task.target_date or date.max,
+                task.created_at or datetime.min,
+            ),
+        )[:5]
+
+        rows.append(
+            {
+                "developer": developer,
+                "active": len(active_tasks),
+                "working": len(working_tasks),
+                "paused": len(paused_tasks),
+                "open": open_count,
+                "in_progress": in_progress_count,
+                "resolved": resolved_count,
+                "completed": len(completed_tasks),
+                "completed_today": len(completed_today_tasks),
+                "overdue": len(overdue_tasks),
+                "due_today": len(due_today_tasks),
+                "high_priority": len(high_priority_tasks),
+                "total_work_seconds": total_work_seconds,
+                "total_work_label": _format_duration(total_work_seconds),
+                "today_work_seconds": today_work_seconds,
+                "today_work_label": _format_duration(today_work_seconds),
+                "avg_work_label": _format_duration(avg_work_seconds) if avg_work_seconds else "N/A",
+                "completion_rate": completion_rate,
+                "workload_score": workload_score,
+                "recent_tasks": recent_tasks,
+            }
+        )
+
+    rows.sort(key=lambda row: (-row["workload_score"], -row["working"], -row["overdue"], row["developer"].full_name or row["developer"].username))
+    totals = {
+        "active": sum(row["active"] for row in rows),
+        "working": sum(row["working"] for row in rows),
+        "paused": sum(row["paused"] for row in rows),
+        "completed": sum(row["completed"] for row in rows),
+        "completed_today": sum(row["completed_today"] for row in rows),
+        "overdue": sum(row["overdue"] for row in rows),
+        "work_label": _format_duration(sum(row["total_work_seconds"] for row in rows)),
+        "today_work_label": _format_duration(sum(row["today_work_seconds"] for row in rows)),
+    }
+
+    return render_template(
+        "tickets/developer_workload.html",
+        rows=rows,
+        totals=totals,
+        status_labels=status_labels,
+        period_days=period_days,
+        can_view_all=can_view_all,
+        now=now,
+    )
+
+
 @tickets_bp.route("/<int:ticket_id>", methods=["GET", "POST"])
 @login_required
 def detail(ticket_id):
@@ -2245,6 +2530,7 @@ def detail(ticket_id):
         ticket_tasks=ticket_tasks,
         is_task_ticket=is_task_ticket,
         parent_ticket=parent_ticket,
+        task_work_session_state=None,
         TicketStatus=TicketStatus,
         default_target_date=today_str,
         timeline_events=timeline_events,
@@ -2458,6 +2744,7 @@ def task_detail(task_id):
         ticket_tasks=[],
         is_task_ticket=True,
         parent_ticket=parent_ticket,
+        task_work_session_state=_task_work_session_state(task),
         TicketStatus=TicketStatus,
         default_target_date=today_str,
         timeline_events=timeline_events,
@@ -2815,6 +3102,75 @@ def update_kanban_status(ticket_id):
             "changed": changed,
             "ticket_id": ticket.id,
             "status": ticket.status.value if ticket.status else "",
+        }
+    )
+
+
+@tickets_bp.route("/tasks/<int:task_id>/kanban-status", methods=["POST"])
+@login_required
+def update_task_kanban_status(task_id):
+    task = TicketTask.query.get_or_404(task_id)
+    closed_redirect = _ensure_task_not_closed(task)
+    if closed_redirect:
+        return jsonify({"error": "Closed tasks are read-only."}), 403
+
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+    if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user) and task.assigned_engineer_id != current_user.id:
+        abort(403)
+
+    column_key = (request.form.get("column") or "").strip().lower()
+    if not column_key:
+        column_key = (request.form.get("status") or "").strip().lower()
+
+    if column_key not in {"backlog", "open", "in_progress", "resolved", "currently_working"}:
+        return jsonify({"error": "Invalid kanban status."}), 400
+
+    actor_name = current_user.full_name or current_user.username
+    changed = False
+
+    if column_key == "backlog":
+        if task.kanban_bucket != "backlog":
+            task.kanban_bucket = "backlog"
+            changed = True
+        if task.is_working:
+            task.is_working = False
+            changed = True
+    elif column_key == "open":
+        changed = _update_task_status_value(task, TicketStatus.OPEN, actor_name)
+        if task.is_working:
+            task.is_working = False
+            changed = True
+    elif column_key == "in_progress":
+        changed = _update_task_status_value(task, TicketStatus.IN_PROGRESS, actor_name)
+        if task.kanban_bucket:
+            task.kanban_bucket = None
+            changed = True
+        if not task.is_working:
+            task.is_working = True
+            changed = True
+        if not task.started_date:
+            task.started_date = datetime.utcnow().date()
+            changed = True
+    elif column_key == "resolved":
+        changed = _update_task_status_value(task, TicketStatus.RESOLVED, actor_name)
+        if task.kanban_bucket:
+            task.kanban_bucket = None
+            changed = True
+        if task.is_working:
+            task.is_working = False
+            changed = True
+
+    if changed:
+        db.session.commit()
+        _emit_ticket_changed(task, "updated")
+
+    return jsonify(
+        {
+            "ok": True,
+            "changed": changed,
+            "ticket_id": task.id,
+            "status": task.status.value if task.status else "",
         }
     )
 
@@ -3306,6 +3662,26 @@ def toggle_task_work_state(task_id):
     action = (request.form.get("action") or "").strip()
     user_name = current_user.full_name or current_user.username
     if action == "start":
+        was_paused = _task_work_session_state(task) == "paused"
+        if not task.target_date:
+            target_date_raw = (request.form.get("target_date") or "").strip()
+            if not target_date_raw:
+                flash("Target schedule is required before starting work.", "warning")
+                return redirect(url_for("tickets.task_detail", task_id=task.id))
+            try:
+                task.target_date = datetime.strptime(target_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Invalid target schedule format.", "danger")
+                return redirect(url_for("tickets.task_detail", task_id=task.id))
+            _record_task_change(task, f"Target schedule changed from Not set to {task.target_date.strftime('%Y-%m-%d')} by {user_name}.")
+        if not _active_task_work_session(task):
+            db.session.add(
+                TicketTaskWorkSession(
+                    ticket_task_id=task.id,
+                    developer_id=current_user.id,
+                    started_at=datetime.now(APP_TIMEZONE).replace(tzinfo=None),
+                )
+            )
         task.is_working = True
         if not task.started_date:
             task.started_date = date.today()
@@ -3321,10 +3697,50 @@ def toggle_task_work_state(task_id):
                 f"Status changed from {_enum_label(old_parent_status)} to In Progress by {user_name}.",
                 is_internal=True,
             )
-        _record_task_change(task, f"Work status changed to Working by {user_name}.")
-    elif action == "stop":
+        _record_task_change(task, f"Work status changed to {'Resumed' if was_paused else 'Working'} by {user_name}.")
+    elif action == "pause":
+        active_session = _active_task_work_session(task)
+        if not active_session and task.is_working:
+            now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+            active_session = TicketTaskWorkSession(
+                ticket_task_id=task.id,
+                developer_id=current_user.id,
+                started_at=now,
+            )
+            db.session.add(active_session)
+            db.session.flush()
+        if not active_session:
+            flash("No active work session to pause.", "warning")
+            return redirect(url_for("tickets.task_detail", task_id=task.id))
+        active_session.paused_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+        active_session.pause_type = "manual"
+        active_session.pause_reason = (request.form.get("pause_reason") or "Manual pause").strip()
         task.is_working = False
-        _record_task_change(task, f"Work status changed to Not Working by {user_name}.")
+        _record_task_change(task, f"Work status changed to Paused by {user_name}.")
+    elif action == "stop":
+        active_session = _active_task_work_session(task)
+        if not active_session and task.is_working:
+            now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+            active_session = TicketTaskWorkSession(
+                ticket_task_id=task.id,
+                developer_id=current_user.id,
+                started_at=now,
+            )
+            db.session.add(active_session)
+            db.session.flush()
+        if active_session:
+            active_session.ended_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+        task.is_working = False
+        _record_task_change(task, f"Work status changed to Done Work by {user_name}.")
+        if task.status != TicketStatus.RESOLVED:
+            old_status = task.status
+            task.status = TicketStatus.RESOLVED
+            task.closed_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+            task.kanban_bucket = None
+            _record_task_change(
+                task,
+                f"Status changed from {_enum_label(old_status)} to Fix/Completed by {user_name}.",
+            )
     else:
         flash("Invalid work action.", "danger")
         return redirect(url_for("tickets.task_detail", task_id=task.id))
