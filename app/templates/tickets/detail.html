@@ -1629,6 +1629,53 @@
       attachmentInput.files = dataTransfer.files;
     }
 
+    function addAttachmentFiles(filesToAdd) {
+      if (!filesToAdd || !filesToAdd.length) return;
+      var files = getAttachmentFiles().concat(filesToAdd);
+      setAttachmentFiles(files);
+      renderAttachmentList();
+    }
+
+    function pastedImageFilename(blob) {
+      var mime = (blob && blob.type) || 'image/png';
+      var extensionMap = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+        'image/bmp': 'bmp'
+      };
+      var extension = extensionMap[mime] || 'png';
+      var stamp = new Date().toISOString().replace(/[-:TZ.]/g, '').slice(0, 14);
+      return 'pasted-image-' + stamp + '.' + extension;
+    }
+
+    function handleCommentPaste(event) {
+      if (!event || !event.clipboardData || !attachmentInput) return;
+      var clipboardItems = Array.from(event.clipboardData.items || []);
+      var pastedFiles = [];
+
+      clipboardItems.forEach(function(item) {
+        if (!item || item.kind !== 'file') return;
+        var file = item.getAsFile ? item.getAsFile() : null;
+        if (!file) return;
+        if (!file.name) {
+          try {
+            file = new File([file], pastedImageFilename(file), { type: file.type || 'image/png' });
+          } catch (error) {
+            file.name = pastedImageFilename(file);
+          }
+        }
+        pastedFiles.push(file);
+      });
+
+      if (!pastedFiles.length) return;
+      addAttachmentFiles(pastedFiles);
+      if (commentTextarea) {
+        commentTextarea.focus();
+      }
+    }
+
     function renderAttachmentList() {
       if (!attachmentSelectedList || !attachmentInput) return;
       var files = getAttachmentFiles();
@@ -2033,6 +2080,14 @@
 
     if (attachmentInput) {
       attachmentInput.addEventListener('change', renderAttachmentList);
+    }
+
+    if (commentTextarea) {
+      commentTextarea.addEventListener('paste', handleCommentPaste);
+    }
+
+    if (commentForm) {
+      commentForm.addEventListener('paste', handleCommentPaste);
     }
 
     if (attachmentSelectedList) {
