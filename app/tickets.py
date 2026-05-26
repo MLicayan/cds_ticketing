@@ -229,6 +229,23 @@ def _current_user_working_tasks_query():
     ).order_by(TicketTask.updated_at.desc(), TicketTask.created_at.desc(), TicketTask.id.desc())
 
 
+def _can_view_task_detail(task: TicketTask) -> bool:
+    if current_user.has_nav_access("developer_tasks"):
+        return True
+    if current_user.role == UserRole.ADMIN:
+        return True
+    if current_user.role == UserRole.ENGINEER:
+        return any(
+            user_id == current_user.id
+            for user_id in (
+                task.assigned_engineer_id,
+                task.reported_by_id,
+                task.assigned_by_id,
+            )
+        )
+    return False
+
+
 def _scoped_ticket_query():
     query = _exclude_task_tickets(Ticket.query)
     if current_user.role in CLIENT_SCOPED_ROLES:
@@ -2593,11 +2610,7 @@ def task_detail(task_id):
     parent_ticket = task.parent_ticket
     if current_user.role in READ_ONLY_ROLES:
         abort(403)
-    if (
-        current_user.role == UserRole.ENGINEER
-        and not _is_support_user(current_user)
-        and task.assigned_engineer_id != current_user.id
-    ):
+    if not _can_view_task_detail(task):
         abort(403)
 
     if request.method == "POST":
