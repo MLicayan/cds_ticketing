@@ -42,10 +42,32 @@
   .task-advanced-filter .select2-container {
     width: 100% !important;
   }
+  .task-advanced-filter .select2-container--default .select2-selection--single,
   .task-advanced-filter .select2-container--default .select2-selection--multiple {
     min-height: 38px;
     border: 1px solid #ced4da;
     border-radius: 4px;
+    background: #fff;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--single {
+    display: flex;
+    align-items: center;
+    padding: 0 34px 0 8px;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--single .select2-selection__rendered {
+    color: #495057;
+    line-height: 36px;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--single .select2-selection__placeholder {
+    color: #6c757d;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 36px;
+    right: 8px;
+  }
+  .task-advanced-filter .select2-container--default .select2-selection--multiple {
     padding: 3px 8px;
     display: flex;
     align-items: center;
@@ -100,6 +122,9 @@
     margin: 0 !important;
     min-height: 28px;
     align-items: center;
+  }
+  .task-advanced-filter .select2-search--inline.is-locked {
+    display: none !important;
   }
   .task-advanced-filter .select2-container--default .select2-selection--multiple .select2-selection__choice {
     display: inline-flex !important;
@@ -227,17 +252,32 @@
 
       <div class="collapse mt-3 task-advanced-filter" id="advancedTaskFilterPanel">
         <div class="card mb-0">
-          <div class="card-header bg-white">
-            <strong>Advanced Filters</strong>
-          </div>
           <div class="card-body">
             <div class="row">
               <div class="col-md-4 mb-2">
+                <label for="task_ticket_no">Task Ticket</label>
+                <input type="text" id="task_ticket_no" name="ticket_no" class="form-control" placeholder="Search task ticket..." value="{{ selected_filters.ticket_no or '' }}">
+              </div>
+
+              <div class="col-md-4 mb-2">
                 <label for="task_client_id">Client</label>
-                <select id="task_client_id" name="client_id" class="form-control select2" multiple>
+                <select id="task_client_id" name="client_id" class="form-control select2">
+                  <option value="">All</option>
                   {% for c in clients %}
-                  <option value="{{ c.id }}" {% if selected_filters.client_ids and c.id|string in selected_filters.client_ids %}selected{% endif %}>
+                  <option value="{{ c.id }}" {% if selected_filters.client_ids and c.id|string == selected_filters.client_ids[0] %}selected{% endif %}>
                     {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="col-md-4 mb-2">
+                <label for="task_app_id">App</label>
+                <select id="task_app_id" name="app_id" class="form-control select2" multiple>
+                  <option value=""></option>
+                  {% for app in apps %}
+                  <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if selected_filters.app_ids and app.id|string in selected_filters.app_ids %}selected{% endif %}>
+                    {{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}
                   </option>
                   {% endfor %}
                 </select>
@@ -257,8 +297,21 @@
               {% endif %}
 
               <div class="col-md-4 mb-2">
+                <label for="task_reported_by_id">Reported By</label>
+                <select id="task_reported_by_id" name="reported_by_id" class="form-control select2">
+                  <option value="">All</option>
+                  {% for user in reporters %}
+                  <option value="{{ user.id }}" {% if selected_filters.reported_by_ids and user.id|string == selected_filters.reported_by_ids[0] %}selected{% endif %}>
+                    {{ user.full_name or user.username }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div class="col-md-4 mb-2">
                 <label for="task_priority">Priority</label>
                 <select id="task_priority" name="priority" class="form-control select2" multiple>
+                  <option value=""></option>
                   {% for p, label in [('NOT_SET', 'Not Set'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')] %}
                   <option value="{{ p }}" {% if selected_filters.priority and p in selected_filters.priority %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}
@@ -268,6 +321,7 @@
               <div class="col-md-4 mb-2">
                 <label for="task_status">Status</label>
                 <select id="task_status" name="status" class="form-control select2" multiple>
+                  <option value=""></option>
                   {% for s, label in status_labels.items() %}
                   <option value="{{ s.value }}" {% if selected_filters.status and s.value in selected_filters.status %}selected{% endif %}>{{ label }}</option>
                   {% endfor %}
@@ -301,57 +355,8 @@
   </div>
 </div>
 
-<div class="card">
-  <div class="card-body p-0">
-    <div class="task-table-shell" id="developer-tasks-table-shell">
-      <table class="table table-hover text-nowrap mb-0" id="developer-tasks-table">
-        <thead>
-          <tr>
-            <th>Task Ticket</th>
-            <th>Task</th>
-            <th>Parent Ticket</th>
-            <th>Assigned IT</th>
-            <th>Status</th>
-            <th>Work Status</th>
-            <th>Priority</th>
-            <th>Client</th>
-            <th>Created</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for task in tasks %}
-            {% set parent = parents.get(task.ticket_id) %}
-            <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=task.id) }}'" style="cursor:pointer;">
-              <td>{{ task.ticket_no }}</td>
-              <td>{{ task.subject }}</td>
-              <td>
-                {% if parent %}
-                  <a href="{{ url_for('tickets.detail', ticket_id=parent.id) }}" onclick="event.stopPropagation();">{{ parent.ticket_no }}</a>
-                {% else %}
-                  <span class="text-muted">N/A</span>
-                {% endif %}
-              </td>
-              <td>{{ task.assigned_engineer.full_name or task.assigned_engineer.username if task.assigned_engineer else 'Unassigned' }}</td>
-              <td>{{ status_labels.get(task.status, task.status.value.replace('_', ' ')|title) }}</td>
-              <td>
-                <span class="badge badge-{{ 'success' if task.is_working else 'secondary' }}">
-                  {{ 'Working' if task.is_working else 'Not Working' }}
-                </span>
-              </td>
-              <td>
-                {% set task_priority_value = task.priority.value if task.priority else 'NOT_SET' %}
-                <span class="badge badge-{{ 'danger' if task_priority_value == 'critical' else 'warning' if task_priority_value == 'high' else 'info' if task_priority_value == 'medium' else 'secondary' }}">
-                  {{ 'NOT SET' if task_priority_value == 'NOT_SET' else task_priority_value|upper }}
-                </span>
-              </td>
-              <td>{{ task.client.name if task.client else 'N/A' }}</td>
-              <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '' }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
+<div id="developer-tasks-table-container">
+  {% include "tickets/_developer_tasks_table.html" %}
 </div>
 {% endblock %}
 
@@ -362,6 +367,7 @@
 (function() {
   var table = null;
   var autoSubmitTimer = null;
+  var filterRequestController = null;
 
   function syncTaskTableViewportHeight() {
     var container = document.getElementById('developer-tasks-table-shell');
@@ -373,15 +379,16 @@
     container.style.height = availableHeight + 'px';
   }
 
-  function autoSubmitFilters() {
-    clearTimeout(autoSubmitTimer);
-    autoSubmitTimer = setTimeout(function() {
-      var form = document.getElementById('task-filter-form');
-      if (form) form.submit();
-    }, 250);
-  }
+  function initDeveloperTasksTable() {
+    if (!(window.$ && $.fn.DataTable && $('#developer-tasks-table').length)) {
+      syncTaskTableViewportHeight();
+      return;
+    }
 
-  if (window.$ && $.fn.DataTable && $('#developer-tasks-table').length) {
+    if ($.fn.DataTable.isDataTable('#developer-tasks-table')) {
+      $('#developer-tasks-table').DataTable().destroy();
+    }
+
     table = $('#developer-tasks-table').DataTable({
       pageLength: 10,
       order: [[8, 'desc']],
@@ -391,20 +398,102 @@
       }
     });
     $('#developer-tasks-table_filter').hide();
+
+    var searchInput = document.getElementById('task-search-input');
+    if (searchInput) {
+      table.search(searchInput.value || '').draw();
+    }
+
     syncTaskTableViewportHeight();
   }
 
+  function fetchFilteredTasks() {
+    var form = document.getElementById('task-filter-form');
+    var tableContainer = document.getElementById('developer-tasks-table-container');
+    if (!form || !tableContainer) return;
+
+    var formData = new FormData(form);
+    var queryString = new URLSearchParams(formData).toString();
+    var requestUrl = '{{ url_for("tickets.developer_tasks") }}' + (queryString ? '?' + queryString : '');
+
+    if (filterRequestController) {
+      filterRequestController.abort();
+    }
+    filterRequestController = new AbortController();
+    tableContainer.style.opacity = '0.65';
+
+    fetch(requestUrl, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+      signal: filterRequestController.signal
+    })
+      .then(function(response) {
+        if (!response.ok) {
+          throw new Error('Failed to load tasks');
+        }
+        return response.text();
+      })
+      .then(function(html) {
+        tableContainer.innerHTML = html;
+        window.history.replaceState({}, '', requestUrl);
+        initDeveloperTasksTable();
+      })
+      .catch(function(error) {
+        if (error && error.name === 'AbortError') {
+          return;
+        }
+      })
+      .finally(function() {
+        tableContainer.style.opacity = '';
+      });
+  }
+
+  function autoSubmitFilters() {
+    clearTimeout(autoSubmitTimer);
+    autoSubmitTimer = setTimeout(function() {
+      fetchFilteredTasks();
+    }, 250);
+  }
+
+  function lockSelect2InlineSearch(selector) {
+    if (!window.$ || !$(selector).length) return;
+
+    function applyLock() {
+      var searchWrap = $(selector).next('.select2-container').find('.select2-search--inline');
+      var searchField = searchWrap.find('.select2-search__field');
+      searchWrap.addClass('is-locked');
+      searchField.prop('disabled', true).attr('tabindex', '-1');
+    }
+
+    $(selector).on('select2:open select2:close select2:select select2:unselect', applyLock);
+    $(selector).next('.select2-container').on('keydown', '.select2-search__field', function(event) {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    applyLock();
+  }
+
+  initDeveloperTasksTable();
+
   if (window.$ && $.fn.select2) {
-    $('#task_client_id').select2({ width: '100%', placeholder: 'Select client(s)' });
+    $('#task_client_id').select2({ width: '100%', placeholder: 'All', allowClear: true, minimumResultsForSearch: 0 });
+    $('#task_app_id').select2({ width: '100%', placeholder: 'Select app(s)', minimumResultsForSearch: Infinity });
     $('#task_assignee_id').select2({ width: '100%', placeholder: 'Select IT user(s)' });
-    $('#task_priority').select2({ width: '100%', placeholder: 'Select priority' });
-    $('#task_status').select2({ width: '100%', placeholder: 'Select status' });
+    $('#task_reported_by_id').select2({ width: '100%', placeholder: 'All', allowClear: true, minimumResultsForSearch: 0 });
+    $('#task_priority').select2({ width: '100%', placeholder: 'Select priority', minimumResultsForSearch: Infinity });
+    $('#task_status').select2({ width: '100%', placeholder: 'Select status', minimumResultsForSearch: Infinity });
+    lockSelect2InlineSearch('#task_app_id');
+    lockSelect2InlineSearch('#task_priority');
+    lockSelect2InlineSearch('#task_status');
   }
 
   var searchInput = document.getElementById('task-search-input');
-  if (searchInput && table) {
+  if (searchInput) {
     searchInput.addEventListener('input', function() {
-      table.search(searchInput.value || '').draw();
+      if (table) {
+        table.search(searchInput.value || '').draw();
+      }
     });
   }
 
@@ -427,13 +516,22 @@
     chips.innerHTML = '';
 
     [
-      { id: 'task_client_id', label: 'Client' },
+      { id: 'task_ticket_no', label: 'Task Ticket', single: true },
+      { id: 'task_client_id', label: 'Client', single: true },
+      { id: 'task_app_id', label: 'App' },
       { id: 'task_assignee_id', label: 'Assigned IT' },
+      { id: 'task_reported_by_id', label: 'Reported By', single: true },
       { id: 'task_priority', label: 'Priority' },
       { id: 'task_status', label: 'Status' }
     ].forEach(function(config) {
       var picker = document.getElementById(config.id);
       if (!picker) return;
+      if (config.single) {
+        if (picker.value) {
+          addChip(chips, config.label, picker.value, picker.selectedOptions && picker.selectedOptions[0] ? picker.selectedOptions[0].text : picker.value, config.id);
+        }
+        return;
+      }
       Array.from(picker.selectedOptions).forEach(function(opt) {
         addChip(chips, config.label, opt.value, opt.text, config.id);
       });
@@ -476,7 +574,7 @@
     });
   }
 
-  ['task_client_id', 'task_assignee_id', 'task_priority', 'task_status'].forEach(function(id) {
+  ['task_assignee_id', 'task_priority', 'task_status'].forEach(function(id) {
     var picker = document.getElementById(id);
     if (!picker) return;
     if (window.$) {
@@ -492,23 +590,85 @@
     }
   });
 
-  ['task_date_from', 'task_date_to'].forEach(function(id) {
+  ['task_client_id', 'task_app_id', 'task_reported_by_id'].forEach(function(id) {
+    var picker = document.getElementById(id);
+    if (!picker) return;
+    if (window.$) {
+      $('#' + id).on('change', function() {
+        updateTaskFilterChips();
+        autoSubmitFilters();
+      });
+    } else {
+      picker.addEventListener('change', function() {
+        updateTaskFilterChips();
+        autoSubmitFilters();
+      });
+    }
+  });
+
+  ['task_ticket_no', 'task_date_from', 'task_date_to'].forEach(function(id) {
     var input = document.getElementById(id);
     if (!input) return;
-    input.addEventListener('change', function() {
+    input.addEventListener(id === 'task_ticket_no' ? 'input' : 'change', function() {
       updateTaskFilterChips();
       autoSubmitFilters();
     });
   });
 
+  function filterTaskApps() {
+    var clientSelect = document.getElementById('task_client_id');
+    var appSelect = document.getElementById('task_app_id');
+    if (!clientSelect || !appSelect) return;
+
+    var selectedClientIds = Array.from(clientSelect.selectedOptions).map(function(opt) {
+      return opt.value;
+    }).filter(Boolean);
+
+    Array.from(appSelect.options).forEach(function(opt) {
+      if (!opt.value) return;
+      var appClientIds = (opt.getAttribute('data-client-ids') || '').split(',').filter(Boolean);
+      var match = selectedClientIds.length === 0 || appClientIds.some(function(clientId) {
+        return selectedClientIds.indexOf(clientId) >= 0;
+      });
+      opt.hidden = !match;
+    });
+
+    var changed = false;
+    Array.from(appSelect.selectedOptions).forEach(function(opt) {
+      if (opt.hidden) {
+        opt.selected = false;
+        changed = true;
+      }
+    });
+
+    if (window.$ && $(appSelect).hasClass('select2-hidden-accessible')) {
+      $(appSelect).trigger('change.select2');
+    }
+    if (changed) {
+      updateTaskFilterChips();
+      autoSubmitFilters();
+    }
+  }
+
+  var taskClientPicker = document.getElementById('task_client_id');
+  if (taskClientPicker) {
+    if (window.$) {
+      $('#task_client_id').on('change', function() {
+        filterTaskApps();
+      });
+    } else {
+      taskClientPicker.addEventListener('change', function() {
+        filterTaskApps();
+      });
+    }
+  }
+
   var advancedFilterPanel = document.getElementById('advancedTaskFilterPanel');
   var filterToggleBtn = document.querySelector('[data-target="#advancedTaskFilterPanel"]');
   if (advancedFilterPanel) {
-    if (localStorage.getItem('developerTasksFilterPanelOpen') === '1') {
-      advancedFilterPanel.classList.add('show');
-      if (filterToggleBtn) {
-        filterToggleBtn.setAttribute('aria-expanded', 'true');
-      }
+    advancedFilterPanel.classList.remove('show');
+    if (filterToggleBtn) {
+      filterToggleBtn.setAttribute('aria-expanded', 'false');
     }
 
     if (window.$) {
@@ -523,6 +683,15 @@
     }
   }
 
+  var taskFilterForm = document.getElementById('task-filter-form');
+  if (taskFilterForm) {
+    taskFilterForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+      fetchFilteredTasks();
+    });
+  }
+
+  filterTaskApps();
   updateTaskFilterChips();
 })();
 </script>

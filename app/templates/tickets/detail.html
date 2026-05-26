@@ -1184,7 +1184,7 @@
               </div>
             </div>
 
-            {% if is_task_ticket and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) %}
+            {% if is_task_ticket and (current_user.role.value == 'admin' or current_user.has_nav_access('developer_tasks') or current_user.has_nav_access('developer_workload')) %}
             <div class="form-group">
               <label for="engineer_id">Assigned To</label>
               <select name="engineer_id" id="engineer_id" class="form-control">

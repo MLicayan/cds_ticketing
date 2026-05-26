@@ -246,6 +246,14 @@ def _can_view_task_detail(task: TicketTask) -> bool:
     return False
 
 
+def _can_reassign_task() -> bool:
+    return (
+        current_user.role == UserRole.ADMIN
+        or current_user.has_nav_access("developer_tasks")
+        or current_user.has_nav_access("developer_workload")
+    )
+
+
 def _scoped_ticket_query():
     query = _exclude_task_tickets(Ticket.query)
     if current_user.role in CLIENT_SCOPED_ROLES:
@@ -1990,19 +1998,30 @@ def developer_tasks():
     }
 
     clients = Client.query.order_by(Client.name.asc()).all()
+    apps = App.query.order_by(App.name.asc()).all()
+    reporters = User.query.filter(
+        User.role == UserRole.ENGINEER,
+        db.func.lower(User.user_type).in_(("it", "support")),
+    ).order_by(User.full_name.asc(), User.username.asc()).all()
     assignees = User.query.filter(
         User.role == UserRole.ENGINEER,
-        User.user_type == "IT",
+        db.func.lower(User.user_type).in_(("it", "support")),
     ).order_by(User.full_name.asc(), User.username.asc()).all()
 
     query = TicketTask.query
 
+    ticket_no_raw = (request.args.get("ticket_no") or "").strip()
     client_ids = [cid.strip() for cid in request.args.getlist("client_id") if cid.strip()]
+    app_ids = [aid.strip() for aid in request.args.getlist("app_id") if aid.strip()]
     assignee_ids = [aid.strip() for aid in request.args.getlist("assignee_id") if aid.strip()]
+    reported_by_ids = [rid.strip() for rid in request.args.getlist("reported_by_id") if rid.strip()]
     priority_values = [priority.strip() for priority in request.args.getlist("priority") if priority.strip()]
     status_values = [status.strip() for status in request.args.getlist("status") if status.strip()]
     date_from_raw = request.args.get("date_from") or ""
     date_to_raw = request.args.get("date_to") or ""
+
+    if ticket_no_raw:
+        query = query.filter(db.func.lower(TicketTask.task_no).like(f"%{ticket_no_raw.lower()}%"))
 
     if client_ids:
         try:
@@ -2010,9 +2029,21 @@ def developer_tasks():
         except ValueError:
             pass
 
+    if app_ids:
+        try:
+            query = query.filter(TicketTask.app_id.in_([int(aid) for aid in app_ids]))
+        except ValueError:
+            pass
+
     if assignee_ids:
         try:
             query = query.filter(TicketTask.assigned_engineer_id.in_([int(aid) for aid in assignee_ids]))
+        except ValueError:
+            pass
+
+    if reported_by_ids:
+        try:
+            query = query.filter(TicketTask.reported_by_id.in_([int(rid) for rid in reported_by_ids]))
         except ValueError:
             pass
 
@@ -2052,17 +2083,30 @@ def developer_tasks():
     if parent_ids:
         parents = {ticket.id: ticket for ticket in Ticket.query.filter(Ticket.id.in_(parent_ids)).all()}
 
+    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return render_template(
+            "tickets/_developer_tasks_table.html",
+            tasks=tasks,
+            parents=parents,
+            status_labels=status_labels,
+        )
+
     return render_template(
         "tickets/tasks.html",
         tasks=tasks,
         parents=parents,
         status_labels=status_labels,
         clients=clients,
+        apps=apps,
+        reporters=reporters,
         assignees=assignees,
         current_date=datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d"),
         selected_filters={
+            "ticket_no": ticket_no_raw,
             "client_ids": client_ids,
+            "app_ids": app_ids,
             "assignee_ids": assignee_ids,
+            "reported_by_ids": reported_by_ids,
             "priority": priority_values,
             "status": [status.strip().lower() for status in status_values if status.strip()],
             "date_from": date_from_raw,
@@ -3675,6 +3719,8 @@ def update_task_info(task_id):
         changed = True
 
     if "engineer_id" in request.form:
+        if not _can_reassign_task():
+            abort(403)
         engineer_id_raw = (request.form.get("engineer_id") or "").strip()
         old_engineer = task.assigned_engineer
         new_engineer = None
