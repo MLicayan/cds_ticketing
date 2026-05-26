@@ -52,7 +52,6 @@ def require_ticket_nav_access():
         return
     task_endpoints = {
         "tickets.developer_tasks",
-        "tickets.developer_workload",
         "tickets.task_detail",
         "tickets.update_task_info",
         "tickets.toggle_task_work_state",
@@ -62,6 +61,10 @@ def require_ticket_nav_access():
     }
     if request.endpoint in task_endpoints:
         if not (current_user.has_nav_access("developer_tasks") or current_user.has_nav_access("my_tickets")):
+            abort(403)
+        return
+    if request.endpoint == "tickets.developer_workload":
+        if not current_user.has_nav_access("developer_workload"):
             abort(403)
         return
     if request.endpoint == "tickets.index":
@@ -2045,7 +2048,7 @@ def developer_tasks():
 @tickets_bp.route("/tasks/workload")
 @login_required
 def developer_workload():
-    if not current_user.has_nav_access("developer_tasks"):
+    if not current_user.has_nav_access("developer_workload"):
         abort(403)
 
     status_labels = {

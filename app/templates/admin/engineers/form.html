@@ -43,7 +43,7 @@
         <label for="password">Password {% if engineer %}(leave blank to keep){% endif %}</label>
         <input name="password" id="password" type="password" class="form-control">
       </div>
-      {% with access_user=engineer, default_nav_keys=['tickets', 'my_tickets', 'service_logs', 'weekly_schedules', 'pm_schedules', 'instruments', 'reports'] %}
+      {% with access_user=engineer, default_nav_keys=['tickets', 'my_tickets', 'developer_workload', 'service_logs', 'weekly_schedules', 'pm_schedules', 'instruments', 'reports'] %}
         {% include "admin/_nav_permissions.html" %}
       {% endwith %}
     </div>

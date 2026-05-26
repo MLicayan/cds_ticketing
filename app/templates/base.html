@@ -345,6 +345,9 @@
               <p>Developer Tasks</p>
             </a>
           </li>
+          {% endif %}
+
+          {% if current_user.is_authenticated and current_user.has_nav_access('developer_workload') %}
           <li class="nav-item">
             <a href="{{ url_for('tickets.developer_workload') }}" class="nav-link {% if request.endpoint == 'tickets.developer_workload' %}active{% endif %}">
               <i class="nav-icon fas fa-chart-pie"></i>

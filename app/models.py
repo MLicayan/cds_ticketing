@@ -77,6 +77,7 @@ NAV_ACCESS_OPTIONS = [
     ("tickets", "All Tickets"),
     ("my_tickets", "My Task"),
     ("developer_tasks", "Developer Tasks"),
+    ("developer_workload", "Developer Workload"),
     ("service_logs", "Service Logs"),
     ("weekly_schedules", "Weekly Schedule"),
     ("pm_schedules", "PM Schedule"),
@@ -153,8 +154,8 @@ class User(UserMixin, db.Model):
             return [key for key, _ in NAV_ACCESS_OPTIONS]
         if role_value == UserRole.ENGINEER.value:
             if (self.user_type or "").lower() == "it":
-                return ["tickets", "my_tickets", "service_logs"]
-            return ["tickets", "my_tickets", "service_logs", "weekly_schedules", "pm_schedules", "instruments", "reports"]
+                return ["tickets", "my_tickets", "developer_workload", "service_logs"]
+            return ["tickets", "my_tickets", "developer_workload", "service_logs", "weekly_schedules", "pm_schedules", "instruments", "reports"]
         if role_value == UserRole.SALES.value:
             return ["tickets", "my_tickets", "instruments"]
         if role_value == UserRole.CLIENT.value:
