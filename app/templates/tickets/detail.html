@@ -1806,6 +1806,8 @@
       });
 
       if (!pastedFiles.length) return;
+      event.preventDefault();
+      event.stopPropagation();
       addAttachmentFiles(pastedFiles);
       if (commentTextarea) {
         commentTextarea.focus();
@@ -2220,10 +2222,6 @@
 
     if (commentTextarea) {
       commentTextarea.addEventListener('paste', handleCommentPaste);
-    }
-
-    if (commentForm) {
-      commentForm.addEventListener('paste', handleCommentPaste);
     }
 
     if (attachmentSelectedList) {
