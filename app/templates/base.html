@@ -543,6 +543,31 @@
   {% endif %}
 {% endwith %}
 
+{% if current_user.is_authenticated %}
+<div class="modal fade" id="workdayTaskPromptModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-business-time mr-2 text-primary"></i>Active Task Check</h5>
+      </div>
+      <div class="modal-body">
+        <p class="mb-2">It is already 5:30 PM. Do you want to continue working on your active tasks?</p>
+        <div class="small text-muted mb-3">Choose <strong>Yes</strong> to keep working, or <strong>No</strong> to pause your active tasks.</div>
+        <div class="border rounded p-3 bg-light">
+          <div class="font-weight-bold mb-2">Active working tasks</div>
+          <div id="workdayTaskPromptEmpty" class="text-muted small d-none">No active working tasks found.</div>
+          <ul class="mb-0 pl-3" id="workdayTaskPromptList"></ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="workdayTaskPromptNo">No, Pause Tasks</button>
+        <button type="button" class="btn btn-primary" id="workdayTaskPromptYes">Yes, Continue Working</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/overlayScrollbars/js/jquery.overlayScrollbars.min.js"></script>
@@ -552,6 +577,15 @@
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
+    const workdayPromptStateUrl = {{ url_for('tickets.task_workday_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
+    const workdayPromptPauseUrl = {{ url_for('tickets.task_workday_prompt_pause')|tojson if current_user.is_authenticated else 'null' }};
+    const workdayPromptModalEl = document.getElementById('workdayTaskPromptModal');
+    const workdayPromptList = document.getElementById('workdayTaskPromptList');
+    const workdayPromptEmpty = document.getElementById('workdayTaskPromptEmpty');
+    const workdayPromptYesBtn = document.getElementById('workdayTaskPromptYes');
+    const workdayPromptNoBtn = document.getElementById('workdayTaskPromptNo');
+    let workdayPromptOpen = false;
+
     const alerts = document.querySelectorAll('.alert');
     alerts.forEach((alert) => {
       setTimeout(() => {
@@ -566,152 +600,277 @@
       }, 5000);
     });
 
-    const notificationRoot = document.getElementById('header-client-comment-notification');
-    if (!notificationRoot || !window.io) return;
+    function workdayPromptStorageKey() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      return 'workday-task-prompt-' + yyyy + '-' + mm + '-' + dd;
+    }
 
-    const notificationLink = notificationRoot.querySelector('.nav-link');
-    const notificationHeader = notificationRoot.querySelector('[data-notification-header]');
-    const notificationItems = notificationRoot.querySelector('[data-notification-items]');
-
-    function updateNotificationCount(count) {
-      count = Number(count || 0);
-      if (notificationHeader) {
-        notificationHeader.textContent = count + ' ticket comment' + (count === 1 ? '' : 's');
-      }
-
-      let badge = notificationRoot.querySelector('[data-notification-badge]');
-      if (count > 0) {
-        if (!badge) {
-          badge = document.createElement('span');
-          badge.className = 'badge badge-warning navbar-badge';
-          badge.setAttribute('data-notification-badge', '');
-          notificationLink.appendChild(badge);
-        }
-        badge.textContent = count;
-      } else if (badge) {
-        badge.remove();
+    function markWorkdayPromptHandled(action) {
+      try {
+        localStorage.setItem(workdayPromptStorageKey(), action || 'handled');
+      } catch (err) {
       }
     }
 
-    function createNotificationItem(notification) {
-      const item = document.createElement('a');
-      item.href = notification.url || '#';
-      item.className = 'dropdown-item';
-      item.setAttribute('data-ticket-id', notification.ticket_id);
-      item.setAttribute('data-ticket-count', '1');
-
-      const top = document.createElement('div');
-      top.className = 'd-flex justify-content-between align-items-start';
-
-      const ticketNo = document.createElement('span');
-      ticketNo.className = 'notification-ticket-no';
-      ticketNo.textContent = notification.ticket_no || 'Ticket';
-      top.appendChild(ticketNo);
-
-      const ticketBadge = document.createElement('span');
-      ticketBadge.className = 'badge badge-primary d-none';
-      ticketBadge.setAttribute('data-ticket-notification-count', '');
-      top.appendChild(ticketBadge);
-
-      const subject = document.createElement('div');
-      subject.appendChild(document.createTextNode(notification.subject || ''));
-
-      const preview = document.createElement('div');
-      preview.className = 'notification-comment-preview';
-      preview.appendChild(document.createTextNode(notification.comment_text || 'Attachment added'));
-
-      const time = document.createElement('div');
-      time.className = 'notification-time';
-      time.textContent = (notification.user || 'Unknown') + ' - ' + (notification.created_at || '');
-
-      item.appendChild(top);
-      item.appendChild(subject);
-      item.appendChild(preview);
-      item.appendChild(time);
-      return item;
+    function isAfterWorkdayPromptTime() {
+      const now = new Date();
+      const cutoff = new Date(now);
+      cutoff.setHours(17, 30, 0, 0);
+      return now >= cutoff;
     }
 
-    function prependNotification(notification) {
-      if (!notificationItems || !notification || !notification.ticket_id) return;
-
-      const empty = notificationItems.querySelector('[data-notification-empty]');
-      if (empty) empty.remove();
-
-      const existing = notificationItems.querySelector('[data-ticket-id="' + notification.ticket_id + '"]');
-      if (existing) {
-        const next = existing.nextElementSibling;
-        if (next && next.classList.contains('dropdown-divider')) {
-          next.remove();
-        }
-        const currentTicketCount = Number(existing.getAttribute('data-ticket-count') || 1) + 1;
-        existing.remove();
-        const replacement = createNotificationItem(notification);
-        replacement.setAttribute('data-ticket-count', currentTicketCount);
-        const ticketBadge = replacement.querySelector('[data-ticket-notification-count]');
-        if (ticketBadge && currentTicketCount > 1) {
-          ticketBadge.textContent = currentTicketCount;
-          ticketBadge.classList.remove('d-none');
-        }
-        notificationItems.prepend(document.createElement('div'));
-        notificationItems.firstElementChild.className = 'dropdown-divider';
-        notificationItems.prepend(replacement);
+    function renderWorkdayPromptTasks(tasks) {
+      if (!workdayPromptList || !workdayPromptEmpty) return;
+      workdayPromptList.innerHTML = '';
+      if (!tasks || !tasks.length) {
+        workdayPromptEmpty.classList.remove('d-none');
         return;
       }
-
-      if (notificationItems.children.length) {
-        const divider = document.createElement('div');
-        divider.className = 'dropdown-divider';
-        notificationItems.prepend(divider);
-      }
-      notificationItems.prepend(createNotificationItem(notification));
-    }
-
-    function renderNotificationSnapshot(payload) {
-      if (!notificationItems) return;
-      const notifications = (payload && payload.notifications) || [];
-      updateNotificationCount(payload && payload.count);
-      notificationItems.innerHTML = '';
-
-      if (!notifications.length) {
-        const empty = document.createElement('span');
-        empty.className = 'dropdown-item text-muted';
-        empty.setAttribute('data-notification-empty', '');
-        empty.textContent = 'No new ticket comments.';
-        notificationItems.appendChild(empty);
-        return;
-      }
-
-      notifications.forEach(function(notification, index) {
-        if (index > 0) {
-          const divider = document.createElement('div');
-          divider.className = 'dropdown-divider';
-          notificationItems.appendChild(divider);
+      workdayPromptEmpty.classList.add('d-none');
+      tasks.forEach(function(task) {
+        const item = document.createElement('li');
+        if (task.url) {
+          const link = document.createElement('a');
+          link.href = task.url;
+          link.textContent = (task.task_no || 'Task') + ' - ' + (task.subject || 'Untitled task');
+          item.appendChild(link);
+        } else {
+          item.textContent = (task.task_no || 'Task') + ' - ' + (task.subject || 'Untitled task');
         }
-        const item = createNotificationItem(notification);
-        item.setAttribute('data-ticket-count', notification.count || 1);
-        const ticketBadge = item.querySelector('[data-ticket-notification-count]');
-        if (ticketBadge && (notification.count || 1) > 1) {
-          ticketBadge.textContent = notification.count;
-          ticketBadge.classList.remove('d-none');
-        }
-        notificationItems.appendChild(item);
+        workdayPromptList.appendChild(item);
       });
     }
 
-    const notificationSocket = io();
-    notificationSocket.on('connect', function() {
-      notificationSocket.emit('join_header_notifications');
-    });
-    notificationSocket.on('ticket_comment_notification_added', function(payload) {
-      updateNotificationCount(payload && payload.count);
-      prependNotification(payload && payload.notification);
-    });
-    notificationSocket.on('ticket_comment_notification_count', function(payload) {
-      updateNotificationCount(payload && payload.count);
-    });
-    notificationSocket.on('ticket_comment_notification_snapshot', function(payload) {
-      renderNotificationSnapshot(payload);
-    });
+    async function maybeShowWorkdayPrompt() {
+      if (!workdayPromptStateUrl || !workdayPromptModalEl || workdayPromptOpen || !isAfterWorkdayPromptTime()) {
+        return;
+      }
+      try {
+        if (localStorage.getItem(workdayPromptStorageKey())) {
+          return;
+        }
+      } catch (err) {
+      }
+
+      try {
+        const response = await fetch(workdayPromptStateUrl, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        if (!payload || !payload.count) {
+          markWorkdayPromptHandled('no-active-tasks');
+          return;
+        }
+        renderWorkdayPromptTasks(payload.tasks || []);
+        workdayPromptOpen = true;
+        if (window.jQuery && $('#workdayTaskPromptModal').modal) {
+          $('#workdayTaskPromptModal').modal({
+            backdrop: 'static',
+            keyboard: false
+          });
+          $('#workdayTaskPromptModal').modal('show');
+        }
+      } catch (err) {
+      }
+    }
+
+    if (workdayPromptYesBtn) {
+      workdayPromptYesBtn.addEventListener('click', function() {
+        markWorkdayPromptHandled('continue');
+        if (window.jQuery && $('#workdayTaskPromptModal').modal) {
+          $('#workdayTaskPromptModal').modal('hide');
+        }
+      });
+    }
+
+    if (workdayPromptNoBtn) {
+      workdayPromptNoBtn.addEventListener('click', async function() {
+        if (!workdayPromptPauseUrl) {
+          return;
+        }
+        workdayPromptNoBtn.disabled = true;
+        workdayPromptYesBtn.disabled = true;
+        try {
+          const response = await fetch(workdayPromptPauseUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+              'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: ''
+          });
+          if (response.ok) {
+            markWorkdayPromptHandled('paused');
+            window.location.reload();
+            return;
+          }
+        } catch (err) {
+        }
+        workdayPromptNoBtn.disabled = false;
+        workdayPromptYesBtn.disabled = false;
+      });
+    }
+
+    if (workdayPromptModalEl) {
+      workdayPromptModalEl.addEventListener('hidden.bs.modal', function() {
+        workdayPromptOpen = false;
+      });
+      setTimeout(maybeShowWorkdayPrompt, 1000);
+      setInterval(maybeShowWorkdayPrompt, 60000);
+    }
+
+    const notificationRoot = document.getElementById('header-client-comment-notification');
+    if (notificationRoot && window.io) {
+      const notificationLink = notificationRoot.querySelector('.nav-link');
+      const notificationHeader = notificationRoot.querySelector('[data-notification-header]');
+      const notificationItems = notificationRoot.querySelector('[data-notification-items]');
+
+      function updateNotificationCount(count) {
+        count = Number(count || 0);
+        if (notificationHeader) {
+          notificationHeader.textContent = count + ' ticket comment' + (count === 1 ? '' : 's');
+        }
+
+        let badge = notificationRoot.querySelector('[data-notification-badge]');
+        if (count > 0) {
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'badge badge-warning navbar-badge';
+            badge.setAttribute('data-notification-badge', '');
+            notificationLink.appendChild(badge);
+          }
+          badge.textContent = count;
+        } else if (badge) {
+          badge.remove();
+        }
+      }
+
+      function createNotificationItem(notification) {
+        const item = document.createElement('a');
+        item.href = notification.url || '#';
+        item.className = 'dropdown-item';
+        item.setAttribute('data-ticket-id', notification.ticket_id);
+        item.setAttribute('data-ticket-count', '1');
+
+        const top = document.createElement('div');
+        top.className = 'd-flex justify-content-between align-items-start';
+
+        const ticketNo = document.createElement('span');
+        ticketNo.className = 'notification-ticket-no';
+        ticketNo.textContent = notification.ticket_no || 'Ticket';
+        top.appendChild(ticketNo);
+
+        const ticketBadge = document.createElement('span');
+        ticketBadge.className = 'badge badge-primary d-none';
+        ticketBadge.setAttribute('data-ticket-notification-count', '');
+        top.appendChild(ticketBadge);
+
+        const subject = document.createElement('div');
+        subject.appendChild(document.createTextNode(notification.subject || ''));
+
+        const preview = document.createElement('div');
+        preview.className = 'notification-comment-preview';
+        preview.appendChild(document.createTextNode(notification.comment_text || 'Attachment added'));
+
+        const time = document.createElement('div');
+        time.className = 'notification-time';
+        time.textContent = (notification.user || 'Unknown') + ' - ' + (notification.created_at || '');
+
+        item.appendChild(top);
+        item.appendChild(subject);
+        item.appendChild(preview);
+        item.appendChild(time);
+        return item;
+      }
+
+      function prependNotification(notification) {
+        if (!notificationItems || !notification || !notification.ticket_id) return;
+
+        const empty = notificationItems.querySelector('[data-notification-empty]');
+        if (empty) empty.remove();
+
+        const existing = notificationItems.querySelector('[data-ticket-id="' + notification.ticket_id + '"]');
+        if (existing) {
+          const next = existing.nextElementSibling;
+          if (next && next.classList.contains('dropdown-divider')) {
+            next.remove();
+          }
+          const currentTicketCount = Number(existing.getAttribute('data-ticket-count') || 1) + 1;
+          existing.remove();
+          const replacement = createNotificationItem(notification);
+          replacement.setAttribute('data-ticket-count', currentTicketCount);
+          const ticketBadge = replacement.querySelector('[data-ticket-notification-count]');
+          if (ticketBadge && currentTicketCount > 1) {
+            ticketBadge.textContent = currentTicketCount;
+            ticketBadge.classList.remove('d-none');
+          }
+          notificationItems.prepend(document.createElement('div'));
+          notificationItems.firstElementChild.className = 'dropdown-divider';
+          notificationItems.prepend(replacement);
+          return;
+        }
+
+        if (notificationItems.children.length) {
+          const divider = document.createElement('div');
+          divider.className = 'dropdown-divider';
+          notificationItems.prepend(divider);
+        }
+        notificationItems.prepend(createNotificationItem(notification));
+      }
+
+      function renderNotificationSnapshot(payload) {
+        if (!notificationItems) return;
+        const notifications = (payload && payload.notifications) || [];
+        updateNotificationCount(payload && payload.count);
+        notificationItems.innerHTML = '';
+
+        if (!notifications.length) {
+          const empty = document.createElement('span');
+          empty.className = 'dropdown-item text-muted';
+          empty.setAttribute('data-notification-empty', '');
+          empty.textContent = 'No new ticket comments.';
+          notificationItems.appendChild(empty);
+          return;
+        }
+
+        notifications.forEach(function(notification, index) {
+          if (index > 0) {
+            const divider = document.createElement('div');
+            divider.className = 'dropdown-divider';
+            notificationItems.appendChild(divider);
+          }
+          const item = createNotificationItem(notification);
+          item.setAttribute('data-ticket-count', notification.count || 1);
+          const ticketBadge = item.querySelector('[data-ticket-notification-count]');
+          if (ticketBadge && (notification.count || 1) > 1) {
+            ticketBadge.textContent = notification.count;
+            ticketBadge.classList.remove('d-none');
+          }
+          notificationItems.appendChild(item);
+        });
+      }
+
+      const notificationSocket = io();
+      notificationSocket.on('connect', function() {
+        notificationSocket.emit('join_header_notifications');
+      });
+      notificationSocket.on('ticket_comment_notification_added', function(payload) {
+        updateNotificationCount(payload && payload.count);
+        prependNotification(payload && payload.notification);
+      });
+      notificationSocket.on('ticket_comment_notification_count', function(payload) {
+        updateNotificationCount(payload && payload.count);
+      });
+      notificationSocket.on('ticket_comment_notification_snapshot', function(payload) {
+        renderNotificationSnapshot(payload);
+      });
+    }
   });
 </script>
 {% block extra_js %}{% endblock %}

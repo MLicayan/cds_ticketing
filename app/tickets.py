@@ -58,6 +58,8 @@ def require_ticket_nav_access():
         "tickets.update_task_kanban_status",
         "tickets.react_task_comment",
         "tickets.create_task",
+        "tickets.task_workday_prompt_state",
+        "tickets.task_workday_prompt_pause",
     }
     if request.endpoint in task_endpoints:
         if not (current_user.has_nav_access("developer_tasks") or current_user.has_nav_access("my_tickets")):
@@ -216,6 +218,15 @@ def _task_work_session_state(task: TicketTask) -> str:
     if latest_session and latest_session.paused_at and not latest_session.ended_at:
         return "paused"
     return "not_started"
+
+
+def _current_user_working_tasks_query():
+    return TicketTask.query.filter(
+        TicketTask.assigned_engineer_id == current_user.id,
+        TicketTask.is_working.is_(True),
+        TicketTask.status != TicketStatus.CLOSED,
+        TicketTask.status != TicketStatus.CANCELLED,
+    ).order_by(TicketTask.updated_at.desc(), TicketTask.created_at.desc(), TicketTask.id.desc())
 
 
 def _scoped_ticket_query():
@@ -1968,8 +1979,6 @@ def developer_tasks():
     ).order_by(User.full_name.asc(), User.username.asc()).all()
 
     query = TicketTask.query
-    if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
-        query = query.filter(TicketTask.assigned_engineer_id == current_user.id)
 
     client_ids = [cid.strip() for cid in request.args.getlist("client_id") if cid.strip()]
     assignee_ids = [aid.strip() for aid in request.args.getlist("assignee_id") if aid.strip()]
@@ -1984,7 +1993,7 @@ def developer_tasks():
         except ValueError:
             pass
 
-    if assignee_ids and (current_user.role != UserRole.ENGINEER or _is_support_user(current_user)):
+    if assignee_ids:
         try:
             query = query.filter(TicketTask.assigned_engineer_id.in_([int(aid) for aid in assignee_ids]))
         except ValueError:
@@ -2060,19 +2069,45 @@ def developer_workload():
         TicketStatus.ON_HOLD: "On Hold",
         TicketStatus.CANCELLED: "Cancelled",
     }
-    period_raw = request.args.get("period", "30")
-    try:
-        period_days = int(period_raw)
-    except ValueError:
-        period_days = 30
-    if period_days not in (1, 7, 30, 90, 0):
-        period_days = 30
-
     now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
     today_start = datetime.combine(now.date(), time.min)
-    period_start = None if period_days == 0 else today_start if period_days == 1 else now - timedelta(days=period_days)
     today = now.date()
-    can_view_all = current_user.role == UserRole.ADMIN or _is_support_user(current_user)
+    default_date_from = today - timedelta(days=29)
+    date_from_raw = (request.args.get("date_from") or "").strip()
+    date_to_raw = (request.args.get("date_to") or "").strip()
+
+    date_from_value = date_from_raw
+    date_to_value = date_to_raw
+
+    if date_from_raw:
+        try:
+            date_from = datetime.strptime(date_from_raw, "%Y-%m-%d").date()
+        except ValueError:
+            date_from = default_date_from
+            date_from_value = default_date_from.isoformat()
+    else:
+        date_from = default_date_from
+        date_from_value = default_date_from.isoformat()
+
+    if date_to_raw:
+        try:
+            date_to = datetime.strptime(date_to_raw, "%Y-%m-%d").date()
+        except ValueError:
+            date_to = today
+            date_to_value = today.isoformat()
+    else:
+        date_to = today
+        date_to_value = today.isoformat()
+
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+        date_from_value = date_from.isoformat()
+        date_to_value = date_to.isoformat()
+
+    period_start = datetime.combine(date_from, time.min)
+    period_end = min(datetime.combine(date_to + timedelta(days=1), time.min), now)
+    period_label = f"{date_from_value} to {date_to_value}"
+    can_view_all = current_user.has_nav_access("developer_workload")
 
     developer_query = User.query.filter(User.role == UserRole.ENGINEER)
     if not can_view_all:
@@ -2094,19 +2129,19 @@ def developer_workload():
     for session in sessions:
         sessions_by_developer[session.developer_id].append(session)
 
-    def _seconds_in_window(session, window_start):
+    def _seconds_in_window(session, window_start, window_end=None):
         started_at = session.started_at
         if not started_at:
             return 0
         ended_at = session.ended_at or session.paused_at or now
         effective_start = max(started_at, window_start or started_at)
-        effective_end = min(ended_at, now)
+        effective_end = min(ended_at, window_end or now, now)
         if effective_end <= effective_start:
             return 0
         return int((effective_end - effective_start).total_seconds())
 
     def _seconds_in_period(session):
-        return _seconds_in_window(session, period_start)
+        return _seconds_in_window(session, period_start, period_end)
 
     def _seconds_today(session):
         return _seconds_in_window(session, today_start)
@@ -2134,7 +2169,9 @@ def developer_workload():
         completed_tasks = [
             task for task in developer_tasks
             if task.status in (TicketStatus.RESOLVED, TicketStatus.CLOSED)
-            and (period_start is None or (_completed_at(task) and _completed_at(task) >= period_start))
+            and _completed_at(task)
+            and _completed_at(task) >= period_start
+            and _completed_at(task) < period_end
         ]
         completed_today_tasks = [
             task for task in developer_tasks
@@ -2191,6 +2228,10 @@ def developer_workload():
                 task.created_at or datetime.min,
             ),
         )[:5]
+        recent_task_states = {
+            task.id: _task_work_session_state(task)
+            for task in recent_tasks
+        }
 
         rows.append(
             {
@@ -2214,6 +2255,7 @@ def developer_workload():
                 "completion_rate": completion_rate,
                 "workload_score": workload_score,
                 "recent_tasks": recent_tasks,
+                "recent_task_states": recent_task_states,
             }
         )
 
@@ -2234,7 +2276,9 @@ def developer_workload():
         rows=rows,
         totals=totals,
         status_labels=status_labels,
-        period_days=period_days,
+        date_from_value=date_from_value,
+        date_to_value=date_to_value,
+        period_label=period_label,
         can_view_all=can_view_all,
         now=now,
     )
@@ -3754,6 +3798,66 @@ def toggle_task_work_state(task_id):
         _emit_ticket_changed(task.parent_ticket, "updated")
     flash("Work status updated.", "success")
     return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+
+@tickets_bp.route("/tasks/workday_prompt_state")
+@login_required
+def task_workday_prompt_state():
+    if current_user.role in READ_ONLY_ROLES:
+        return jsonify({"count": 0, "tasks": []})
+
+    tasks = _current_user_working_tasks_query().limit(5).all()
+    return jsonify(
+        {
+            "count": len(tasks),
+            "tasks": [
+                {
+                    "id": task.id,
+                    "task_no": task.task_no or generate_task_ticket_no(task.id),
+                    "subject": task.subject or "Untitled task",
+                    "url": url_for("tickets.task_detail", task_id=task.id),
+                }
+                for task in tasks
+            ],
+        }
+    )
+
+
+@tickets_bp.route("/tasks/workday_prompt_pause", methods=["POST"])
+@login_required
+def task_workday_prompt_pause():
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+
+    tasks = _current_user_working_tasks_query().all()
+    paused_count = 0
+    user_name = current_user.full_name or current_user.username
+    now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    for task in tasks:
+        active_session = _active_task_work_session(task)
+        if not active_session:
+            active_session = TicketTaskWorkSession(
+                ticket_task_id=task.id,
+                developer_id=current_user.id,
+                started_at=now,
+            )
+            db.session.add(active_session)
+            db.session.flush()
+        active_session.paused_at = now
+        active_session.pause_type = "schedule"
+        active_session.pause_reason = "Paused by 5:30 PM workday prompt"
+        task.is_working = False
+        _record_task_change(task, f"Work status changed to Paused by {user_name}.")
+        paused_count += 1
+
+    if paused_count:
+        db.session.commit()
+        for task in tasks:
+            _emit_ticket_changed(task, "updated")
+    else:
+        db.session.rollback()
+
+    return jsonify({"paused_count": paused_count})
 
 
 @tickets_bp.route("/<int:ticket_id>/update-info", methods=["POST"])

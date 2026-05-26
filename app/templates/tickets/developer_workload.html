@@ -187,16 +187,13 @@
       <div>
         <strong>{{ 'All developers and support' if can_view_all else 'My workload' }}</strong>
         <div class="text-muted small">Updated {{ to_localtime(now).strftime('%Y-%m-%d %I:%M %p') }}</div>
+        <div class="text-muted small">KPI range: {{ period_label }}</div>
       </div>
       <form method="get" class="form-inline">
-        <label for="period" class="mr-2 text-muted">KPI period</label>
-        <select name="period" id="period" class="form-control" onchange="this.form.submit()">
-          <option value="1" {% if period_days == 1 %}selected{% endif %}>Today</option>
-          <option value="7" {% if period_days == 7 %}selected{% endif %}>Last 7 days</option>
-          <option value="30" {% if period_days == 30 %}selected{% endif %}>Last 30 days</option>
-          <option value="90" {% if period_days == 90 %}selected{% endif %}>Last 90 days</option>
-          <option value="0" {% if period_days == 0 %}selected{% endif %}>All time</option>
-        </select>
+        <label for="date_from" class="mr-2 text-muted">Date range</label>
+        <input type="date" name="date_from" id="date_from" class="form-control mr-2" value="{{ date_from_value }}">
+        <input type="date" name="date_to" id="date_to" class="form-control mr-2" value="{{ date_to_value }}">
+        <button type="submit" class="btn btn-primary">Apply</button>
       </form>
     </div>
   </div>
@@ -245,6 +242,7 @@
           <div class="task-mini-list mt-3">
             {% for task in row.recent_tasks %}
               {% set status_label = status_labels.get(task.status) if task.status in status_labels else (task.status.value.replace('_', ' ')|title if task.status else '') %}
+              {% set task_state = row.recent_task_states.get(task.id) %}
               <a class="task-mini" href="{{ url_for('tickets.task_detail', task_id=task.id) }}">
                 <i class="fas fa-ticket-alt text-primary"></i>
                 <span class="task-mini-main">
@@ -253,6 +251,8 @@
                 </span>
                 {% if task.is_working %}
                   <span class="badge badge-success">Working</span>
+                {% elif task_state == 'paused' %}
+                  <span class="badge badge-warning">Paused</span>
                 {% elif task.target_date and task.target_date < now.date() %}
                   <span class="badge badge-danger">Overdue</span>
                 {% endif %}
