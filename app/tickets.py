@@ -2092,6 +2092,9 @@ def developer_workload():
     default_date_from = today - timedelta(days=29)
     date_from_raw = (request.args.get("date_from") or "").strip()
     date_to_raw = (request.args.get("date_to") or "").strip()
+    view_mode = (request.args.get("view") or "card").strip().lower()
+    if view_mode not in {"card", "list"}:
+        view_mode = "card"
 
     date_from_value = date_from_raw
     date_to_value = date_to_raw
@@ -2211,7 +2214,11 @@ def developer_workload():
         ]
         high_priority_tasks = [
             task for task in active_tasks
-            if task.priority in (TicketPriority.CRITICAL, TicketPriority.HIGH)
+            if task.priority == TicketPriority.HIGH
+        ]
+        critical_priority_tasks = [
+            task for task in active_tasks
+            if task.priority == TicketPriority.CRITICAL
         ]
         open_count = sum(1 for task in developer_tasks if task.status in (TicketStatus.OPEN, TicketStatus.REOPENED))
         in_progress_count = sum(1 for task in developer_tasks if task.status == TicketStatus.IN_PROGRESS)
@@ -2230,13 +2237,7 @@ def developer_workload():
             avg_work_seconds = int(sum(seconds_by_task[task.id] for task in completed_with_work) / len(completed_with_work))
         denominator = len(active_tasks) + len(completed_tasks)
         completion_rate = round((len(completed_tasks) / denominator) * 100) if denominator else 0
-        workload_score = (
-            len(active_tasks)
-            + (len(high_priority_tasks) * 2)
-            + len(overdue_tasks)
-            + (len(working_tasks) * 2)
-            + len(paused_tasks)
-        )
+        workload_score = len(active_tasks)
         recent_tasks = sorted(
             active_tasks,
             key=lambda task: (
@@ -2244,7 +2245,7 @@ def developer_workload():
                 task.target_date or date.max,
                 task.created_at or datetime.min,
             ),
-        )[:5]
+        )
         recent_task_states = {
             task.id: _task_work_session_state(task)
             for task in recent_tasks
@@ -2264,6 +2265,7 @@ def developer_workload():
                 "overdue": len(overdue_tasks),
                 "due_today": len(due_today_tasks),
                 "high_priority": len(high_priority_tasks),
+                "critical_priority": len(critical_priority_tasks),
                 "total_work_seconds": total_work_seconds,
                 "total_work_label": _format_duration(total_work_seconds),
                 "today_work_seconds": today_work_seconds,
@@ -2296,6 +2298,7 @@ def developer_workload():
         date_from_value=date_from_value,
         date_to_value=date_to_value,
         period_label=period_label,
+        view_mode=view_mode,
         can_view_all=can_view_all,
         now=now,
     )
@@ -2355,17 +2358,9 @@ def detail(ticket_id):
                 User.role == UserRole.ENGINEER
             ).order_by(User.full_name.asc()).all()
         task_engineers_query = User.query.filter(
-            User.role == UserRole.ENGINEER
+            User.role == UserRole.ENGINEER,
+            db.func.lower(User.user_type).in_(("it", "support")),
         )
-        allowed_task_assignee_filters = [
-            db.func.lower(User.user_type) == "it",
-            db.func.lower(User.user_type) == "support",
-        ]
-        if current_user.role == UserRole.ENGINEER:
-            allowed_task_assignee_filters.append(User.id == current_user.id)
-        if is_task_ticket and ticket.assigned_engineer_id:
-            allowed_task_assignee_filters.append(User.id == ticket.assigned_engineer_id)
-        task_engineers_query = task_engineers_query.filter(db.or_(*allowed_task_assignee_filters))
         task_engineers = task_engineers_query.order_by(User.full_name.asc(), User.username.asc()).all()
 
     ticket_tasks = TicketTask.query.filter(TicketTask.ticket_id == ticket.id).order_by(
@@ -2697,7 +2692,7 @@ def task_detail(task_id):
 
     task_engineers = User.query.filter(
         User.role == UserRole.ENGINEER,
-        User.user_type == "IT"
+        db.func.lower(User.user_type).in_(("it", "support")),
     ).order_by(User.full_name.asc(), User.username.asc()).all()
     engineers = task_engineers
 

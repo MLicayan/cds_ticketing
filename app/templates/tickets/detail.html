@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Ticket {{ ticket.ticket_no }} - Instrument Monitoring{% endblock %}
+{% block extra_head_js %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
+{% endblock %}
 {% block page_header %}
 <div class="row mb-2"> 
   <div class="col-sm-6">
@@ -531,6 +534,22 @@
 .ticket-edit-modal .form-control,
 .ticket-edit-modal .form-control-sm {
   border-radius: 10px;
+}
+.ticket-edit-modal .select2-container {
+  width: 100% !important;
+}
+.ticket-edit-modal .select2-container--default .select2-selection--single {
+  border: 1px solid #ced4da;
+  border-radius: 10px;
+  min-height: 44px;
+}
+.ticket-edit-modal .select2-container--default .select2-selection--single .select2-selection__rendered {
+  line-height: 42px;
+  padding-left: 12px;
+}
+.ticket-edit-modal .select2-container--default .select2-selection--single .select2-selection__arrow {
+  height: 42px;
+  right: 8px;
 }
 
 .ticket-edit-modal .modal-footer {
@@ -1374,6 +1393,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     var reporterIsClient = {{ 'true' if ticket.reported_by and ticket.reported_by.role.value in ['client', 'client_admin'] else 'false' }};
@@ -1428,6 +1448,7 @@
     var startWorkTargetDate = document.getElementById('start_work_target_date');
     var doneWorkForm = document.querySelector('[data-done-work-form]');
     var confirmDoneWorkBtn = document.getElementById('confirmDoneWorkBtn');
+    var engineerSelect = document.getElementById('engineer_id');
     var suppressRealtimeReloadUntil = 0;
     var pendingRealtimeReload = null;
     var activePreviewImage = null;
@@ -1436,6 +1457,14 @@
     var currentImageOffsetX = 0;
     var currentImageOffsetY = 0;
     var isDraggingPreviewImage = false;
+
+    if (engineerSelect && window.$ && $.fn.select2) {
+      $('#engineer_id').select2({
+        width: '100%',
+        dropdownParent: $('#updateInfoModal'),
+        minimumResultsForSearch: 0
+      });
+    }
     var dragPreviewStartX = 0;
     var dragPreviewStartY = 0;
     var dragPreviewOriginX = 0;

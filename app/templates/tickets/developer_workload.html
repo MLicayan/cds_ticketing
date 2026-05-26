@@ -44,6 +44,16 @@
     grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
     gap: 14px;
   }
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .view-toggle-group .btn {
+    min-width: 90px;
+  }
   .developer-card {
     border: 1px solid #dde6f2;
     border-radius: 8px;
@@ -56,6 +66,9 @@
     gap: 12px;
     padding: 16px;
     border-bottom: 1px solid #edf2f7;
+  }
+  .developer-card-head.is-collapsed {
+    border-bottom: 0;
   }
   .developer-avatar {
     width: 44px;
@@ -72,7 +85,6 @@
   .developer-name { font-weight: 800; margin-bottom: 2px; }
   .developer-role { color: #6b7b90; font-size: 13px; }
   .load-pill {
-    margin-left: auto;
     border-radius: 999px;
     padding: 5px 10px;
     background: #f1f5f9;
@@ -83,6 +95,34 @@
   }
   .load-pill.hot { background: #fff1f2; color: #be123c; }
   .load-pill.busy { background: #fff7ed; color: #c2410c; }
+  .card-head-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .collapse-toggle {
+    border: 0;
+    background: transparent;
+    color: #5b6b82;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  }
+  .collapse-toggle i {
+    transition: transform 0.2s ease;
+  }
+  .collapse-toggle:hover {
+    background: #eef4ff;
+    color: #0d6efd;
+  }
+  .collapse-toggle[aria-expanded="true"] i {
+    transform: rotate(90deg);
+  }
   .metric-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -124,6 +164,9 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    padding-right: 4px;
   }
   .task-mini {
     display: flex;
@@ -157,6 +200,93 @@
     color: #64748b;
     font-size: 12px;
   }
+  .workload-list-card {
+    border: 1px solid #dde6f2;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #fff;
+  }
+  .workload-list-card .table {
+    margin-bottom: 0;
+  }
+  .workload-list-card th {
+    white-space: nowrap;
+    font-size: 13px;
+  }
+  .workload-list-card td {
+    vertical-align: top;
+    font-size: 14px;
+  }
+  .workload-list-card .summary-row {
+    cursor: pointer;
+  }
+  .workload-list-card .summary-row:hover {
+    background: #f8fbff;
+  }
+  .workload-list-card .detail-row {
+    background: #fbfdff;
+  }
+  .workload-list-card .detail-cell {
+    padding: 0;
+  }
+  .list-detail-panel {
+    padding: 16px 18px;
+    border-top: 1px solid #edf2f7;
+  }
+  .list-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px 16px;
+    margin-bottom: 14px;
+  }
+  .list-detail-item span {
+    display: block;
+    color: #64748b;
+    font-size: 12px;
+  }
+  .list-detail-item strong {
+    color: #0f2544;
+    font-size: 18px;
+  }
+  .list-row-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .list-row-head .collapse-toggle {
+    width: 28px;
+    height: 28px;
+    flex: 0 0 auto;
+  }
+  .developer-cell {
+    min-width: 200px;
+  }
+  .developer-cell strong {
+    display: block;
+    color: #0f2544;
+  }
+  .developer-cell small {
+    color: #64748b;
+  }
+  .list-task-links {
+    min-width: 270px;
+  }
+  .list-task-links a {
+    display: block;
+    color: #1f334d;
+    text-decoration: none;
+    margin-bottom: 6px;
+  }
+  .list-task-links a:last-child {
+    margin-bottom: 0;
+  }
+  .list-task-links a:hover {
+    color: #0d6efd;
+  }
+  .list-task-meta {
+    color: #64748b;
+    font-size: 12px;
+  }
   @media (max-width: 992px) {
     .workload-kpis { grid-template-columns: repeat(2, 1fr); }
   }
@@ -164,6 +294,10 @@
     .workload-kpis, .developer-grid { grid-template-columns: 1fr; }
     .metric-grid { grid-template-columns: repeat(2, 1fr); }
     .metric-box:nth-child(2) { border-right: 0; }
+    .toolbar-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
   }
 </style>
 {% endblock %}
@@ -189,12 +323,23 @@
         <div class="text-muted small">Updated {{ to_localtime(now).strftime('%Y-%m-%d %I:%M %p') }}</div>
         <div class="text-muted small">KPI range: {{ period_label }}</div>
       </div>
-      <form method="get" class="form-inline">
-        <label for="date_from" class="mr-2 text-muted">Date range</label>
-        <input type="date" name="date_from" id="date_from" class="form-control mr-2" value="{{ date_from_value }}">
-        <input type="date" name="date_to" id="date_to" class="form-control mr-2" value="{{ date_to_value }}">
-        <button type="submit" class="btn btn-primary">Apply</button>
-      </form>
+      <div class="toolbar-actions">
+        <div class="btn-group view-toggle-group" role="group" aria-label="View mode">
+          <a href="{{ url_for('tickets.developer_workload', date_from=date_from_value, date_to=date_to_value, view='card') }}" class="btn btn-outline-primary {% if view_mode == 'card' %}active{% endif %}">
+            <i class="fas fa-th-large mr-1"></i> Card
+          </a>
+          <a href="{{ url_for('tickets.developer_workload', date_from=date_from_value, date_to=date_to_value, view='list') }}" class="btn btn-outline-primary {% if view_mode == 'list' %}active{% endif %}">
+            <i class="fas fa-list mr-1"></i> List
+          </a>
+        </div>
+        <form method="get" class="form-inline">
+          <input type="hidden" name="view" value="{{ view_mode }}">
+          <label for="date_from" class="mr-2 text-muted">Date range</label>
+          <input type="date" name="date_from" id="date_from" class="form-control mr-2" value="{{ date_from_value }}">
+          <input type="date" name="date_to" id="date_to" class="form-control mr-2" value="{{ date_to_value }}">
+          <button type="submit" class="btn btn-primary">Apply</button>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -207,67 +352,219 @@
     <div class="workload-kpi"><span>Tracked Work</span><strong>{{ totals.work_label }}</strong></div>
   </div>
 
-  <div class="developer-grid">
-    {% for row in rows %}
-      {% set dev = row.developer %}
-      {% set name = dev.full_name or dev.username %}
-      {% set initials = (name.split()[0][0] ~ (name.split()[1][0] if name.split()|length > 1 else name.split()[0][1:2]))|upper %}
-      {% set load_class = 'hot' if row.workload_score >= 12 else 'busy' if row.workload_score >= 7 else '' %}
-      <div class="developer-card">
-        <div class="developer-card-head">
-          <div class="developer-avatar">{{ initials }}</div>
-          <div>
-            <div class="developer-name">{{ name }}</div>
-            <div class="developer-role">{{ dev.user_type or 'Developer' }}</div>
-          </div>
-          <div class="load-pill {{ load_class }}">Load {{ row.workload_score }}</div>
-        </div>
-        <div class="metric-grid">
-          <div class="metric-box"><span>Active</span><strong>{{ row.active }}</strong></div>
-          <div class="metric-box"><span>Working</span><strong>{{ row.working }}</strong></div>
-          <div class="metric-box"><span>Paused</span><strong>{{ row.paused }}</strong></div>
-          <div class="metric-box"><span>Overdue</span><strong>{{ row.overdue }}</strong></div>
-        </div>
-        <div class="developer-body">
-          <div class="work-row"><span>Completion rate</span><strong>{{ row.completion_rate }}%</strong></div>
-          <div class="progress">
-            <div class="progress-bar bg-primary" role="progressbar" style="width: {{ row.completion_rate }}%" aria-valuenow="{{ row.completion_rate }}" aria-valuemin="0" aria-valuemax="100"></div>
-          </div>
-          <div class="work-row"><span>Completed this period</span><strong>{{ row.completed }}</strong></div>
-          <div class="work-row"><span>Tracked work time</span><strong>{{ row.total_work_label }}</strong></div>
-          <div class="work-row"><span>Avg completed task time</span><strong>{{ row.avg_work_label }}</strong></div>
-          <div class="work-row"><span>High / Critical active</span><strong>{{ row.high_priority }}</strong></div>
-          <div class="work-row"><span>Due today</span><strong>{{ row.due_today }}</strong></div>
-
-          <div class="task-mini-list mt-3">
-            {% for task in row.recent_tasks %}
-              {% set status_label = status_labels.get(task.status) if task.status in status_labels else (task.status.value.replace('_', ' ')|title if task.status else '') %}
-              {% set task_state = row.recent_task_states.get(task.id) %}
-              <a class="task-mini" href="{{ url_for('tickets.task_detail', task_id=task.id) }}">
-                <i class="fas fa-ticket-alt text-primary"></i>
-                <span class="task-mini-main">
-                  <span class="task-mini-title">{{ task.task_no }} - {{ task.subject }}</span>
-                  <span class="task-mini-meta">{{ status_label }}{% if task.target_date %} - Target {{ task.target_date.strftime('%Y-%m-%d') }}{% endif %}</span>
-                </span>
-                {% if task.is_working %}
-                  <span class="badge badge-success">Working</span>
-                {% elif task_state == 'paused' %}
-                  <span class="badge badge-warning">Paused</span>
-                {% elif task.target_date and task.target_date < now.date() %}
-                  <span class="badge badge-danger">Overdue</span>
-                {% endif %}
-              </a>
+  {% if view_mode == 'list' %}
+    <div class="workload-list-card">
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>Developer</th>
+              <th>Load</th>
+              <th>Working</th>
+              <th>Paused</th>
+              <th>Overdue</th>
+              <th>Completed</th>
+              <th>Tracked Work</th>
+              <th>Avg Task Time</th>
+              <th>Recent Tasks</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              {% set dev = row.developer %}
+              {% set name = dev.full_name or dev.username %}
+              {% set load_class = 'hot' if row.workload_score >= 12 else 'busy' if row.workload_score >= 7 else '' %}
+              {% set collapse_id = 'developer-workload-list-' ~ dev.id %}
+              <tr class="summary-row" data-toggle="collapse" data-target="#{{ collapse_id }}" aria-expanded="false" aria-controls="{{ collapse_id }}">
+                <td class="developer-cell">
+                  <div class="list-row-head">
+                    <button type="button" class="collapse-toggle" data-toggle="collapse" data-target="#{{ collapse_id }}" aria-expanded="false" aria-controls="{{ collapse_id }}">
+                      <i class="fas fa-chevron-right"></i>
+                    </button>
+                    <div>
+                      <strong>{{ name }}</strong>
+                      <small>{{ dev.user_type or 'Developer' }}</small>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="load-pill {{ load_class }}">Load {{ row.workload_score }}</span></td>
+                <td>{{ row.working }}</td>
+                <td>{{ row.paused }}</td>
+                <td>{{ row.overdue }}</td>
+                <td>{{ row.completed }}</td>
+                <td>{{ row.total_work_label }}</td>
+                <td>{{ row.avg_work_label }}</td>
+                <td class="list-task-links text-muted small">
+                  {{ row.recent_tasks|length }} active task{{ '' if row.recent_tasks|length == 1 else 's' }}
+                </td>
+              </tr>
+              <tr class="detail-row">
+                <td colspan="9" class="detail-cell">
+                  <div id="{{ collapse_id }}" class="collapse">
+                    <div class="list-detail-panel">
+                      <div class="list-detail-grid">
+                        <div class="list-detail-item"><span>Completion Rate</span><strong>{{ row.completion_rate }}%</strong></div>
+                        <div class="list-detail-item"><span>Completed This Period</span><strong>{{ row.completed }}</strong></div>
+                        <div class="list-detail-item"><span>High Active</span><strong>{{ row.high_priority }}</strong></div>
+                        <div class="list-detail-item"><span>Critical Active</span><strong>{{ row.critical_priority }}</strong></div>
+                        <div class="list-detail-item"><span>Due Today</span><strong>{{ row.due_today }}</strong></div>
+                      </div>
+                      <div class="task-mini-list">
+                        {% for task in row.recent_tasks %}
+                          {% set status_label = status_labels.get(task.status) if task.status in status_labels else (task.status.value.replace('_', ' ')|title if task.status else '') %}
+                          {% set task_state = row.recent_task_states.get(task.id) %}
+                          <a class="task-mini" href="{{ url_for('tickets.task_detail', task_id=task.id) }}">
+                            <i class="fas fa-ticket-alt text-primary"></i>
+                            <span class="task-mini-main">
+                              <span class="task-mini-title">{{ task.task_no }} - {{ task.subject }}</span>
+                              <span class="task-mini-meta">{{ status_label }}{% if task.target_date %} - Target {{ task.target_date.strftime('%Y-%m-%d') }}{% endif %}</span>
+                            </span>
+                            {% if task.is_working %}
+                              <span class="badge badge-success">Working</span>
+                            {% elif task_state == 'paused' %}
+                              <span class="badge badge-warning">Paused</span>
+                            {% elif task.target_date and task.target_date < now.date() %}
+                              <span class="badge badge-danger">Overdue</span>
+                            {% endif %}
+                          </a>
+                        {% else %}
+                          <div class="text-muted small">No active tasks.</div>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
             {% else %}
-              <div class="text-muted small">No active tasks.</div>
+              <tr>
+                <td colspan="9" class="text-muted text-center">No developers found for this view.</td>
+              </tr>
             {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% else %}
+    <div class="developer-grid">
+      {% for row in rows %}
+        {% set dev = row.developer %}
+        {% set name = dev.full_name or dev.username %}
+        {% set initials = (name.split()[0][0] ~ (name.split()[1][0] if name.split()|length > 1 else name.split()[0][1:2]))|upper %}
+        {% set load_class = 'hot' if row.workload_score >= 12 else 'busy' if row.workload_score >= 7 else '' %}
+        {% set collapse_id = 'developer-workload-card-' ~ dev.id %}
+        <div class="developer-card">
+          <div class="developer-card-head is-collapsed" data-card-head>
+            <div class="developer-avatar">{{ initials }}</div>
+            <div>
+              <div class="developer-name">{{ name }}</div>
+              <div class="developer-role">{{ dev.user_type or 'Developer' }}</div>
+            </div>
+            <div class="card-head-actions">
+              <div class="load-pill {{ load_class }}">Load {{ row.workload_score }}</div>
+              <button type="button" class="collapse-toggle" data-toggle="collapse" data-target="#{{ collapse_id }}" aria-expanded="false" aria-controls="{{ collapse_id }}">
+                <i class="fas fa-chevron-right"></i>
+              </button>
+            </div>
+          </div>
+          <div id="{{ collapse_id }}" class="collapse">
+            <div class="metric-grid">
+              <div class="metric-box"><span>Active</span><strong>{{ row.active }}</strong></div>
+              <div class="metric-box"><span>Working</span><strong>{{ row.working }}</strong></div>
+              <div class="metric-box"><span>Paused</span><strong>{{ row.paused }}</strong></div>
+              <div class="metric-box"><span>Overdue</span><strong>{{ row.overdue }}</strong></div>
+            </div>
+            <div class="developer-body">
+              <div class="work-row"><span>Completion rate</span><strong>{{ row.completion_rate }}%</strong></div>
+              <div class="progress">
+                <div class="progress-bar bg-primary" role="progressbar" style="width: {{ row.completion_rate }}%" aria-valuenow="{{ row.completion_rate }}" aria-valuemin="0" aria-valuemax="100"></div>
+              </div>
+              <div class="work-row"><span>Completed this period</span><strong>{{ row.completed }}</strong></div>
+              <div class="work-row"><span>Tracked work time</span><strong>{{ row.total_work_label }}</strong></div>
+              <div class="work-row"><span>Avg completed task time</span><strong>{{ row.avg_work_label }}</strong></div>
+              <div class="work-row"><span>High active</span><strong>{{ row.high_priority }}</strong></div>
+              <div class="work-row"><span>Critical active</span><strong>{{ row.critical_priority }}</strong></div>
+              <div class="work-row"><span>Due today</span><strong>{{ row.due_today }}</strong></div>
+
+              <div class="task-mini-list mt-3">
+                {% for task in row.recent_tasks %}
+                  {% set status_label = status_labels.get(task.status) if task.status in status_labels else (task.status.value.replace('_', ' ')|title if task.status else '') %}
+                  {% set task_state = row.recent_task_states.get(task.id) %}
+                  <a class="task-mini" href="{{ url_for('tickets.task_detail', task_id=task.id) }}">
+                    <i class="fas fa-ticket-alt text-primary"></i>
+                    <span class="task-mini-main">
+                      <span class="task-mini-title">{{ task.task_no }} - {{ task.subject }}</span>
+                      <span class="task-mini-meta">{{ status_label }}{% if task.target_date %} - Target {{ task.target_date.strftime('%Y-%m-%d') }}{% endif %}</span>
+                    </span>
+                    {% if task.is_working %}
+                      <span class="badge badge-success">Working</span>
+                    {% elif task_state == 'paused' %}
+                      <span class="badge badge-warning">Paused</span>
+                    {% elif task.target_date and task.target_date < now.date() %}
+                      <span class="badge badge-danger">Overdue</span>
+                    {% endif %}
+                  </a>
+                {% else %}
+                  <div class="text-muted small">No active tasks.</div>
+                {% endfor %}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    {% else %}
-      <div class="card">
-        <div class="card-body text-muted">No developers found for this view.</div>
-      </div>
-    {% endfor %}
-  </div>
+      {% else %}
+        <div class="card">
+          <div class="card-body text-muted">No developers found for this view.</div>
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
 </div>
+{% endblock %}
+{% block extra_js %}
+{{ super() }}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.workload-list-card .summary-row').forEach(function(row) {
+      row.addEventListener('click', function(event) {
+        if (event.target.closest('a, button')) {
+          return;
+        }
+        const targetSelector = row.getAttribute('data-target');
+        const target = targetSelector ? document.querySelector(targetSelector) : null;
+        if (!target) {
+          return;
+        }
+        if (window.jQuery && $(target).collapse) {
+          $(target).collapse('toggle');
+        }
+      });
+    });
+
+    document.querySelectorAll('.workload-list-card .collapse-toggle').forEach(function(toggle) {
+      toggle.addEventListener('click', function(event) {
+        event.stopPropagation();
+      });
+    });
+
+    document.querySelectorAll('.collapse').forEach(function(panel) {
+      panel.addEventListener('shown.bs.collapse', function() {
+        document.querySelectorAll('[aria-controls="' + panel.id + '"]').forEach(function(toggle) {
+          toggle.setAttribute('aria-expanded', 'true');
+        });
+        const head = panel.closest('.developer-card') ? panel.closest('.developer-card').querySelector('[data-card-head]') : null;
+        if (head) {
+          head.classList.remove('is-collapsed');
+        }
+      });
+      panel.addEventListener('hidden.bs.collapse', function() {
+        document.querySelectorAll('[aria-controls="' + panel.id + '"]').forEach(function(toggle) {
+          toggle.setAttribute('aria-expanded', 'false');
+        });
+        const head = panel.closest('.developer-card') ? panel.closest('.developer-card').querySelector('[data-card-head]') : null;
+        if (head) {
+          head.classList.add('is-collapsed');
+        }
+      });
+    });
+  });
+</script>
 {% endblock %}

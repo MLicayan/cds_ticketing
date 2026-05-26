@@ -1140,11 +1140,9 @@ $(function() {
   var filterToggleBtn = document.querySelector('[data-target="#advancedFilterPanel"]');
 
   if (advancedFilterPanel) {
-    if (localStorage.getItem('ticketsFilterPanelOpen') === '1') {
-      advancedFilterPanel.classList.add('show');
-      if (filterToggleBtn) {
-        filterToggleBtn.setAttribute('aria-expanded', 'true');
-      }
+    advancedFilterPanel.classList.remove('show');
+    if (filterToggleBtn) {
+      filterToggleBtn.setAttribute('aria-expanded', 'false');
     }
 
     if (window.$) {
