@@ -538,9 +538,12 @@
           {% endif %}
           <th>Instrument / App</th>
           <th>Client</th>
-          <th>Date Needed</th>
           <th>Turnaround (hrs)</th>
           <th>Created</th>
+          <th>Date Needed</th>
+          {% if is_task_list %}
+            <th>Fix/Completed At</th>
+          {% endif %}
         </tr>
       </thead>
 
@@ -630,13 +633,6 @@
           </td>
           <td>{{ t.client.name }}</td>
           <td>
-            {% if t.date_needed %}
-              {{ t.date_needed.strftime('%Y-%m-%d') }}
-            {% else %}
-              <span class="text-muted">Not set</span>
-            {% endif %}
-          </td>
-          <td>
             {% if t.closed_at and t.created_at %}
               {% set tat_hours = ((t.closed_at - t.created_at).total_seconds() / 3600) %}
               {{ tat_hours|round(2) }}
@@ -645,6 +641,22 @@
             {% endif %}
           </td>
           <td>{{ to_localtime(t.created_at).strftime('%Y-%m-%d %H:%M') if t.created_at else '' }}</td>
+          <td>
+            {% if t.date_needed %}
+              {{ t.date_needed.strftime('%Y-%m-%d') }}
+            {% else %}
+              <span class="text-muted">Not set</span>
+            {% endif %}
+          </td>
+          {% if is_task_list %}
+            <td>
+              {% if t.status == TicketStatus.RESOLVED and t.closed_at %}
+                {{ to_localtime(t.closed_at).strftime('%Y-%m-%d %H:%M') }}
+              {% else %}
+                <span class="text-muted">â€”</span>
+              {% endif %}
+            </td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
@@ -772,7 +784,7 @@ $(function() {
 
     var values = Array.from(picker.selectedOptions).map(function(opt) {
       return opt.value;
-    });
+    }).filter(Boolean);
 
     values.forEach(function(val) {
       var input = document.createElement('input');
@@ -1201,13 +1213,21 @@ $(function() {
     if (window.$ && $('#picker_client_id').length) {
       $('#picker_client_id').select2({
         width: '100%',
-        placeholder: 'Select client(s)'
+        placeholder: 'All',
+        closeOnSelect: false,
+        minimumResultsForSearch: 0
       }).on('change', function() {
         syncClientHiddenInputs();
         filterInstruments();
         filterApps();
         updateFilterChips();
         autoSubmitFilters();
+      }).on('select2:open', function() {
+        var searchField = document.querySelector('.select2-container--open .select2-search__field');
+        if (searchField) {
+          searchField.placeholder = 'Search clients...';
+          searchField.focus();
+        }
       });
     }
 

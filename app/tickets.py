@@ -13,7 +13,7 @@ from datetime import datetime, date, timedelta, time
 from flask import Blueprint, render_template, request, redirect, url_for, flash, Response, current_app, abort, jsonify
 from flask_login import login_required, current_user
 
-from . import APP_TIMEZONE, db, socketio, to_localtime
+from . import APP_TIMEZONE, db, local_naive_to_localtime, socketio, to_localtime, utc_naive_to_localtime
 from .models import (
     Ticket,
     Client,
@@ -122,6 +122,14 @@ def _ensure_client_ticket_access(ticket: Ticket) -> None:
     elif current_user.role == UserRole.CLIENT_ADMIN:
         if ticket.client_id != current_user.client_id:
             abort(403)
+
+
+def _timeline_timestamp(value, storage="guess"):
+    if storage == "local":
+        return local_naive_to_localtime(value)
+    if storage == "utc":
+        return utc_naive_to_localtime(value)
+    return to_localtime(value)
 
 
 def _ensure_ticket_not_closed(ticket: Ticket):
@@ -1005,7 +1013,10 @@ def _render_ticket_index(my_tickets_only=False):
         except ValueError:
             pass
 
-    tickets = query.order_by(list_model.created_at.desc()).all()
+    if my_tickets_only:
+        tickets = query.order_by(list_model.created_at.desc()).all()
+    else:
+        tickets = query.order_by(list_model.created_at.asc()).all()
     now = datetime.now(APP_TIMEZONE)
     current_date = now.strftime("%Y-%m-%d")
 
@@ -1014,6 +1025,7 @@ def _render_ticket_index(my_tickets_only=False):
         tickets=tickets,
         now=now,
         current_date=current_date,
+        TicketStatus=TicketStatus,
         status_labels=status_labels,
         clients=clients,
         instruments=instruments,
@@ -1917,6 +1929,7 @@ def create_task():
             task_target_date = None
             task_date_needed = None
 
+        created_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
         task_ticket = TicketTask(
             task_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
             ticket_id=task_ticket_id,
@@ -1935,6 +1948,8 @@ def create_task():
             is_working=False,
             target_date=task_target_date,
             date_needed=task_date_needed,
+            created_at=created_at,
+            updated_at=created_at,
         )
         db.session.add(task_ticket)
         db.session.flush()
@@ -2415,7 +2430,7 @@ def detail(ticket_id):
     timeline_events = []
     timeline_event_seq = 0
 
-    def add_event(timestamp, title, description, kind="update"):
+    def add_event(timestamp, title, description, kind="update", storage="guess"):
         nonlocal timeline_event_seq
         if not timestamp:
             return
@@ -2423,6 +2438,7 @@ def detail(ticket_id):
         timeline_events.append(
             {
                 "timestamp": timestamp,
+                "display_timestamp": _timeline_timestamp(timestamp, storage=storage),
                 "title": title,
                 "description": description,
                 "type": kind,
@@ -2535,7 +2551,7 @@ def detail(ticket_id):
         return redirect(f"{url_for('tickets.detail', ticket_id=ticket.id)}#ticket-comments-card")
 
     reported_by_name = ticket.reported_by.full_name or ticket.reported_by.username
-    add_event(ticket.created_at, "Ticket created", f"Reported by {reported_by_name}.", "created")
+    add_event(ticket.created_at, "Ticket created", f"Reported by {reported_by_name}.", "created", storage="local")
 
     for c in comments_raw:
         if not _is_change_comment(c.comment_text):
@@ -2548,6 +2564,7 @@ def detail(ticket_id):
             f"Updated by {commenter}",
             c.comment_text,
             "update",
+            storage="utc",
         )
 
     for att in sorted(
@@ -2562,28 +2579,31 @@ def detail(ticket_id):
             f"Attachment added by {sender}",
             att.original_filename,
             "attachment",
+            storage="utc",
         )
 
     for log in ticket.service_logs:
         visit_dt = None
         if log.visit_date:
             visit_dt = datetime.combine(log.visit_date, log.start_time or time(12, 0))
+            visit_dt_storage = "local"
         else:
             visit_dt = log.created_at
+            visit_dt_storage = "utc"
 
         engineer_name = log.engineer.full_name or log.engineer.username
         log_type = (log.service_type or "Service").title()
         description = f"{engineer_name} recorded a {log_type.lower()} visit."
-        add_event(visit_dt, f"Service log ({log_type})", description, "log")
+        add_event(visit_dt, f"Service log ({log_type})", description, "log", storage=visit_dt_storage)
 
     if ticket.status == TicketStatus.CLOSED:
-        add_event(ticket.closed_at, "Ticket closed", "Marked as closed.", "closed")
+        add_event(ticket.closed_at, "Ticket closed", "Marked as closed.", "closed", storage="local")
     elif ticket.status == TicketStatus.RESOLVED:
-        add_event(ticket.updated_at, "Ticket resolved", "Awaiting confirmation.", "resolved")
+        add_event(ticket.updated_at, "Ticket resolved", "Awaiting confirmation.", "resolved", storage="local")
 
     timeline_events.sort(
         key=lambda e: (
-            to_localtime(e["timestamp"]).replace(tzinfo=None) if e.get("timestamp") else datetime.min,
+            e["display_timestamp"].replace(tzinfo=None) if e.get("display_timestamp") else datetime.min,
             e.get("sort_seq", 0),
         ),
     )
@@ -2636,6 +2656,7 @@ def detail(ticket_id):
         task_work_session_state=None,
         TicketStatus=TicketStatus,
         default_target_date=today_str,
+        ticket_created_display_at=local_naive_to_localtime(ticket.created_at),
         timeline_events=timeline_events,
         comment_attachments=comment_attachments,
         remaining_attachments=remaining_attachments,
@@ -2713,6 +2734,7 @@ def task_detail(task_id):
                 did_something = True
 
         if did_something:
+            task.updated_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
             db.session.commit()
             _emit_ticket_changed(task, "commented" if new_comment else "updated")
             if wants_json and new_comment:
@@ -2743,7 +2765,7 @@ def task_detail(task_id):
     timeline_events = []
     timeline_event_seq = 0
 
-    def add_event(timestamp, title, description, kind="update"):
+    def add_event(timestamp, title, description, kind="update", storage="guess"):
         nonlocal timeline_event_seq
         if not timestamp:
             return
@@ -2751,6 +2773,7 @@ def task_detail(task_id):
         timeline_events.append(
             {
                 "timestamp": timestamp,
+                "display_timestamp": _timeline_timestamp(timestamp, storage=storage),
                 "title": title,
                 "description": description,
                 "type": kind,
@@ -2771,13 +2794,13 @@ def task_detail(task_id):
         return abs((att.uploaded_at - comment.created_at).total_seconds()) <= 10
 
     reported_by_name = task.reported_by.full_name or task.reported_by.username
-    add_event(task.created_at, "Task created", f"Created by {reported_by_name}.", "created")
+    add_event(task.created_at, "Task created", f"Created by {reported_by_name}.", "created", storage="local")
 
     for c in comments_raw:
         if not _is_change_comment(c.comment_text):
             continue
         commenter = c.user.full_name or c.user.username
-        add_event(c.created_at, f"Updated by {commenter}", c.comment_text, "update")
+        add_event(c.created_at, f"Updated by {commenter}", c.comment_text, "update", storage="utc")
 
     for att in sorted(
         task.attachments,
@@ -2786,16 +2809,16 @@ def task_detail(task_id):
         if _is_initial_attachment(att):
             continue
         sender = att.user.full_name or att.user.username if att.user else "Unknown"
-        add_event(att.uploaded_at, f"Attachment added by {sender}", att.original_filename, "attachment")
+        add_event(att.uploaded_at, f"Attachment added by {sender}", att.original_filename, "attachment", storage="utc")
 
     if task.status == TicketStatus.CLOSED:
-        add_event(task.closed_at, "Task closed", "Marked as closed.", "closed")
+        add_event(task.closed_at, "Task closed", "Marked as closed.", "closed", storage="local")
     elif task.status == TicketStatus.RESOLVED:
-        add_event(task.updated_at, "Task resolved", "Awaiting confirmation.", "resolved")
+        add_event(task.updated_at, "Task resolved", "Awaiting confirmation.", "resolved", storage="local")
 
     timeline_events.sort(
         key=lambda e: (
-            to_localtime(e["timestamp"]).replace(tzinfo=None) if e.get("timestamp") else datetime.min,
+            e["display_timestamp"].replace(tzinfo=None) if e.get("display_timestamp") else datetime.min,
             e.get("sort_seq", 0),
         ),
     )
@@ -2846,6 +2869,9 @@ def task_detail(task_id):
         task_work_session_state=_task_work_session_state(task),
         TicketStatus=TicketStatus,
         default_target_date=today_str,
+        ticket_created_display_at=local_naive_to_localtime(task.created_at),
+        ticket_updated_display_at=local_naive_to_localtime(task.updated_at),
+        ticket_closed_display_at=local_naive_to_localtime(task.closed_at),
         timeline_events=timeline_events,
         comment_attachments=comment_attachments,
         remaining_attachments=remaining_attachments,
@@ -3026,6 +3052,7 @@ def create_tasks(ticket_id):
 
     created_task_tickets = []
     for payload in task_payloads:
+        created_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
         task_ticket = TicketTask(
             task_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
             ticket_id=ticket.id,
@@ -3047,6 +3074,8 @@ def create_tasks(ticket_id):
             is_working=False,
             target_date=ticket.target_date,
             date_needed=ticket.date_needed,
+            created_at=created_at,
+            updated_at=created_at,
         )
         db.session.add(task_ticket)
         db.session.flush()
@@ -3512,6 +3541,7 @@ def resolve_decision(ticket_id):
             old_task.is_working = False
             old_task.kanban_bucket = None
 
+            created_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
             new_task = TicketTask(
                 task_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
                 ticket_id=new_ticket.id,
@@ -3530,6 +3560,8 @@ def resolve_decision(ticket_id):
                 is_working=False,
                 target_date=old_task.target_date,
                 date_needed=old_task.date_needed,
+                created_at=created_at,
+                updated_at=created_at,
             )
             db.session.add(new_task)
             db.session.flush()
@@ -3721,6 +3753,7 @@ def update_task_info(task_id):
     if "engineer_id" in request.form:
         if not _can_reassign_task():
             abort(403)
+
         engineer_id_raw = (request.form.get("engineer_id") or "").strip()
         old_engineer = task.assigned_engineer
         new_engineer = None
@@ -3887,6 +3920,14 @@ def task_workday_prompt_pause():
     paused_count = 0
     user_name = current_user.full_name or current_user.username
     now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    prompt_date_raw = (request.form.get("prompt_date") or "").strip()
+    pause_cutoff = now
+    if prompt_date_raw:
+        try:
+            prompt_date = datetime.strptime(prompt_date_raw, "%Y-%m-%d").date()
+            pause_cutoff = datetime.combine(prompt_date, time(17, 30))
+        except ValueError:
+            pause_cutoff = now
     for task in tasks:
         active_session = _active_task_work_session(task)
         if not active_session:
@@ -3897,7 +3938,12 @@ def task_workday_prompt_pause():
             )
             db.session.add(active_session)
             db.session.flush()
-        active_session.paused_at = now
+        effective_pause_at = pause_cutoff
+        if effective_pause_at > now:
+            effective_pause_at = now
+        if active_session.started_at and effective_pause_at < active_session.started_at:
+            effective_pause_at = active_session.started_at
+        active_session.paused_at = effective_pause_at
         active_session.pause_type = "schedule"
         active_session.pause_reason = "Paused by 5:30 PM workday prompt"
         task.is_working = False

@@ -15,6 +15,22 @@ migrate = None
 APP_TIMEZONE = timezone(timedelta(hours=8))
 
 
+def local_naive_to_localtime(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=APP_TIMEZONE)
+    return value.astimezone(APP_TIMEZONE)
+
+
+def utc_naive_to_localtime(value):
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone(APP_TIMEZONE)
+
+
 def to_localtime(value):
     if value is None:
         return None

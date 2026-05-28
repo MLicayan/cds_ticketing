@@ -585,6 +585,7 @@
     const workdayPromptYesBtn = document.getElementById('workdayTaskPromptYes');
     const workdayPromptNoBtn = document.getElementById('workdayTaskPromptNo');
     let workdayPromptOpen = false;
+    let workdayPromptDate = null;
 
     const alerts = document.querySelectorAll('.alert');
     alerts.forEach((alert) => {
@@ -613,6 +614,14 @@
         localStorage.setItem(workdayPromptStorageKey(), action || 'handled');
       } catch (err) {
       }
+    }
+
+    function currentWorkdayPromptDate() {
+      const now = new Date();
+      const yyyy = now.getFullYear();
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const dd = String(now.getDate()).padStart(2, '0');
+      return yyyy + '-' + mm + '-' + dd;
     }
 
     function isAfterWorkdayPromptTime() {
@@ -667,6 +676,7 @@
           markWorkdayPromptHandled('no-active-tasks');
           return;
         }
+        workdayPromptDate = currentWorkdayPromptDate();
         renderWorkdayPromptTasks(payload.tasks || []);
         workdayPromptOpen = true;
         if (window.jQuery && $('#workdayTaskPromptModal').modal) {
@@ -703,7 +713,9 @@
               'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
               'X-Requested-With': 'XMLHttpRequest'
             },
-            body: ''
+            body: new URLSearchParams({
+              prompt_date: workdayPromptDate || currentWorkdayPromptDate()
+            }).toString()
           });
           if (response.ok) {
             markWorkdayPromptHandled('paused');

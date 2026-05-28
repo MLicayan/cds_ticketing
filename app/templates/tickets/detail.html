@@ -710,15 +710,15 @@
               </dd>
 
               <dt class="col-sm-4">Created</dt>
-              <dd class="col-sm-8">{{ to_localtime(ticket.created_at).strftime('%Y-%m-%d %I:%M %p') }}</dd>
+              <dd class="col-sm-8">{{ ticket_created_display_at.strftime('%Y-%m-%d %I:%M %p') if ticket_created_display_at else '' }}</dd>
 
               <dt class="col-sm-4">Last Updated</dt>
-              <dd class="col-sm-8">{{ to_localtime(ticket.updated_at).strftime('%Y-%m-%d %I:%M %p') }}</dd>
+              <dd class="col-sm-8">{{ ticket_updated_display_at.strftime('%Y-%m-%d %I:%M %p') if ticket_updated_display_at else '' }}</dd>
 
               <dt class="col-sm-4">Closed At</dt>
               <dd class="col-sm-8">
-                {% if ticket.closed_at %}
-                  {{ to_localtime(ticket.closed_at).strftime('%Y-%m-%d %I:%M %p') }}
+                {% if ticket_closed_display_at %}
+                  {{ ticket_closed_display_at.strftime('%Y-%m-%d %I:%M %p') }}
                 {% else %}
                   <span class="text-muted">Not closed</span>
                 {% endif %}
@@ -986,8 +986,8 @@
             {% for event in timeline_events %}
               <div class="timeline-item">
                 <div class="timeline-date">
-                  <span class="timeline-date-line">{{ to_localtime(event.timestamp).strftime('%b %d, %Y').upper() }}</span>
-                  <span class="timeline-time-line">{{ to_localtime(event.timestamp).strftime('%I:%M %p').upper() }}</span>
+                  <span class="timeline-date-line">{{ event.display_timestamp.strftime('%b %d, %Y').upper() }}</span>
+                  <span class="timeline-time-line">{{ event.display_timestamp.strftime('%I:%M %p').upper() }}</span>
                 </div>
                 <div class="timeline-marker timeline-{{ event.type }}"></div>
                 <div class="timeline-content">
