@@ -424,6 +424,11 @@ def _emit_ticket_comment(ticket: Ticket, comment: TicketComment, attachments=Non
 
 def _ticket_comment_payload(comment: TicketComment, attachments=None) -> dict:
     parent = comment.parent_comment
+    user_is_provider = bool(
+        comment.user
+        and comment.user.role == UserRole.ENGINEER
+        and (comment.user.user_type or "").strip().lower() in ("it", "support")
+    )
     return {
         "ticket_id": comment.ticket_id,
         "comment_id": comment.id,
@@ -433,6 +438,7 @@ def _ticket_comment_payload(comment: TicketComment, attachments=None) -> dict:
         "comment_text": comment.comment_text,
         "is_internal": bool(comment.is_internal),
         "user_is_client": bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES),
+        "user_is_provider": user_is_provider,
         "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
         "reactions": comment.reaction_summary(),
         "attachments": [_ticket_attachment_payload(att) for att in (attachments or [])],
@@ -450,6 +456,11 @@ def _ticket_comment_parent_payload(comment: TicketComment) -> dict:
 
 def _task_comment_payload(comment: TicketTaskComment, attachments=None) -> dict:
     parent = comment.parent_comment
+    user_is_provider = bool(
+        comment.user
+        and comment.user.role == UserRole.ENGINEER
+        and (comment.user.user_type or "").strip().lower() in ("it", "support")
+    )
     return {
         "ticket_id": comment.ticket_task_id,
         "comment_id": comment.id,
@@ -459,6 +470,7 @@ def _task_comment_payload(comment: TicketTaskComment, attachments=None) -> dict:
         "comment_text": comment.comment_text,
         "is_internal": bool(comment.is_internal),
         "user_is_client": bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES),
+        "user_is_provider": user_is_provider,
         "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
         "reactions": comment.reaction_summary(),
         "attachments": [_ticket_attachment_payload(att) for att in (attachments or [])],

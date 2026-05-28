@@ -180,6 +180,24 @@
   color: #212529;
 }
 
+.ticket-chat-row.provider .ticket-chat-bubble {
+  background: #dff4ff;
+  color: #12344d;
+}
+
+.ticket-chat-row.client .ticket-chat-bubble {
+  background: #f3f4f6;
+  color: #212529;
+}
+
+.ticket-chat-row.provider .ticket-chat-meta {
+  color: #0b5cab;
+}
+
+.ticket-chat-row.client .ticket-chat-meta {
+  color: #6b7280;
+}
+
 .ticket-reply-preview {
   display: block;
   border-left: 3px solid #3c8dbc;
@@ -818,15 +836,18 @@
         {% set my_reaction_state = reaction_states.get(current_user.id ~ '', {}) %}
         {% set viewer_is_client = current_user.role.value in ['client', 'client_admin'] %}
         {% set commenter_is_client = c.user and c.user.role and c.user.role.value in ['client', 'client_admin'] %}
+        {% set commenter_is_provider = c.user and c.user.role and c.user.role.value == 'engineer' and (c.user.user_type or '').lower() in ['it', 'support'] %}
+        {% set viewer_can_distinguish_comment_roles = current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support']) %}
         {% set can_acknowledge = viewer_is_client != commenter_is_client %}
         <div
-          class="ticket-chat-row {{ 'mine' if is_mine else 'theirs' }}"
+          class="ticket-chat-row {{ 'mine' if is_mine else 'theirs' }}{% if viewer_can_distinguish_comment_roles and commenter_is_provider %} provider{% elif viewer_can_distinguish_comment_roles and commenter_is_client %} client{% endif %}"
           id="comment-{{ c.id }}"
           data-comment-id="{{ c.id }}"
           data-comment-user="{{ c.user.full_name or c.user.username }}"
           data-comment-text="{{ (c.comment_text or '')|replace('\n', ' ') }}"
           data-comment-created-at="{{ to_localtime(c.created_at).strftime('%Y-%m-%d %H:%M') }}"
           data-commenter-is-client="{{ 'true' if commenter_is_client else 'false' }}"
+          data-commenter-is-provider="{{ 'true' if commenter_is_provider else 'false' }}"
           data-my-acknowledged="{{ 'true' if my_reaction_state.get('acknowledge') else 'false' }}"
         >
           <div class="ticket-chat-item">
@@ -2026,14 +2047,23 @@
       if (empty) empty.remove();
 
       var isMine = Number(comment.user_id) === {{ current_user.id }};
+      var rowClass = 'ticket-chat-row ' + (isMine ? 'mine' : 'theirs');
+      if ({{ 'true' if current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support']) else 'false' }}) {
+        if (comment.user_is_provider) {
+          rowClass += ' provider';
+        } else if (comment.user_is_client) {
+          rowClass += ' client';
+        }
+      }
       var row = document.createElement('div');
-      row.className = 'ticket-chat-row ' + (isMine ? 'mine' : 'theirs');
+      row.className = rowClass;
       row.id = 'comment-' + comment.comment_id;
       row.setAttribute('data-comment-id', comment.comment_id);
       row.setAttribute('data-comment-user', comment.user || 'User');
       row.setAttribute('data-comment-text', comment.comment_text || '');
       row.setAttribute('data-comment-created-at', comment.created_at || '');
       row.setAttribute('data-commenter-is-client', comment.user_is_client ? 'true' : 'false');
+      row.setAttribute('data-commenter-is-provider', comment.user_is_provider ? 'true' : 'false');
       row.setAttribute('data-my-acknowledged', 'false');
 
       var item = document.createElement('div');
