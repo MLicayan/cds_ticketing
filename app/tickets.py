@@ -133,8 +133,8 @@ def _timeline_timestamp(value, storage="guess"):
 
 
 def _ensure_ticket_not_closed(ticket: Ticket):
-    if ticket.status == TicketStatus.CLOSED:
-        flash("Closed tickets are read-only.", "warning")
+    if ticket.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        flash("Closed or cancelled tickets are read-only.", "warning")
         return redirect(url_for("tickets.detail", ticket_id=ticket.id))
     return None
 
@@ -500,13 +500,12 @@ def _comment_reaction_payload(comment: TicketComment) -> dict:
 
 def _task_comment_reaction_payload(comment: TicketTaskComment) -> dict:
     reaction_state_map = comment.reaction_state_map()
-    my_state = reaction_state_map.get(str(current_user.id), {})
     return {
         "ticket_id": comment.ticket_task_id,
         "comment_id": comment.id,
         "reactions": comment.reaction_summary(),
-        "my_reaction": my_state.get("reaction", ""),
-        "my_acknowledged": bool(my_state.get("acknowledge")),
+        "my_reaction": reaction_state_map.get(str(current_user.id), {}).get("reaction", ""),
+        "my_acknowledged": bool(reaction_state_map.get(str(current_user.id), {}).get("acknowledge")),
     }
 
 
@@ -516,6 +515,18 @@ def _is_support_user(user: User) -> bool:
         and user.role == UserRole.ENGINEER
         and (user.user_type or "").strip().lower() == "support"
     )
+
+
+def _is_it_or_support_user(user: User) -> bool:
+    return bool(
+        user
+        and user.role == UserRole.ENGINEER
+        and (user.user_type or "").strip().lower() in {"it", "support"}
+    )
+
+
+def _can_prompt_client_resolution(user: User) -> bool:
+    return bool(user and (user.role == UserRole.ADMIN or _is_it_or_support_user(user)))
 
 
 def _can_create_tasks(user: User) -> bool:
@@ -765,6 +776,98 @@ def _emit_ticket_comment_notification_count(comment: TicketComment) -> None:
             _ticket_comment_notification_snapshot_for_user(recipient),
             room=f"user_notifications:{recipient.id}",
         )
+
+
+def _resolved_tickets_pending_for_user(user: User, client_id: Optional[int] = None):
+    if not user or user.role not in CLIENT_SCOPED_ROLES:
+        return []
+
+    query = _exclude_task_tickets(Ticket.query).filter(Ticket.status == TicketStatus.RESOLVED)
+    if user.role == UserRole.CLIENT:
+        query = query.filter(
+            Ticket.client_id == user.client_id,
+            Ticket.reported_by_id == user.id,
+        )
+    else:
+        query = query.filter(Ticket.client_id == user.client_id)
+
+    if client_id is not None:
+        query = query.filter(Ticket.client_id == client_id)
+
+    return query.order_by(Ticket.closed_at.desc(), Ticket.updated_at.desc(), Ticket.id.desc()).all()
+
+
+def _client_resolution_prompt_recipients(ticket: Optional[Ticket] = None):
+    query = User.query.filter(
+        User.is_active_user.is_(True),
+        User.role.in_(CLIENT_SCOPED_ROLES),
+    )
+
+    if ticket is not None:
+        query = query.filter(User.client_id == ticket.client_id)
+    return query.order_by(User.full_name.asc(), User.username.asc()).all()
+
+
+def _client_resolution_prompt_payload(recipient: User, sender: Optional[User] = None, client_id: Optional[int] = None) -> Optional[dict]:
+    sender_name = ""
+    if sender:
+        sender_name = sender.full_name or sender.username or ""
+
+    tickets = _resolved_tickets_pending_for_user(recipient, client_id=client_id)
+    if not tickets:
+        return None
+
+    ticket_payloads = []
+    for ticket in tickets:
+        ticket_payloads.append(
+            {
+                "ticket_id": ticket.id,
+                "ticket_no": ticket.ticket_no,
+                "status": "Fix/Completed",
+                "url": url_for("tickets.detail", ticket_id=ticket.id),
+            }
+        )
+
+    return {
+        "sender": sender_name,
+        "count": len(ticket_payloads),
+        "tickets": ticket_payloads,
+        "message": (
+            f"{sender_name or 'Support'} asked you to review your Fix/Completed ticket"
+            f"{'' if len(ticket_payloads) == 1 else 's'}. Please Accept or Deny them."
+        ),
+    }
+
+
+def _emit_client_resolution_prompt(ticket: Ticket, sender: Optional[User] = None) -> int:
+    recipients = _client_resolution_prompt_recipients(ticket)
+    sent = 0
+    for recipient in recipients:
+        payload = _client_resolution_prompt_payload(recipient, sender=sender, client_id=ticket.client_id)
+        if not payload:
+            continue
+        socketio.emit(
+            "ticket_resolution_prompt",
+            payload,
+            room=f"user_notifications:{recipient.id}",
+        )
+        sent += 1
+    return sent
+
+
+def _emit_global_client_resolution_prompts(sender: Optional[User] = None) -> int:
+    sent = 0
+    for recipient in _client_resolution_prompt_recipients():
+        payload = _client_resolution_prompt_payload(recipient, sender=sender)
+        if not payload:
+            continue
+        socketio.emit(
+            "ticket_resolution_prompt",
+            payload,
+            room=f"user_notifications:{recipient.id}",
+        )
+        sent += 1
+    return sent
 
 
 def _record_ticket_change(ticket: Ticket, message: str, is_internal: bool = False) -> None:
@@ -2959,8 +3062,8 @@ def react_comment(comment_id):
     ticket = comment.ticket
 
     _ensure_client_ticket_access(ticket)
-    if ticket.status == TicketStatus.CLOSED:
-        return jsonify({"error": "Closed tickets are read-only."}), 403
+    if ticket.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        return jsonify({"error": "Closed or cancelled tickets are read-only."}), 403
     if current_user.role in READ_ONLY_ROLES and _is_task_ticket(ticket):
         abort(403)
     if comment.is_internal and current_user.role in READ_ONLY_ROLES:
@@ -3247,7 +3350,7 @@ def update_kanban_status(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
     closed_redirect = _ensure_ticket_not_closed(ticket)
     if closed_redirect:
-        return jsonify({"error": "Closed tickets are read-only."}), 403
+        return jsonify({"error": "Closed or cancelled tickets are read-only."}), 403
 
     if current_user.role in READ_ONLY_ROLES:
         abort(403)
@@ -3654,6 +3757,41 @@ def resolve_decision(ticket_id):
 
     flash("Invalid resolution action.", "danger")
     return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+
+
+@tickets_bp.route("/<int:ticket_id>/prompt-client-resolution", methods=["POST"])
+@login_required
+def prompt_client_resolution(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+
+    if _is_task_ticket(ticket):
+        abort(404)
+    if not _can_prompt_client_resolution(current_user):
+        abort(403)
+    if ticket.status != TicketStatus.RESOLVED:
+        flash("Client prompt is only available when the ticket is Fix/Completed.", "warning")
+        return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+
+    recipient_count = _emit_client_resolution_prompt(ticket, sender=current_user)
+    if recipient_count:
+        flash("Client prompt sent.", "success")
+    else:
+        flash("No active client account found for this ticket.", "warning")
+    return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+
+
+@tickets_bp.route("/prompt-client-resolution-global", methods=["POST"])
+@login_required
+def prompt_client_resolution_global():
+    if not _can_prompt_client_resolution(current_user):
+        abort(403)
+
+    recipient_count = _emit_global_client_resolution_prompts(sender=current_user)
+    if recipient_count:
+        flash("Client prompts sent.", "success")
+    else:
+        flash("No Fix/Completed tickets are waiting for client acceptance.", "warning")
+    return redirect(url_for("tickets.index"))
 
 
 @tickets_bp.route("/<int:ticket_id>/assign", methods=["POST"])

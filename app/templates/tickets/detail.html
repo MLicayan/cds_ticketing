@@ -10,12 +10,19 @@
   </div>
   <div class="col-sm-6 text-right">
     {% if current_user.role.value not in ['client', 'client_admin', 'sales'] %}
+      {% if not is_task_ticket and ticket.status == TicketStatus.RESOLVED and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) %}
+        <form method="post" action="{{ url_for('tickets.prompt_client_resolution', ticket_id=ticket.id) }}" class="d-inline">
+          <button class="btn btn-outline-warning mr-2" type="submit">
+            <i class="fas fa-bell"></i> Prompt Client
+          </button>
+        </form>
+      {% endif %}
       {% if (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) and not is_task_ticket and ticket.status not in [TicketStatus.RESOLVED, TicketStatus.CLOSED] %}
         <button class="btn btn-outline-primary mr-2" type="button" data-toggle="modal" data-target="#createTaskModal">
           <i class="fas fa-tasks"></i> Create Task
         </button>
       {% endif %}
-      {% if current_user.has_nav_access('service_logs') and ticket.status != TicketStatus.CLOSED and not is_task_ticket %}
+      {% if current_user.has_nav_access('service_logs') and ticket.status not in [TicketStatus.CLOSED, TicketStatus.CANCELLED] and not is_task_ticket %}
         <a href="{{ url_for('service_logs.create', ticket_id=ticket.id) }}" class="btn btn-primary">
           <i class="fas fa-tools"></i> New Service Log
         </a>
@@ -586,6 +593,7 @@
 </style>
 {% endblock %}
 {% block content %}
+{% set ticket_is_read_only = ticket.status in [TicketStatus.CLOSED, TicketStatus.CANCELLED] %}
 
 <div class="row">
   <div class="col-md-7">
@@ -593,12 +601,12 @@
       <div class="card-header">
         <h3 class="card-title"><i class="fas fa-clipboard-list metric-icon"></i>Ticket Info</h3>
         <div class="btn-group text-right float-right">
-            {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and ticket.status != TicketStatus.CLOSED %}
+            {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and not ticket_is_read_only %}
               <button class="btn btn-sm btn-info mr-3" type="button" data-toggle="modal" data-target="#updateInfoModal">
                 <i class="fas fa-edit"></i> Update
               </button>
             {% endif %}
-            {% if current_user.role.value in ['client', 'client_admin'] and ticket.status != TicketStatus.CLOSED %}
+            {% if current_user.role.value in ['client', 'client_admin'] and not ticket_is_read_only %}
               <button class="btn btn-sm btn-info mr-3" type="button" data-toggle="modal" data-target="#clientUpdateModal">
                 <i class="fas fa-edit"></i> Update
               </button>
@@ -780,7 +788,7 @@
               <div class="bg-light p-3 rounded">
                 {% set is_assigned_worker = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() in ['it', 'support'] %}
 
-                {% if is_assigned_worker and ticket.status != TicketStatus.CLOSED %}
+                {% if is_assigned_worker and not ticket_is_read_only %}
                   {% if is_task_ticket and ticket.is_working %}
                   <form
                     method="post"
@@ -900,7 +908,7 @@
               {% endfor %}
             </div>
             {% endif %}
-            {% if ticket.status != TicketStatus.CLOSED %}
+            {% if not ticket_is_read_only %}
             <div class="ticket-chat-actions">
               {% if can_acknowledge %}
               <button
@@ -939,7 +947,7 @@
         <p class="text-muted" id="ticket-no-comments">No comments yet.</p>
         {% endfor %}
       </div>
-      {% if ticket.status != TicketStatus.CLOSED %}
+      {% if not ticket_is_read_only %}
       <div class="card-footer">
         <form method="post" enctype="multipart/form-data" id="ticket-comment-form">
           <input type="hidden" name="parent_comment_id" id="parent_comment_id">
@@ -1167,7 +1175,7 @@
 {% endblock %}
 {% block extra_js %}
 {{ super() }}
-{% if current_user.role.value not in ['client', 'client_admin', 'sales'] and ticket.status != TicketStatus.CLOSED %}
+{% if current_user.role.value not in ['client', 'client_admin', 'sales'] and not ticket_is_read_only %}
 <div class="modal fade ticket-edit-modal" id="updateInfoModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
     <div class="modal-content">
@@ -1303,7 +1311,7 @@
   </div>
 </div>
 {% endif %}
-{% if current_user.role.value in ['client', 'client_admin'] and ticket.status != TicketStatus.CLOSED %}
+{% if current_user.role.value in ['client', 'client_admin'] and not ticket_is_read_only %}
 <div class="modal fade ticket-edit-modal" id="clientUpdateModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
     <div class="modal-content">

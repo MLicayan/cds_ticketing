@@ -281,6 +281,13 @@
       <a href="{{ url_for('tickets.kanban', scope='my_tasks') if is_task_list else url_for('tickets.kanban') }}" class="btn btn-outline-info">
         <i class="fas fa-th-large"></i> Kanban
       </a>
+      {% if not is_task_list and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) %}
+      <form method="post" action="{{ url_for('tickets.prompt_client_resolution_global') }}" class="d-inline">
+        <button type="submit" class="btn btn-outline-warning">
+          <i class="fas fa-bell"></i> Prompt Clients
+        </button>
+      </form>
+      {% endif %}
       {% if is_task_list and can_create_task %}
       <a href="{{ url_for('tickets.create_task') }}" class="btn btn-primary">
         <i class="fas fa-plus"></i> New Task
@@ -1393,54 +1400,12 @@ $(function() {
   if (!window.io) return;
   var socket = io();
   var reloadTimer = null;
-  var isAdmin = {{ 'true' if current_user.role.value == 'admin' else 'false' }};
-
-  function playTicketCreatedChime() {
-    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return;
-
-    try {
-      var context = new AudioContextClass();
-      var now = context.currentTime;
-
-      function playTone(frequency, start, duration, volume) {
-        var oscillator = context.createOscillator();
-        var gain = context.createGain();
-
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, start);
-
-        gain.gain.setValueAtTime(0.0001, start);
-        gain.gain.exponentialRampToValueAtTime(volume, start + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
-
-        oscillator.connect(gain);
-        gain.connect(context.destination);
-
-        oscillator.start(start);
-        oscillator.stop(start + duration + 0.02);
-      }
-
-      if (context.state === 'suspended') {
-        context.resume().catch(function() {});
-      }
-
-      playTone(1318.51, now, 0.16, 0.05);
-      playTone(1760.00, now + 0.12, 0.22, 0.04);
-    } catch (err) {
-      // Ignore audio playback failures and keep realtime reload working.
-    }
-  }
 
   socket.on('connect', function() {
     socket.emit('join_ticket_list');
   });
 
   socket.on('ticket_changed', function(payload) {
-    if (isAdmin && payload && payload.action === 'created') {
-      playTicketCreatedChime();
-    }
-
     clearTimeout(reloadTimer);
     reloadTimer = setTimeout(function() {
       if (window.refreshTicketsTable) {

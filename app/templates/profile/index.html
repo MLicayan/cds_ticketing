@@ -72,6 +72,33 @@
         </div>
       </form>
     </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="fas fa-volume-up mr-2"></i>Notification Sound</h3>
+      </div>
+      <div class="card-body">
+        <div class="form-group mb-2">
+          <label for="profile_notification_sound_volume" class="d-flex justify-content-between align-items-center">
+            <span>Volume</span>
+            <span class="text-muted" id="profile_notification_sound_volume_value">70%</span>
+          </label>
+          <input
+            type="range"
+            id="profile_notification_sound_volume"
+            class="custom-range"
+            min="0"
+            max="100"
+            step="5"
+            value="70"
+          >
+        </div>
+        <small class="text-muted d-block mb-3">Controls notification sounds and the new ticket alert sound.</small>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="profile_notification_sound_test">
+          <i class="fas fa-play mr-1"></i> Test Sound
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -248,4 +275,87 @@
   </div>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var volumeSlider = document.getElementById('profile_notification_sound_volume');
+  var volumeValue = document.getElementById('profile_notification_sound_volume_value');
+  var testButton = document.getElementById('profile_notification_sound_test');
+  var storageKey = 'notification-sound-volume';
+
+  if (!volumeSlider || !volumeValue) return;
+
+  function getStoredVolume() {
+    try {
+      var stored = Number(localStorage.getItem(storageKey));
+      if (!Number.isNaN(stored) && stored >= 0 && stored <= 1) {
+        return stored;
+      }
+    } catch (err) {
+    }
+    return 0.7;
+  }
+
+  function setStoredVolume(volume) {
+    var clamped = Math.max(0, Math.min(1, Number(volume) || 0));
+    try {
+      localStorage.setItem(storageKey, String(clamped));
+    } catch (err) {
+    }
+    volumeSlider.value = String(Math.round(clamped * 100));
+    volumeValue.textContent = Math.round(clamped * 100) + '%';
+    return clamped;
+  }
+
+  function playTestSound() {
+    var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    var volume = getStoredVolume();
+    if (!volume) return;
+
+    try {
+      var context = new AudioContextClass();
+      var now = context.currentTime;
+
+      function playTone(frequency, start, duration, gainValue) {
+        var oscillator = context.createOscillator();
+        var gain = context.createGain();
+
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(frequency, start);
+
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(Math.max(gainValue, 0.0001), start + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        oscillator.start(start);
+        oscillator.stop(start + duration + 0.02);
+      }
+
+      if (context.state === 'suspended') {
+        context.resume().catch(function() {});
+      }
+
+      playTone(1046.50, now, 0.10, volume * 0.24);
+      playTone(1318.51, now + 0.09, 0.14, volume * 0.20);
+    } catch (err) {
+    }
+  }
+
+  setStoredVolume(getStoredVolume());
+
+  volumeSlider.addEventListener('input', function() {
+    setStoredVolume(Number(volumeSlider.value) / 100);
+  });
+
+  if (testButton) {
+    testButton.addEventListener('click', playTestSound);
+  }
+})();
+</script>
 {% endblock %}

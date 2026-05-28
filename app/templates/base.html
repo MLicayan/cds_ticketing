@@ -69,6 +69,30 @@
       white-space: normal;
       padding: 0.75rem 1rem;
     }
+    .header-notification-sound {
+      padding: 0.75rem 1rem;
+    }
+    .header-notification-sound label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0;
+      color: #1c2b4d;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .header-notification-sound-value {
+      min-width: 42px;
+      text-align: right;
+      color: #6c757d;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .header-notification-sound input[type="range"] {
+      width: 100%;
+      margin-top: 10px;
+    }
     .notification-ticket-no {
       color: #0059dd;
       font-weight: 700;
@@ -209,6 +233,44 @@
     }
     .alert.alert-dismiss-anim {
       animation: alert-fade-up 400ms ease forwards;
+    }
+
+    .resolution-prompt-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+    .resolution-prompt-item + .resolution-prompt-item {
+      border-top: 1px solid #e9ecef;
+    }
+    .resolution-prompt-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 0;
+      color: inherit;
+      text-decoration: none;
+    }
+    .resolution-prompt-link:hover {
+      text-decoration: none;
+      color: inherit;
+    }
+    .resolution-prompt-ticket-main {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .resolution-prompt-ticket-no {
+      font-weight: 700;
+      color: #0059dd;
+    }
+    .resolution-prompt-open {
+      white-space: nowrap;
+      font-size: 0.85rem;
+      color: #0059dd;
+      font-weight: 600;
     }
 
     @media (max-width: 992px) {
@@ -566,6 +628,29 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="ticketResolutionPromptModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-check-circle mr-2 text-success"></i>Tickets Ready For Acceptance</h5>
+      </div>
+      <div class="modal-body">
+        <div class="font-weight-bold mb-2" id="ticketResolutionPromptHeading"></div>
+        <div class="text-muted mb-3" id="ticketResolutionPromptMessage"></div>
+        <div class="border rounded p-3 bg-light">
+          <div class="font-weight-bold mb-2">Pending Fix/Completed tickets</div>
+          <div id="ticketResolutionPromptEmpty" class="text-muted small d-none">No tickets to review.</div>
+          <ul class="resolution-prompt-list" id="ticketResolutionPromptList"></ul>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Later</button>
+        <a href="#" class="btn btn-primary" id="ticketResolutionPromptOpenLink">Open First Ticket</a>
+      </div>
+    </div>
+  </div>
+</div>
 {% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
@@ -584,8 +669,94 @@
     const workdayPromptEmpty = document.getElementById('workdayTaskPromptEmpty');
     const workdayPromptYesBtn = document.getElementById('workdayTaskPromptYes');
     const workdayPromptNoBtn = document.getElementById('workdayTaskPromptNo');
+    const resolutionPromptHeading = document.getElementById('ticketResolutionPromptHeading');
+    const resolutionPromptMessage = document.getElementById('ticketResolutionPromptMessage');
+    const resolutionPromptOpenLink = document.getElementById('ticketResolutionPromptOpenLink');
+    const resolutionPromptList = document.getElementById('ticketResolutionPromptList');
+    const resolutionPromptEmpty = document.getElementById('ticketResolutionPromptEmpty');
+    const soundVolumeSlider = document.querySelector('[data-sound-volume-slider]');
+    const soundVolumeValue = document.querySelector('[data-sound-volume-value]');
     let workdayPromptOpen = false;
     let workdayPromptDate = null;
+    const notificationSoundVolumeKey = 'notification-sound-volume';
+    const canHearNewTicketSound = {{ 'true' if current_user.is_authenticated and current_user.role.value not in ['client', 'client_admin'] else 'false' }};
+
+    function getNotificationSoundVolume() {
+      try {
+        const stored = Number(localStorage.getItem(notificationSoundVolumeKey));
+        if (!Number.isNaN(stored) && stored >= 0 && stored <= 1) {
+          return stored;
+        }
+      } catch (err) {
+      }
+      return 0.7;
+    }
+
+    function setNotificationSoundVolume(volume) {
+      const clamped = Math.max(0, Math.min(1, Number(volume) || 0));
+      try {
+        localStorage.setItem(notificationSoundVolumeKey, String(clamped));
+      } catch (err) {
+      }
+      if (soundVolumeSlider) {
+        soundVolumeSlider.value = String(Math.round(clamped * 100));
+      }
+      if (soundVolumeValue) {
+        soundVolumeValue.textContent = Math.round(clamped * 100) + '%';
+      }
+      return clamped;
+    }
+
+    function playNotificationSound(type) {
+      var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+
+      var volume = getNotificationSoundVolume();
+      if (!volume) return;
+
+      try {
+        var context = new AudioContextClass();
+        var now = context.currentTime;
+
+        function playTone(frequency, start, duration, gainValue, oscillatorType) {
+          var oscillator = context.createOscillator();
+          var gain = context.createGain();
+
+          oscillator.type = oscillatorType || 'sine';
+          oscillator.frequency.setValueAtTime(frequency, start);
+
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(Math.max(gainValue, 0.0001), start + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+          oscillator.connect(gain);
+          gain.connect(context.destination);
+
+          oscillator.start(start);
+          oscillator.stop(start + duration + 0.02);
+        }
+
+        if (context.state === 'suspended') {
+          context.resume().catch(function() {});
+        }
+
+        if (type === 'new-ticket') {
+          playTone(1318.51, now, 0.16, volume * 0.36, 'sine');
+          playTone(1760.00, now + 0.12, 0.22, volume * 0.30, 'sine');
+        } else {
+          playTone(1046.50, now, 0.10, volume * 0.24, 'triangle');
+          playTone(1318.51, now + 0.09, 0.14, volume * 0.20, 'triangle');
+        }
+      } catch (err) {
+      }
+    }
+
+    setNotificationSoundVolume(getNotificationSoundVolume());
+    if (soundVolumeSlider) {
+      soundVolumeSlider.addEventListener('input', function() {
+        setNotificationSoundVolume(Number(soundVolumeSlider.value) / 100);
+      });
+    }
 
     const alerts = document.querySelectorAll('.alert');
     alerts.forEach((alert) => {
@@ -737,6 +908,63 @@
       setInterval(maybeShowWorkdayPrompt, 60000);
     }
 
+    function showTicketResolutionPrompt(payload) {
+      if (!payload || !resolutionPromptOpenLink) {
+        return;
+      }
+      const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+      if (resolutionPromptHeading) {
+        resolutionPromptHeading.textContent = (payload.count || tickets.length || 0) + ' ticket' + ((payload.count || tickets.length || 0) === 1 ? '' : 's') + ' waiting for your review';
+      }
+      if (resolutionPromptMessage) {
+        resolutionPromptMessage.textContent = payload.message || 'This ticket is ready for your review.';
+      }
+      if (resolutionPromptList) {
+        resolutionPromptList.innerHTML = '';
+        tickets.forEach(function(ticket) {
+          const item = document.createElement('li');
+          item.className = 'resolution-prompt-item';
+          const link = document.createElement('a');
+          link.href = ticket.url || '#';
+          link.className = 'resolution-prompt-link';
+
+          const main = document.createElement('div');
+          main.className = 'resolution-prompt-ticket-main';
+
+          const status = document.createElement('span');
+          status.className = 'badge badge-success';
+          status.textContent = ticket.status || 'Fix/Completed';
+          main.appendChild(status);
+
+          const ticketNo = document.createElement('span');
+          ticketNo.className = 'resolution-prompt-ticket-no';
+          ticketNo.textContent = ticket.ticket_no || 'Ticket';
+          main.appendChild(ticketNo);
+
+          const openLabel = document.createElement('span');
+          openLabel.className = 'resolution-prompt-open';
+          openLabel.textContent = 'Go to detail';
+
+          link.appendChild(main);
+          link.appendChild(openLabel);
+          item.appendChild(link);
+          resolutionPromptList.appendChild(item);
+        });
+      }
+      if (resolutionPromptEmpty) {
+        resolutionPromptEmpty.classList.toggle('d-none', tickets.length > 0);
+      }
+      resolutionPromptOpenLink.href = tickets.length ? (tickets[0].url || '#') : '#';
+      resolutionPromptOpenLink.classList.toggle('d-none', tickets.length === 0);
+      if (window.jQuery && $('#ticketResolutionPromptModal').modal) {
+        $('#ticketResolutionPromptModal').modal({
+          backdrop: 'static',
+          keyboard: true
+        });
+        $('#ticketResolutionPromptModal').modal('show');
+      }
+    }
+
     const notificationRoot = document.getElementById('header-client-comment-notification');
     if (notificationRoot && window.io) {
       const notificationLink = notificationRoot.querySelector('.nav-link');
@@ -871,8 +1099,12 @@
       const notificationSocket = io();
       notificationSocket.on('connect', function() {
         notificationSocket.emit('join_header_notifications');
+        if (canHearNewTicketSound) {
+          notificationSocket.emit('join_ticket_list');
+        }
       });
       notificationSocket.on('ticket_comment_notification_added', function(payload) {
+        playNotificationSound('notification');
         updateNotificationCount(payload && payload.count);
         prependNotification(payload && payload.notification);
       });
@@ -881,6 +1113,15 @@
       });
       notificationSocket.on('ticket_comment_notification_snapshot', function(payload) {
         renderNotificationSnapshot(payload);
+      });
+      notificationSocket.on('ticket_resolution_prompt', function(payload) {
+        playNotificationSound('notification');
+        showTicketResolutionPrompt(payload);
+      });
+      notificationSocket.on('ticket_changed', function(payload) {
+        if (canHearNewTicketSound && payload && payload.action === 'created' && !payload.parent_ticket_id) {
+          playNotificationSound('new-ticket');
+        }
       });
     }
   });
