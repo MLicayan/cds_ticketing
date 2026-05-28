@@ -350,6 +350,7 @@
         {% endif %}
       </div>
       <input type="hidden" name="ticket_no" id="filter_ticket_no" value="{{ selected_filters.ticket_no or '' }}">
+      <input type="hidden" name="search_text" id="filter_search_text" value="{{ selected_filters.search_text or '' }}">
       <input type="hidden" name="date_from" id="filter_date_from" value="{{ selected_filters.date_from or '' }}">
       <input type="hidden" name="date_to" id="filter_date_to" value="{{ selected_filters.date_to or '' }}">
 
@@ -361,7 +362,7 @@
                 <i class="fas fa-search text-muted"></i>
               </span>
             </div>
-            <input type="text" id="ticket-search-input" class="form-control ticket-filter-search" placeholder="Search tickets...">
+            <input type="text" id="ticket-search-input" class="form-control ticket-filter-search" placeholder="Search tickets..." value="{{ selected_filters.search_text or '' }}" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
             <div class="input-group-append">
               <button
                 type="button"
@@ -696,18 +697,105 @@ function initTicketsTable() {
   return window.ticketsDataTable;
 }
 
+function submitTicketFilters() {
+  var form = document.getElementById('ticket-filter-form');
+  if (!form) return;
+  var params = new URLSearchParams(new FormData(form));
+  var url = form.getAttribute('action') || window.location.pathname;
+  var query = params.toString();
+  if (window.refreshTicketsTable) {
+    window.refreshTicketsTable(query ? url + '?' + query : url, true);
+  } else {
+    window.location.href = query ? url + '?' + query : url;
+  }
+}
+
+function hasActiveAdvancedFilters() {
+  return Boolean(
+    document.querySelector('#filter_client_ids_container input[name="client_id"]') ||
+    document.querySelector('#filter_status_container input[name="status"]') ||
+    document.querySelector('#filter_instrument_ids_container input[name="instrument_id"]') ||
+    document.querySelector('#filter_app_ids_container input[name="app_id"]') ||
+    document.querySelector('#filter_reported_by_ids_container input[name="reported_by_id"]') ||
+    document.querySelector('#filter_priority_container input[name="priority"]') ||
+    (document.getElementById('filter_ticket_no') && document.getElementById('filter_ticket_no').value) ||
+    (document.getElementById('filter_date_from') && document.getElementById('filter_date_from').value) ||
+    (document.getElementById('filter_date_to') && document.getElementById('filter_date_to').value)
+  );
+}
+
 $(function() {
   initTicketsTable();
   syncTableViewportHeight('tickets-table-shell');
   let searchTimer = null;
+  let searchBlurTimer = null;
+  const ticketSearchKey = 'ticketsTableSearch:' + window.location.pathname;
+
+  function restoreTicketSearch() {
+    var searchInput = document.getElementById('ticket-search-input');
+    var hiddenSearch = document.getElementById('filter_search_text');
+    if (!searchInput) return;
+    if (searchInput.value) {
+      if (hiddenSearch) hiddenSearch.value = searchInput.value;
+      return;
+    }
+    var savedValue = '';
+    try {
+      savedValue = sessionStorage.getItem(ticketSearchKey) || '';
+    } catch (err) {
+      savedValue = '';
+    }
+    if (!savedValue) return;
+    searchInput.value = savedValue;
+    if (hiddenSearch) hiddenSearch.value = savedValue;
+  }
+
+  function persistTicketSearch(value) {
+    try {
+      if (value) {
+        sessionStorage.setItem(ticketSearchKey, value);
+      } else {
+        sessionStorage.removeItem(ticketSearchKey);
+      }
+    } catch (err) {
+    }
+  }
+
+  restoreTicketSearch();
+
+  $('#ticket-search-input').on('focus click', function() {
+    if (window.jQuery && $('#advancedFilterPanel').length && !$('#advancedFilterPanel').hasClass('show')) {
+      localStorage.setItem('ticketsFilterPanelOpen', '1');
+      $('#advancedFilterPanel').collapse('show');
+    }
+  });
+  $('#ticket-search-input').on('blur', function() {
+    clearTimeout(searchBlurTimer);
+    searchBlurTimer = setTimeout(function() {
+      if (!window.jQuery || !$('#advancedFilterPanel').length) return;
+      var active = document.activeElement;
+      if (active && (active.closest('#advancedFilterPanel') || active.id === 'ticket-search-input')) {
+        return;
+      }
+      localStorage.setItem('ticketsFilterPanelOpen', '0');
+      $('#advancedFilterPanel').collapse('hide');
+    }, 150);
+  });
   $('#ticket-search-input').on('keyup', function() {
     clearTimeout(searchTimer);
     var value = this.value;
     searchTimer = setTimeout(function() {
-      if (window.ticketsDataTable) {
-        window.ticketsDataTable.search(value).draw();
+      var hiddenSearch = document.getElementById('filter_search_text');
+      if (hiddenSearch) {
+        hiddenSearch.value = value;
       }
+      persistTicketSearch(value);
+      submitTicketFilters();
     }, 250);
+  });
+
+  $('.ticket-filter-reset-btn').on('click', function() {
+    persistTicketSearch('');
   });
 });
 
@@ -717,12 +805,7 @@ $(function() {
   function autoSubmitFilters() {
     clearTimeout(autoSubmitTimer);
     autoSubmitTimer = setTimeout(function() {
-      var form = document.getElementById('ticket-filter-form');
-      if (!form) return;
-      var params = new URLSearchParams(new FormData(form));
-      var url = form.getAttribute('action') || window.location.pathname;
-      var query = params.toString();
-      refreshTicketsTable(query ? url + '?' + query : url, true);
+      submitTicketFilters();
     }, 250);
   }
 
@@ -750,11 +833,6 @@ $(function() {
         card.replaceWith(nextCard);
         initTicketsTable();
         syncTableViewportHeight('tickets-table-shell');
-
-        var currentSearch = document.getElementById('ticket-search-input');
-        if (currentSearch && currentSearch.value && window.ticketsDataTable) {
-          window.ticketsDataTable.search(currentSearch.value).draw();
-        }
 
         if (pushState) {
           window.history.replaceState({}, '', url);
@@ -1152,9 +1230,10 @@ $(function() {
   var filterToggleBtn = document.querySelector('[data-target="#advancedFilterPanel"]');
 
   if (advancedFilterPanel) {
-    advancedFilterPanel.classList.remove('show');
+    var shouldOpenPanel = localStorage.getItem('ticketsFilterPanelOpen') === '1';
+    advancedFilterPanel.classList.toggle('show', shouldOpenPanel);
     if (filterToggleBtn) {
-      filterToggleBtn.setAttribute('aria-expanded', 'false');
+      filterToggleBtn.setAttribute('aria-expanded', shouldOpenPanel ? 'true' : 'false');
     }
 
     if (window.$) {
@@ -1200,7 +1279,7 @@ $(function() {
     applyLock();
   }
 
-  document.addEventListener('DOMContentLoaded', function() {
+  function initAdvancedFilters() {
     bindMultiPicker('picker_instrument_id', 'filter_instrument_ids_container', 'instrument_id');
     bindMultiPicker('picker_app_id', 'filter_app_ids_container', 'app_id');
     bindPicker('picker_assignee_id', 'filter_assignee_id');
@@ -1304,7 +1383,9 @@ $(function() {
     syncMultiHiddenInputs('filter_priority_container', 'priority', 'picker_priority');
     syncStatusHiddenInputs();
     updateFilterChips();
-  });
+  }
+
+  initAdvancedFilters();
 })();
 </script>
 <script>

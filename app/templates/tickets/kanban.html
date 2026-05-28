@@ -357,7 +357,9 @@
             </div>
             {% if current_user.role.value not in ['client', 'client_admin'] %}
             <div class="meta mt-1 d-flex justify-content-between">
+              {% if t.assigned_engineer or is_task_kanban %}
               <span><i class="fas fa-user-cog mr-1"></i>{{ (t.assigned_engineer.full_name or t.assigned_engineer.username) if t.assigned_engineer else 'Unassigned' }}</span>
+              {% endif %}
               {% if t.assigned_engineer and t.assigned_engineer.user_type %}
                 <span class="badge badge-light">{{ t.assigned_engineer.user_type|upper }}</span>
               {% endif %}

@@ -895,9 +895,12 @@ def _render_ticket_index(my_tickets_only=False):
     status_values = [status.strip() for status in request.args.getlist("status") if status.strip()]
     date_from_raw = request.args.get("date_from") or ""
     date_to_raw = request.args.get("date_to") or ""
+    search_text_raw = (request.args.get("search_text") or "").strip()
     using_default_open_not_set_scope = (
         current_user.role not in CLIENT_SCOPED_ROLES
         and not my_tickets_only
+        and not search_text_raw
+        and not ticket_no_raw
         and not priority_values
         and not status_values
     )
@@ -962,6 +965,64 @@ def _render_ticket_index(my_tickets_only=False):
     if ticket_no_raw:
         ticket_no_column = TicketTask.task_no if is_task_list else Ticket.ticket_no
         query = query.filter(ticket_no_column.ilike(f"%{ticket_no_raw}%"))
+
+    if search_text_raw:
+        search_like = f"%{search_text_raw}%"
+        if is_task_list:
+            query = query.filter(
+                db.or_(
+                    TicketTask.task_no.ilike(search_like),
+                    TicketTask.subject.ilike(search_like),
+                    TicketTask.description.ilike(search_like),
+                    TicketTask.client.has(
+                        db.or_(
+                            Client.name.ilike(search_like),
+                            Client.client_code.ilike(search_like),
+                        )
+                    ),
+                    TicketTask.instrument.has(Instrument.name.ilike(search_like)),
+                    TicketTask.app.has(App.name.ilike(search_like)),
+                    TicketTask.reported_by.has(
+                        db.or_(
+                            User.full_name.ilike(search_like),
+                            User.username.ilike(search_like),
+                        )
+                    ),
+                    TicketTask.assigned_engineer.has(
+                        db.or_(
+                            User.full_name.ilike(search_like),
+                            User.username.ilike(search_like),
+                        )
+                    ),
+                )
+            )
+        else:
+            query = query.filter(
+                db.or_(
+                    Ticket.ticket_no.ilike(search_like),
+                    Ticket.subject.ilike(search_like),
+                    Ticket.description.ilike(search_like),
+                    Ticket.client.has(
+                        db.or_(
+                            Client.name.ilike(search_like),
+                            Client.client_code.ilike(search_like),
+                        )
+                    ),
+                    Ticket.app.has(App.name.ilike(search_like)),
+                    Ticket.reported_by.has(
+                        db.or_(
+                            User.full_name.ilike(search_like),
+                            User.username.ilike(search_like),
+                        )
+                    ),
+                    Ticket.assigned_engineer.has(
+                        db.or_(
+                            User.full_name.ilike(search_like),
+                            User.username.ilike(search_like),
+                        )
+                    ),
+                )
+            )
 
     # Assigned Engineer/IT filter hidden on the Tickets page.
     # if assignee_id:
@@ -1040,6 +1101,7 @@ def _render_ticket_index(my_tickets_only=False):
             "client_ids": client_ids,
             "instrument_ids": instrument_ids,
             "app_ids": app_ids,
+            "search_text": search_text_raw,
             "ticket_no": ticket_no_raw,
             "assignee_id": assignee_id,
             "reported_by_ids": reported_by_ids,
