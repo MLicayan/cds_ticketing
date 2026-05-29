@@ -529,6 +529,7 @@
       <thead>
         <tr>
           {% set show_assigned_column = current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support') %}
+          {% set can_prompt_per_ticket = not is_task_list and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) %}
           <th>#</th>
           {% if current_user.role.value not in ['client', 'client_admin'] %}
             <th>Priority</th>
@@ -549,6 +550,9 @@
           <th>Turnaround (hrs)</th>
           <th>Created</th>
           <th>Date Needed</th>
+          {% if can_prompt_per_ticket %}
+            <th>Action</th>
+          {% endif %}
           {% if is_task_list %}
             <th>Fix/Completed At</th>
           {% endif %}
@@ -558,6 +562,11 @@
       <tbody>
         {% for t in tickets %}
         {% set status_value = t.status.value if t.status is not none and t.status.value is not none else (t.status or '') %}
+        {% set status_label = status_labels.get(t.status, status_value.replace('_', ' ')|title) %}
+        {% if current_user.role.value in ['client', 'client_admin'] and status_value == 'resolved' %}
+          {% set status_label = 'Pending Approval' %}
+          {% set badge = 'danger' %}
+        {% endif %}
         {% set badge = 'secondary' %}
         {% if status_value in ['resolved'] %}
           {% set badge = 'success' %}
@@ -567,6 +576,9 @@
           {% set badge = 'primary' %}
         {% elif status_value in ['reopened'] %}
           {% set badge = 'warning' %}
+        {% endif %}
+        {% if current_user.role.value in ['client', 'client_admin'] and status_value == 'resolved' %}
+          {% set badge = 'danger' %}
         {% endif %}
         {% set priority_value = t.priority.value if t.priority else 'NOT_SET' %}
         {% set priority_color = 'rgba(220,53,69,0.08)' if priority_value == 'critical' else
@@ -589,7 +601,7 @@
           {% endif %}
           <td>
             <span class="badge badge-{{ badge }}">
-              {{ status_labels.get(t.status, status_value.replace('_', ' ')|title) }}
+              {{ status_label }}
             </span>
           </td>
           {% if is_task_list %}
@@ -656,6 +668,19 @@
               <span class="text-muted">Not set</span>
             {% endif %}
           </td>
+          {% if can_prompt_per_ticket %}
+            <td onclick="event.stopPropagation();">
+              {% if t.status == TicketStatus.RESOLVED %}
+                <form method="post" action="{{ url_for('tickets.prompt_client_resolution', ticket_id=t.id) }}" class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-outline-warning">
+                    <i class="fas fa-bell"></i> Prompt Client
+                  </button>
+                </form>
+              {% else %}
+                <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          {% endif %}
           {% if is_task_list %}
             <td>
               {% if t.status == TicketStatus.RESOLVED and t.closed_at %}

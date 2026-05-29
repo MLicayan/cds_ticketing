@@ -808,17 +808,22 @@ def _client_resolution_prompt_recipients(ticket: Optional[Ticket] = None):
     return query.order_by(User.full_name.asc(), User.username.asc()).all()
 
 
-def _client_resolution_prompt_payload(recipient: User, sender: Optional[User] = None, client_id: Optional[int] = None) -> Optional[dict]:
+def _client_resolution_prompt_payload(
+    recipient: User,
+    sender: Optional[User] = None,
+    client_id: Optional[int] = None,
+    tickets: Optional[list] = None,
+) -> Optional[dict]:
     sender_name = ""
     if sender:
         sender_name = sender.full_name or sender.username or ""
 
-    tickets = _resolved_tickets_pending_for_user(recipient, client_id=client_id)
-    if not tickets:
+    resolved_tickets = tickets if tickets is not None else _resolved_tickets_pending_for_user(recipient, client_id=client_id)
+    if not resolved_tickets:
         return None
 
     ticket_payloads = []
-    for ticket in tickets:
+    for ticket in resolved_tickets:
         ticket_payloads.append(
             {
                 "ticket_id": ticket.id,
@@ -834,7 +839,8 @@ def _client_resolution_prompt_payload(recipient: User, sender: Optional[User] = 
         "tickets": ticket_payloads,
         "message": (
             f"{sender_name or 'Support'} asked you to review your Fix/Completed ticket"
-            f"{'' if len(ticket_payloads) == 1 else 's'}. Please Accept or Deny them."
+            f"{'' if len(ticket_payloads) == 1 else 's'}. Please Accept or Deny "
+            f"{'it' if len(ticket_payloads) == 1 else 'them'}."
         ),
     }
 
@@ -843,7 +849,9 @@ def _emit_client_resolution_prompt(ticket: Ticket, sender: Optional[User] = None
     recipients = _client_resolution_prompt_recipients(ticket)
     sent = 0
     for recipient in recipients:
-        payload = _client_resolution_prompt_payload(recipient, sender=sender, client_id=ticket.client_id)
+        if recipient.role == UserRole.CLIENT and ticket.reported_by_id != recipient.id:
+            continue
+        payload = _client_resolution_prompt_payload(recipient, sender=sender, tickets=[ticket])
         if not payload:
             continue
         socketio.emit(
@@ -1189,7 +1197,17 @@ def _render_ticket_index(my_tickets_only=False):
         except ValueError:
             pass
 
-    if my_tickets_only:
+    if current_user.role in CLIENT_SCOPED_ROLES and not is_task_list:
+        pending_first = db.case(
+            (list_model.status == TicketStatus.RESOLVED, 0),
+            else_=1,
+        )
+        tickets = query.order_by(
+            pending_first.asc(),
+            list_model.created_at.desc(),
+            list_model.id.desc(),
+        ).all()
+    elif my_tickets_only:
         tickets = query.order_by(list_model.created_at.desc()).all()
     else:
         tickets = query.order_by(list_model.created_at.asc()).all()

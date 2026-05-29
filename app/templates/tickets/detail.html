@@ -672,6 +672,10 @@
               <dt class="col-sm-4">Status</dt>
               <dd class="col-sm-8">
                 {% set status_value = ticket.status.value %}
+                {% set status_label = status_labels.get(ticket.status, ticket.status.value.replace('_', ' ')|title) %}
+                {% if current_user.role.value in ['client', 'client_admin'] and status_value == 'resolved' %}
+                  {% set status_label = 'Pending Approval' %}
+                {% endif %}
                 {% set badge = 'secondary' %}
                 {% if status_value in ['resolved'] %}
                   {% set badge = 'success' %}
@@ -682,8 +686,11 @@
                 {% elif status_value in ['reopened'] %}
                   {% set badge = 'warning' %}
                 {% endif %}
+                {% if current_user.role.value in ['client', 'client_admin'] and status_value == 'resolved' %}
+                  {% set badge = 'danger' %}
+                {% endif %}
                 <span   class="badge badge-{{ badge }}">
-                  {{ status_labels.get(ticket.status, ticket.status.value.replace('_', ' ')|title) }}
+                  {{ status_label }}
                 </span>
               </dd>
               {% if (current_user.user_type or '').lower() == 'it' %}
