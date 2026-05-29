@@ -701,6 +701,7 @@
 
 {% block extra_js %}
 {{ super() }}
+<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
 function syncTableViewportHeight(containerId) {
@@ -1422,18 +1423,12 @@ $(function() {
 <script>
 (function() {
   if (!window.io) return;
-  if (window.__cerebroTicketIndexSocketBound) return;
-  window.__cerebroTicketIndexSocketBound = true;
-  var socket = window.getCerebroSocket ? window.getCerebroSocket() : null;
-  if (!socket) return;
+  var socket = io();
   var reloadTimer = null;
 
   socket.on('connect', function() {
     socket.emit('join_ticket_list');
   });
-  if (socket.connected) {
-    socket.emit('join_ticket_list');
-  }
 
   socket.on('ticket_changed', function(payload) {
     clearTimeout(reloadTimer);

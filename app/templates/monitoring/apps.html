@@ -408,20 +408,13 @@
 
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    window.CEREBRO_SOCKET_OPTIONS = {
-      transports: {{ config.SOCKETIO_CLIENT_TRANSPORTS|tojson }},
-      upgrade: {{ 'true' if config.SOCKETIO_CLIENT_UPGRADE else 'false' }}
-    };
-  </script>
-  <script src="{{ url_for('static', filename='js/cerebro_socket.js') }}"></script>
-  <script>
     (function() {
       var tableBody = document.getElementById('monitor-table-body');
       var hospitalLeaderboardStage = document.getElementById('hospital-leaderboard-stage');
       var syncLabel = document.getElementById('monitor-sync');
       var dateLabel = document.getElementById('monitor-date');
       var timeLabel = document.getElementById('monitor-time');
-      var socket = window.getCerebroSocket ? window.getCerebroSocket() : null;
+      var socket = window.io ? io() : null;
       var previousHospitalTotals = {};
       var leaderboardRows = {};
       var leaderboardRowHeight = 54;
@@ -623,16 +616,10 @@
       trackHospitalChanges({% if hospital_rows %}{{ hospital_rows|tojson }}{% else %}[]{% endif %});
 
       if (socket) {
-        if (!window.__cerebroMonitoringSocketBound) {
-          window.__cerebroMonitoringSocketBound = true;
-          socket.on('connect', function() {
-            socket.emit('join_ticket_list');
-          });
-          socket.on('ticket_changed', refreshMonitoring);
-        }
-        if (socket.connected) {
+        socket.on('connect', function() {
           socket.emit('join_ticket_list');
-        }
+        });
+        socket.on('ticket_changed', refreshMonitoring);
       }
 
       window.setInterval(refreshMonitoring, 30000);

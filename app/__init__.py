@@ -10,12 +10,7 @@ from config import Config
 
 db = SQLAlchemy()
 login_manager = LoginManager()
-socketio = SocketIO(
-    cors_allowed_origins="*",
-    async_mode="threading",
-    logger=False,
-    engineio_logger=False,
-)
+socketio = SocketIO(cors_allowed_origins="*", async_mode="threading")
 migrate = None
 APP_TIMEZONE = timezone(timedelta(hours=8))
 
@@ -57,14 +52,7 @@ def create_app(config_class=Config):
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.login_view = "auth.login"
-    socketio.init_app(
-        app,
-        logger=app.config.get("SOCKETIO_LOGGER", False),
-        engineio_logger=app.config.get("ENGINEIO_LOGGER", False),
-        transports=app.config.get("SOCKETIO_SERVER_TRANSPORTS", ["websocket"]),
-        ping_interval=app.config.get("SOCKETIO_PING_INTERVAL", 25),
-        ping_timeout=app.config.get("SOCKETIO_PING_TIMEOUT", 20),
-    )
+    socketio.init_app(app)
     migrate = Migrate(app, db)
     app.jinja_env.filters["localtime"] = to_localtime
     app.jinja_env.globals["to_localtime"] = to_localtime

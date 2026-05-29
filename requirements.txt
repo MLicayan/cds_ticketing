@@ -3,7 +3,6 @@ Flask-SQLAlchemy==2.5.1
 Flask-Migrate==3.1.0
 Flask-Login==0.5.0
 Flask-SocketIO==5.3.6
-simple-websocket==0.10.1
 Werkzeug==2.0.3
 pymysql==1.0.2
 alembic==1.7.7
