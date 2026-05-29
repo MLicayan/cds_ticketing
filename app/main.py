@@ -374,7 +374,7 @@ def dashboard():
         engineers = engineers_query.order_by(User.full_name.asc(), User.username.asc()).all()
         engineer_performance = []
         completed_statuses = [TicketStatus.RESOLVED, TicketStatus.CLOSED]
-        performance_ticket_scope = _exclude_task_tickets(Ticket.query) if can_view_overall else ticket_scope
+        performance_ticket_scope = _dashboard_ticket_scope_for_user()
         performance_task_scope = TicketTask.query
         if role == UserRole.SALES:
             performance_task_scope = (
