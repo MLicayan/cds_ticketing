@@ -2,6 +2,7 @@ import os
 
 basedir = os.path.abspath(os.path.dirname(__file__))
 
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-me")
     SQLALCHEMY_DATABASE_URI = os.environ.get(
@@ -18,5 +19,12 @@ class Config:
 
     HOST = os.environ.get("FLASK_RUN_HOST", "0.0.0.0")
     PORT = int(os.environ.get("FLASK_RUN_PORT", 5013))
-    DEBUG = os.environ.get("FLASK_DEBUG", "False").lower() in ("1", "true", "yes")
-    USE_RELOADER = os.environ.get("FLASK_USE_RELOADER", "False").lower() in ("1", "true", "yes")
+    DEBUG = False
+    USE_RELOADER = False
+    SOCKETIO_LOGGER = False
+    ENGINEIO_LOGGER = False
+    SOCKETIO_SERVER_TRANSPORTS = ["websocket"]
+    SOCKETIO_CLIENT_TRANSPORTS = ["websocket"]
+    SOCKETIO_CLIENT_UPGRADE = False
+    SOCKETIO_PING_INTERVAL = 25
+    SOCKETIO_PING_TIMEOUT = 20

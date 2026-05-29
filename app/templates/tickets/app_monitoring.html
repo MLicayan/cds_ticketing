@@ -114,12 +114,11 @@
 {% endblock %}
 {% block extra_js %}
 {{ super() }}
-<script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
   (function() {
     var tbody = document.getElementById('app-monitoring-body');
     var syncLabel = document.getElementById('monitoring-last-sync');
-    var socket = window.io ? io() : null;
+    var socket = window.getCerebroSocket ? window.getCerebroSocket() : null;
 
     function renderRows(rows) {
       if (!tbody) return;
@@ -182,12 +181,18 @@
     }
 
     if (socket) {
-      socket.on('connect', function() {
+      if (!window.__cerebroAppMonitoringSocketBound) {
+        window.__cerebroAppMonitoringSocketBound = true;
+        socket.on('connect', function() {
+          socket.emit('join_ticket_list');
+        });
+        socket.on('ticket_changed', function() {
+          refreshMonitoring();
+        });
+      }
+      if (socket.connected) {
         socket.emit('join_ticket_list');
-      });
-      socket.on('ticket_changed', function() {
-        refreshMonitoring();
-      });
+      }
     }
 
     window.setInterval(refreshMonitoring, 30000);
