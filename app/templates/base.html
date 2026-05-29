@@ -661,6 +661,13 @@
 <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap4.min.js"></script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script>
+  window.CEREBRO_SOCKET_OPTIONS = {
+    transports: {{ config.SOCKETIO_CLIENT_TRANSPORTS|tojson }},
+    upgrade: {{ 'true' if config.SOCKETIO_CLIENT_UPGRADE else 'false' }}
+  };
+</script>
+<script src="{{ url_for('static', filename='js/cerebro_socket.js') }}"></script>
+<script>
   document.addEventListener('DOMContentLoaded', function () {
     const workdayPromptStateUrl = {{ url_for('tickets.task_workday_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
     const workdayPromptPauseUrl = {{ url_for('tickets.task_workday_prompt_pause')|tojson if current_user.is_authenticated else 'null' }};
@@ -1096,7 +1103,10 @@
         });
       }
 
-      const notificationSocket = io();
+      const notificationSocket = window.getCerebroSocket ? window.getCerebroSocket() : null;
+      if (!notificationSocket || window.__cerebroHeaderSocketBound) return;
+      window.__cerebroHeaderSocketBound = true;
+
       notificationSocket.on('connect', function() {
         notificationSocket.emit('join_header_notifications');
         if (canHearNewTicketSound) {
@@ -1123,6 +1133,12 @@
           playNotificationSound('new-ticket');
         }
       });
+      if (notificationSocket.connected) {
+        notificationSocket.emit('join_header_notifications');
+        if (canHearNewTicketSound) {
+          notificationSocket.emit('join_ticket_list');
+        }
+      }
     }
   });
 </script>
