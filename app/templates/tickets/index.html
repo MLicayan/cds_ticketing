@@ -636,8 +636,18 @@
           </td>
           {% if is_task_list %}
             <td>
-              <span class="badge badge-{{ 'success' if t.is_working else 'secondary' }}">
-                {{ 'Working' if t.is_working else 'Not Working' }}
+              {% set work_state = task_work_status_map.get(t.id, 'not_started') %}
+              {% set work_status_badge = 'success' if t.is_working else 'secondary' %}
+              {% set work_status_label = 'Working' if t.is_working else 'Not Working' %}
+              {% if status_value == 'resolved' %}
+                {% set work_status_badge = 'success' %}
+                {% set work_status_label = 'Done' %}
+              {% elif work_state == 'paused' %}
+                {% set work_status_badge = 'warning' %}
+                {% set work_status_label = 'Paused' %}
+              {% endif %}
+              <span class="badge badge-{{ work_status_badge }}">
+                {{ work_status_label }}
               </span>
             </td>
           {% endif %}

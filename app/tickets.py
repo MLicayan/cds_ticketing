@@ -1249,6 +1249,12 @@ def _render_ticket_index(my_tickets_only=False):
         tickets = query.order_by(list_model.created_at.desc()).all()
     else:
         tickets = query.order_by(list_model.created_at.asc()).all()
+    task_work_status_map = {}
+    if is_task_list:
+        task_work_status_map = {
+            task.id: _task_work_session_state(task)
+            for task in tickets
+        }
     now = datetime.now(APP_TIMEZONE)
     current_date = now.strftime("%Y-%m-%d")
 
@@ -1267,6 +1273,7 @@ def _render_ticket_index(my_tickets_only=False):
         ticket_list_title="My Task" if my_tickets_only else "All Tickets",
         ticket_list_endpoint="tickets.my_tickets" if my_tickets_only else "tickets.index",
         is_task_list=is_task_list,
+        task_work_status_map=task_work_status_map,
         can_create_task=can_create_task,
         selected_filters={
             "client_ids": client_ids,
