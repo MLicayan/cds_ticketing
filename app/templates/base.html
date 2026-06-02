@@ -613,8 +613,8 @@
         <h5 class="modal-title"><i class="fas fa-business-time mr-2 text-primary"></i>Active Task Check</h5>
       </div>
       <div class="modal-body">
-        <p class="mb-2">It is already 5:30 PM. Do you want to continue working on your active tasks?</p>
-        <div class="small text-muted mb-3">Choose <strong>Yes</strong> to keep working, or <strong>No</strong> to pause your active tasks.</div>
+        <p class="mb-2" id="workdayTaskPromptMessage">It is already 5:30 PM. Do you want to continue working on your active tasks?</p>
+        <div class="small text-muted mb-3" id="workdayTaskPromptHelp">Choose <strong>Yes</strong> to keep working, or <strong>No</strong> to pause your active tasks.</div>
         <div class="border rounded p-3 bg-light">
           <div class="font-weight-bold mb-2">Active working tasks</div>
           <div id="workdayTaskPromptEmpty" class="text-muted small d-none">No active working tasks found.</div>
@@ -669,6 +669,8 @@
     const workdayPromptEmpty = document.getElementById('workdayTaskPromptEmpty');
     const workdayPromptYesBtn = document.getElementById('workdayTaskPromptYes');
     const workdayPromptNoBtn = document.getElementById('workdayTaskPromptNo');
+    const workdayPromptMessage = document.getElementById('workdayTaskPromptMessage');
+    const workdayPromptHelp = document.getElementById('workdayTaskPromptHelp');
     const resolutionPromptHeading = document.getElementById('ticketResolutionPromptHeading');
     const resolutionPromptMessage = document.getElementById('ticketResolutionPromptMessage');
     const resolutionPromptOpenLink = document.getElementById('ticketResolutionPromptOpenLink');
@@ -772,17 +774,13 @@
       }, 5000);
     });
 
-    function workdayPromptStorageKey() {
-      const now = new Date();
-      const yyyy = now.getFullYear();
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const dd = String(now.getDate()).padStart(2, '0');
-      return 'workday-task-prompt-' + yyyy + '-' + mm + '-' + dd;
+    function workdayPromptStorageKey(promptDate) {
+      return 'workday-task-prompt-' + (promptDate || currentWorkdayPromptDate());
     }
 
-    function markWorkdayPromptHandled(action) {
+    function markWorkdayPromptHandled(action, promptDate) {
       try {
-        localStorage.setItem(workdayPromptStorageKey(), action || 'handled');
+        localStorage.setItem(workdayPromptStorageKey(promptDate), action || 'handled');
       } catch (err) {
       }
     }
@@ -793,13 +791,6 @@
       const mm = String(now.getMonth() + 1).padStart(2, '0');
       const dd = String(now.getDate()).padStart(2, '0');
       return yyyy + '-' + mm + '-' + dd;
-    }
-
-    function isAfterWorkdayPromptTime() {
-      const now = new Date();
-      const cutoff = new Date(now);
-      cutoff.setHours(17, 30, 0, 0);
-      return now >= cutoff;
     }
 
     function renderWorkdayPromptTasks(tasks) {
@@ -824,15 +815,20 @@
       });
     }
 
-    async function maybeShowWorkdayPrompt() {
-      if (!workdayPromptStateUrl || !workdayPromptModalEl || workdayPromptOpen || !isAfterWorkdayPromptTime()) {
+    function updateWorkdayPromptCopy(isOverdue, promptDate) {
+      if (!workdayPromptMessage || !workdayPromptHelp) return;
+      if (isOverdue) {
+        workdayPromptMessage.textContent = 'You still have active tasks from a missed 5:30 PM pause check.';
+        workdayPromptHelp.innerHTML = 'Choose <strong>Yes</strong> to keep working, or <strong>No</strong> to pause your active tasks at <strong>' + (promptDate || 'the missed cutoff') + ' 5:30 PM</strong>.';
         return;
       }
-      try {
-        if (localStorage.getItem(workdayPromptStorageKey())) {
-          return;
-        }
-      } catch (err) {
+      workdayPromptMessage.textContent = 'It is already 5:30 PM. Do you want to continue working on your active tasks?';
+      workdayPromptHelp.innerHTML = 'Choose <strong>Yes</strong> to keep working, or <strong>No</strong> to pause your active tasks.';
+    }
+
+    async function maybeShowWorkdayPrompt() {
+      if (!workdayPromptStateUrl || !workdayPromptModalEl || workdayPromptOpen) {
+        return;
       }
 
       try {
@@ -844,11 +840,17 @@
         }
         const payload = await response.json();
         if (!payload || !payload.count) {
-          markWorkdayPromptHandled('no-active-tasks');
           return;
         }
-        workdayPromptDate = currentWorkdayPromptDate();
+        workdayPromptDate = payload.prompt_date || currentWorkdayPromptDate();
+        try {
+          if (localStorage.getItem(workdayPromptStorageKey(workdayPromptDate))) {
+            return;
+          }
+        } catch (err) {
+        }
         renderWorkdayPromptTasks(payload.tasks || []);
+        updateWorkdayPromptCopy(Boolean(payload.is_overdue), workdayPromptDate);
         workdayPromptOpen = true;
         if (window.jQuery && $('#workdayTaskPromptModal').modal) {
           $('#workdayTaskPromptModal').modal({
@@ -863,7 +865,7 @@
 
     if (workdayPromptYesBtn) {
       workdayPromptYesBtn.addEventListener('click', function() {
-        markWorkdayPromptHandled('continue');
+        markWorkdayPromptHandled('continue', workdayPromptDate);
         if (window.jQuery && $('#workdayTaskPromptModal').modal) {
           $('#workdayTaskPromptModal').modal('hide');
         }
@@ -889,7 +891,7 @@
             }).toString()
           });
           if (response.ok) {
-            markWorkdayPromptHandled('paused');
+            markWorkdayPromptHandled('paused', workdayPromptDate);
             window.location.reload();
             return;
           }

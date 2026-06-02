@@ -282,11 +282,9 @@
         <i class="fas fa-th-large"></i> Kanban
       </a>
       {% if not is_task_list and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) %}
-      <form method="post" action="{{ url_for('tickets.prompt_client_resolution_global') }}" class="d-inline">
-        <button type="submit" class="btn btn-outline-warning">
-          <i class="fas fa-bell"></i> Prompt Clients
-        </button>
-      </form>
+      <button type="button" class="btn btn-outline-warning" data-toggle="modal" data-target="#promptClientsModal">
+        <i class="fas fa-bell"></i> Prompt Clients
+      </button>
       {% endif %}
       {% if is_task_list and can_create_task %}
       <a href="{{ url_for('tickets.create_task') }}" class="btn btn-primary">
@@ -307,6 +305,38 @@
 {% endblock %}
 
 {% block content %}
+
+{% if not is_task_list and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) %}
+<div class="modal fade" id="promptClientsModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <form method="post" action="{{ url_for('tickets.prompt_client_resolution_global') }}" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-bell mr-2 text-warning"></i>Prompt Selected Clients</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group mb-0">
+          <label for="prompt_client_ids">Clients</label>
+          <select id="prompt_client_ids" name="client_id" class="form-control" multiple>
+            {% for c in clients %}
+              <option value="{{ c.id }}" {% if selected_filters.client_ids and c.id|string in selected_filters.client_ids %}selected{% endif %}>
+                {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
+              </option>
+            {% endfor %}
+          </select>
+          <small class="text-muted">Leave empty to prompt all clients with pending approval tickets.</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-warning">Send Prompt</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 <div class="card mb-3 ticket-toolbar-card">
   <div class="card-body">
@@ -1333,6 +1363,21 @@ $(function() {
         filterApps();
         updateFilterChips();
         autoSubmitFilters();
+      }).on('select2:open', function() {
+        var searchField = document.querySelector('.select2-container--open .select2-search__field');
+        if (searchField) {
+          searchField.placeholder = 'Search clients...';
+          searchField.focus();
+        }
+      });
+    }
+
+    if (window.$ && $('#prompt_client_ids').length) {
+      $('#prompt_client_ids').select2({
+        width: '100%',
+        placeholder: 'Choose client(s)',
+        closeOnSelect: false,
+        dropdownParent: $('#promptClientsModal')
       }).on('select2:open', function() {
         var searchField = document.querySelector('.select2-container--open .select2-search__field');
         if (searchField) {

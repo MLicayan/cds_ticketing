@@ -229,12 +229,41 @@ def _task_work_session_state(task: TicketTask) -> str:
 
 
 def _current_user_working_tasks_query():
+    active_session_task_ids = db.session.query(TicketTaskWorkSession.ticket_task_id).filter(
+        TicketTaskWorkSession.developer_id == current_user.id,
+        TicketTaskWorkSession.paused_at.is_(None),
+        TicketTaskWorkSession.ended_at.is_(None),
+    )
     return TicketTask.query.filter(
         TicketTask.assigned_engineer_id == current_user.id,
-        TicketTask.is_working.is_(True),
+        db.or_(
+            TicketTask.is_working.is_(True),
+            TicketTask.id.in_(active_session_task_ids),
+        ),
         TicketTask.status != TicketStatus.CLOSED,
         TicketTask.status != TicketStatus.CANCELLED,
     ).order_by(TicketTask.updated_at.desc(), TicketTask.created_at.desc(), TicketTask.id.desc())
+
+
+def _current_workday_prompt_cutoff(now: Optional[datetime] = None) -> datetime:
+    now = now or datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    today_cutoff = datetime.combine(now.date(), time(17, 30))
+    if now >= today_cutoff:
+        return today_cutoff
+    return today_cutoff - timedelta(days=1)
+
+
+def _task_is_eligible_for_workday_prompt(task: TicketTask, prompt_cutoff: datetime) -> bool:
+    active_session = _active_task_work_session(task)
+    if active_session and active_session.started_at:
+        return active_session.started_at <= prompt_cutoff
+
+    started_at = None
+    if task.started_date:
+        started_at = datetime.combine(task.started_date, time.min)
+    elif task.created_at:
+        started_at = task.created_at
+    return bool(started_at and started_at <= prompt_cutoff)
 
 
 def _can_view_task_detail(task: TicketTask) -> bool:
@@ -778,7 +807,7 @@ def _emit_ticket_comment_notification_count(comment: TicketComment) -> None:
         )
 
 
-def _resolved_tickets_pending_for_user(user: User, client_id: Optional[int] = None):
+def _resolved_tickets_pending_for_user(user: User, client_id: Optional[int] = None, client_ids: Optional[list] = None):
     if not user or user.role not in CLIENT_SCOPED_ROLES:
         return []
 
@@ -791,13 +820,15 @@ def _resolved_tickets_pending_for_user(user: User, client_id: Optional[int] = No
     else:
         query = query.filter(Ticket.client_id == user.client_id)
 
-    if client_id is not None:
+    if client_ids:
+        query = query.filter(Ticket.client_id.in_(client_ids))
+    elif client_id is not None:
         query = query.filter(Ticket.client_id == client_id)
 
     return query.order_by(Ticket.closed_at.desc(), Ticket.updated_at.desc(), Ticket.id.desc()).all()
 
 
-def _client_resolution_prompt_recipients(ticket: Optional[Ticket] = None):
+def _client_resolution_prompt_recipients(ticket: Optional[Ticket] = None, client_ids: Optional[list] = None):
     query = User.query.filter(
         User.is_active_user.is_(True),
         User.role.in_(CLIENT_SCOPED_ROLES),
@@ -805,6 +836,8 @@ def _client_resolution_prompt_recipients(ticket: Optional[Ticket] = None):
 
     if ticket is not None:
         query = query.filter(User.client_id == ticket.client_id)
+    elif client_ids:
+        query = query.filter(User.client_id.in_(client_ids))
     return query.order_by(User.full_name.asc(), User.username.asc()).all()
 
 
@@ -812,13 +845,18 @@ def _client_resolution_prompt_payload(
     recipient: User,
     sender: Optional[User] = None,
     client_id: Optional[int] = None,
+    client_ids: Optional[list] = None,
     tickets: Optional[list] = None,
 ) -> Optional[dict]:
     sender_name = ""
     if sender:
         sender_name = sender.full_name or sender.username or ""
 
-    resolved_tickets = tickets if tickets is not None else _resolved_tickets_pending_for_user(recipient, client_id=client_id)
+    resolved_tickets = tickets if tickets is not None else _resolved_tickets_pending_for_user(
+        recipient,
+        client_id=client_id,
+        client_ids=client_ids,
+    )
     if not resolved_tickets:
         return None
 
@@ -863,10 +901,10 @@ def _emit_client_resolution_prompt(ticket: Ticket, sender: Optional[User] = None
     return sent
 
 
-def _emit_global_client_resolution_prompts(sender: Optional[User] = None) -> int:
+def _emit_global_client_resolution_prompts(sender: Optional[User] = None, client_ids: Optional[list] = None) -> int:
     sent = 0
-    for recipient in _client_resolution_prompt_recipients():
-        payload = _client_resolution_prompt_payload(recipient, sender=sender)
+    for recipient in _client_resolution_prompt_recipients(client_ids=client_ids):
+        payload = _client_resolution_prompt_payload(recipient, sender=sender, client_ids=client_ids)
         if not payload:
             continue
         socketio.emit(
@@ -3804,7 +3842,20 @@ def prompt_client_resolution_global():
     if not _can_prompt_client_resolution(current_user):
         abort(403)
 
-    recipient_count = _emit_global_client_resolution_prompts(sender=current_user)
+    client_ids = []
+    for client_id_raw in request.form.getlist("client_id"):
+        client_id_raw = (client_id_raw or "").strip()
+        if not client_id_raw:
+            continue
+        try:
+            client_ids.append(int(client_id_raw))
+        except ValueError:
+            continue
+
+    recipient_count = _emit_global_client_resolution_prompts(
+        sender=current_user,
+        client_ids=client_ids or None,
+    )
     if recipient_count:
         flash("Client prompts sent.", "success")
     else:
@@ -4121,12 +4172,20 @@ def toggle_task_work_state(task_id):
 @login_required
 def task_workday_prompt_state():
     if current_user.role in READ_ONLY_ROLES:
-        return jsonify({"count": 0, "tasks": []})
+        return jsonify({"count": 0, "tasks": [], "prompt_date": None, "is_overdue": False})
 
-    tasks = _current_user_working_tasks_query().limit(5).all()
+    now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    prompt_cutoff = _current_workday_prompt_cutoff(now)
+    tasks = [
+        task
+        for task in _current_user_working_tasks_query().all()
+        if _task_is_eligible_for_workday_prompt(task, prompt_cutoff)
+    ][:5]
     return jsonify(
         {
             "count": len(tasks),
+            "prompt_date": prompt_cutoff.date().strftime("%Y-%m-%d"),
+            "is_overdue": now < datetime.combine(now.date(), time(17, 30)),
             "tasks": [
                 {
                     "id": task.id,
