@@ -2333,6 +2333,7 @@ def developer_tasks():
 
     tasks = query.order_by(TicketTask.created_at.desc()).all()
     parent_ids = [task.ticket_id for task in tasks if task.ticket_id]
+    task_states = {task.id: _task_work_session_state(task) for task in tasks}
 
     parents = {}
     if parent_ids:
@@ -2344,6 +2345,7 @@ def developer_tasks():
             tasks=tasks,
             parents=parents,
             status_labels=status_labels,
+            task_states=task_states,
         )
 
     return render_template(
@@ -2351,6 +2353,7 @@ def developer_tasks():
         tasks=tasks,
         parents=parents,
         status_labels=status_labels,
+        task_states=task_states,
         clients=clients,
         apps=apps,
         reporters=reporters,
@@ -4172,6 +4175,58 @@ def toggle_task_work_state(task_id):
     if action == "start" and task.parent_ticket:
         _emit_ticket_changed(task.parent_ticket, "updated")
     flash("Work status updated.", "success")
+    return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+
+@tickets_bp.route("/tasks/<int:task_id>/resolution", methods=["POST"])
+@login_required
+def resolve_task_decision(task_id):
+    task = TicketTask.query.get_or_404(task_id)
+    closed_redirect = _ensure_task_not_closed(task)
+    if closed_redirect:
+        return closed_redirect
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+    if current_user.role != UserRole.ADMIN and not _is_support_user(current_user):
+        abort(403)
+
+    action = (request.form.get("resolution_action") or "").strip().lower()
+    if task.status != TicketStatus.RESOLVED:
+        flash("Task resolution actions are only available when the task is Fix/Completed.", "warning")
+        return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+    user_name = current_user.full_name or current_user.username
+    active_session = _active_task_work_session(task)
+    if active_session:
+        active_session.ended_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    task.is_working = False
+
+    if action == "accept":
+        old_status = task.status
+        task.status = TicketStatus.CLOSED
+        task.closed_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+        task.kanban_bucket = None
+        _record_task_change(
+            task,
+            f"Status changed from {_enum_label(old_status)} to Closed by {user_name}.",
+        )
+        flash("Task accepted and closed.", "success")
+    elif action == "deny":
+        old_status = task.status
+        task.status = TicketStatus.REOPENED
+        task.closed_at = None
+        task.kanban_bucket = None
+        _record_task_change(
+            task,
+            f"Status changed from {_enum_label(old_status)} to Re-Open by {user_name}.",
+        )
+        flash("Task denied and reopened.", "success")
+    else:
+        flash("Invalid task resolution action.", "danger")
+        return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+    db.session.commit()
+    _emit_ticket_changed(task, "updated")
     return redirect(url_for("tickets.task_detail", task_id=task.id))
 
 

@@ -455,6 +455,28 @@
   word-break: break-word;
 }
 
+.attachments-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.attachments-list > li {
+  margin-bottom: 10px;
+}
+
+.attachments-list > li:last-child {
+  margin-bottom: 0;
+}
+
+.attachments-list .attachment-preview-trigger {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.attachments-list small {
+  font-size: 12px;
+}
+
 .attachment-preview-modal .modal-dialog {
   max-width: 900px;
 }
@@ -471,6 +493,7 @@
 }
 
 .attachment-preview-body {
+  position: relative;
   min-height: 420px;
   background: #f4f7fb;
   display: flex;
@@ -520,6 +543,40 @@
   margin-right: auto;
   color: #475569;
   font-weight: 600;
+}
+
+.attachment-preview-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  transition: opacity 0.2s ease, background 0.2s ease;
+}
+
+.attachment-preview-nav:hover:not(:disabled) {
+  background: rgba(15, 23, 42, 0.9);
+}
+
+.attachment-preview-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.attachment-preview-nav.prev {
+  left: 16px;
+}
+
+.attachment-preview-nav.next {
+  right: 16px;
 }
 
 .ticket-edit-modal .modal-content {
@@ -794,6 +851,8 @@
             {% if current_user.role.value not in ['client', 'client_admin', 'sales'] %}
               <div class="bg-light p-3 rounded">
                 {% set is_assigned_worker = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() in ['it', 'support'] %}
+                {% set is_assigned_support_worker = ticket.assigned_engineer and ticket.assigned_engineer.id == current_user.id and (current_user.user_type or '').lower() == 'support' %}
+                {% set current_user_is_support = current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support' %}
 
                 {% if is_assigned_worker and not ticket_is_read_only %}
                   {% if is_task_ticket and ticket.is_working %}
@@ -830,6 +889,27 @@
                     {% if ticket.started_date %}
                       <small class="text-muted d-block mt-1">Started {{ ticket.started_date.strftime('%Y-%m-%d') }}</small>
                     {% endif %}
+                  <hr>
+                {% endif %}
+
+                {% if is_task_ticket and ticket.status == TicketStatus.RESOLVED and not ticket_is_read_only and (current_user.role.value == 'admin' or current_user_is_support) %}
+                  <form
+                    method="post"
+                    action="{{ url_for('tickets.resolve_task_decision', task_id=ticket.id) }}"
+                    class="mb-2">
+                    <input type="hidden" name="resolution_action" value="accept">
+                    <button type="submit" class="btn btn-success btn-sm btn-block">
+                      Accept Task
+                    </button>
+                  </form>
+                  <form
+                    method="post"
+                    action="{{ url_for('tickets.resolve_task_decision', task_id=ticket.id) }}">
+                    <input type="hidden" name="resolution_action" value="deny">
+                    <button type="submit" class="btn btn-danger btn-sm btn-block">
+                      Deny Task
+                    </button>
+                  </form>
                   <hr>
                 {% endif %}
 
@@ -1132,7 +1212,7 @@
       <div class="card-body">
         <p class="text-muted mb-0{% if ticket.attachments %} d-none{% endif %}" id="ticket-no-attachments">No attachments.</p>
         {% if ticket.attachments %}
-        <ul class="list-unstyled" id="ticket-attachments-list">
+        <ul class="attachments-list" id="ticket-attachments-list">
           {% for att in ticket.attachments %}
           <li data-attachment-id="{{ att.id }}">
             <i class="fas fa-paperclip mr-1"></i>
@@ -1152,7 +1232,7 @@
           {% endfor %}
         </ul>
         {% else %}
-        <ul class="list-unstyled d-none" id="ticket-attachments-list"></ul>
+        <ul class="attachments-list d-none" id="ticket-attachments-list"></ul>
         {% endif %}
       </div>
       </div>
@@ -1170,11 +1250,22 @@
           <span aria-hidden="true">&times;</span>
         </button>
       </div>
-      <div class="modal-body attachment-preview-body" id="attachmentPreviewBody"></div>
-      <div class="modal-footer">
-        <span class="attachment-preview-zoom-value d-none" id="attachmentZoomValue">100%</span>
-        <a href="#" class="btn btn-outline-primary" id="attachmentPreviewOpen" target="_blank" rel="noopener">Open File</a>
-        <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+      <div class="modal-body attachment-preview-body" id="attachmentPreviewBody">
+        <button type="button" class="attachment-preview-nav prev" id="attachmentPreviewPrev" aria-label="Previous attachment">
+          <i class="fas fa-chevron-left"></i>
+        </button>
+        <button type="button" class="attachment-preview-nav next" id="attachmentPreviewNext" aria-label="Next attachment">
+          <i class="fas fa-chevron-right"></i>
+        </button>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <div class="d-flex align-items-center">
+          <span class="attachment-preview-zoom-value d-none" id="attachmentZoomValue">100%</span>
+        </div>
+        <div class="d-flex align-items-center">
+          <a href="#" class="btn btn-outline-primary btn-sm mr-2" id="attachmentPreviewOpen" target="_blank" rel="noopener">Open File</a>
+          <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Close</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1472,6 +1563,8 @@
     var attachmentPreviewBody = document.getElementById('attachmentPreviewBody');
     var attachmentPreviewTitle = document.getElementById('attachmentPreviewTitle');
     var attachmentPreviewOpen = document.getElementById('attachmentPreviewOpen');
+    var attachmentPreviewPrev = document.getElementById('attachmentPreviewPrev');
+    var attachmentPreviewNext = document.getElementById('attachmentPreviewNext');
     var attachmentZoomValue = document.getElementById('attachmentZoomValue');
     var attachmentsList = document.getElementById('ticket-attachments-list');
     var noAttachmentsMessage = document.getElementById('ticket-no-attachments');
@@ -1508,6 +1601,8 @@
     var MIN_IMAGE_ZOOM = 0.5;
     var MAX_IMAGE_ZOOM = 3;
     var IMAGE_ZOOM_STEP = 0.25;
+    var attachmentPreviewItems = [];
+    var currentAttachmentPreviewIndex = -1;
 
     var reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
@@ -1751,9 +1846,18 @@
       updateImageZoomState();
     }
 
+    function clearAttachmentPreviewContent() {
+      if (!attachmentPreviewBody) return;
+      Array.from(attachmentPreviewBody.children).forEach(function(child) {
+        if (!child.classList.contains('attachment-preview-nav')) {
+          child.remove();
+        }
+      });
+    }
+
     function openAttachmentPreview(url, name, contentType) {
       if (!attachmentPreviewModal || !attachmentPreviewBody) return;
-      attachmentPreviewBody.innerHTML = '';
+      clearAttachmentPreviewContent();
       resetAttachmentPreviewZoom();
       if (attachmentPreviewTitle) {
         attachmentPreviewTitle.textContent = name || 'Attachment Preview';
@@ -1771,7 +1875,7 @@
         image.alt = name || 'Attachment preview';
         image.className = 'attachment-preview-image';
         imageWrap.appendChild(image);
-        attachmentPreviewBody.appendChild(imageWrap);
+        attachmentPreviewBody.insertBefore(imageWrap, attachmentPreviewNext || null);
         activePreviewImage = image;
         activePreviewImageWrap = imageWrap;
         updateImageZoomState();
@@ -1781,11 +1885,65 @@
         frame.src = url;
         frame.className = 'attachment-preview-frame';
         frame.setAttribute('title', name || 'Attachment preview');
-        attachmentPreviewBody.appendChild(frame);
+        attachmentPreviewBody.insertBefore(frame, attachmentPreviewNext || null);
         updateImageZoomState();
       }
 
       $('#attachmentPreviewModal').modal('show');
+    }
+
+    function syncAttachmentPreviewControls() {
+      if (attachmentPreviewPrev) {
+        attachmentPreviewPrev.disabled = currentAttachmentPreviewIndex <= 0;
+      }
+      if (attachmentPreviewNext) {
+        attachmentPreviewNext.disabled = currentAttachmentPreviewIndex < 0 || currentAttachmentPreviewIndex >= attachmentPreviewItems.length - 1;
+      }
+    }
+
+    function collectAttachmentPreviewItems() {
+      var seen = {};
+      attachmentPreviewItems = Array.from(document.querySelectorAll('.attachment-preview-trigger')).map(function(trigger) {
+        return {
+          url: trigger.getAttribute('data-preview-url') || trigger.getAttribute('href') || '',
+          name: trigger.getAttribute('data-preview-name') || '',
+          contentType: trigger.getAttribute('data-preview-type') || ''
+        };
+      }).filter(function(item) {
+        if (!item.url) return false;
+        var key = [item.url, item.name, item.contentType].join('|');
+        if (seen[key]) return false;
+        seen[key] = true;
+        return true;
+      });
+    }
+
+    function openAttachmentPreviewByIndex(index) {
+      if (index < 0 || index >= attachmentPreviewItems.length) return;
+      currentAttachmentPreviewIndex = index;
+      var item = attachmentPreviewItems[index];
+      openAttachmentPreview(item.url, item.name, item.contentType);
+      syncAttachmentPreviewControls();
+    }
+
+    function openAttachmentPreviewFromTrigger(trigger) {
+      if (!trigger) return;
+      collectAttachmentPreviewItems();
+      var triggerUrl = trigger.getAttribute('data-preview-url') || trigger.getAttribute('href') || '';
+      var triggerName = trigger.getAttribute('data-preview-name') || '';
+      var triggerType = trigger.getAttribute('data-preview-type') || '';
+      var matchIndex = attachmentPreviewItems.findIndex(function(item) {
+        return item.url === triggerUrl && item.name === triggerName && item.contentType === triggerType;
+      });
+      if (matchIndex < 0) {
+        attachmentPreviewItems.push({
+          url: triggerUrl,
+          name: triggerName,
+          contentType: triggerType
+        });
+        matchIndex = attachmentPreviewItems.length - 1;
+      }
+      openAttachmentPreviewByIndex(matchIndex);
     }
 
     function getAttachmentFiles() {
@@ -2207,11 +2365,7 @@
       var previewTrigger = event.target.closest('.attachment-preview-trigger');
       if (previewTrigger) {
         event.preventDefault();
-        openAttachmentPreview(
-          previewTrigger.getAttribute('data-preview-url') || previewTrigger.getAttribute('href') || '',
-          previewTrigger.getAttribute('data-preview-name') || '',
-          previewTrigger.getAttribute('data-preview-type') || ''
-        );
+        openAttachmentPreviewFromTrigger(previewTrigger);
         return;
       }
       if (!event.target.closest('[data-reaction-picker]')) {
@@ -2225,13 +2379,30 @@
 
     if (attachmentPreviewModal) {
       $('#attachmentPreviewModal').on('hidden.bs.modal', function() {
-        if (attachmentPreviewBody) {
-          attachmentPreviewBody.innerHTML = '';
-        }
+        clearAttachmentPreviewContent();
         if (attachmentPreviewOpen) {
           attachmentPreviewOpen.href = '#';
         }
+        currentAttachmentPreviewIndex = -1;
+        attachmentPreviewItems = [];
+        syncAttachmentPreviewControls();
         resetAttachmentPreviewZoom();
+      });
+    }
+
+    if (attachmentPreviewPrev) {
+      attachmentPreviewPrev.addEventListener('click', function() {
+        if (currentAttachmentPreviewIndex > 0) {
+          openAttachmentPreviewByIndex(currentAttachmentPreviewIndex - 1);
+        }
+      });
+    }
+
+    if (attachmentPreviewNext) {
+      attachmentPreviewNext.addEventListener('click', function() {
+        if (currentAttachmentPreviewIndex >= 0 && currentAttachmentPreviewIndex < attachmentPreviewItems.length - 1) {
+          openAttachmentPreviewByIndex(currentAttachmentPreviewIndex + 1);
+        }
       });
     }
 
@@ -2242,8 +2413,23 @@
 
     document.addEventListener('mousemove', moveAttachmentPreviewDrag);
     document.addEventListener('mouseup', stopAttachmentPreviewDrag);
+    document.addEventListener('keydown', function(event) {
+      if (!attachmentPreviewModal || !attachmentPreviewModal.classList.contains('show')) return;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        if (currentAttachmentPreviewIndex > 0) {
+          openAttachmentPreviewByIndex(currentAttachmentPreviewIndex - 1);
+        }
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        if (currentAttachmentPreviewIndex >= 0 && currentAttachmentPreviewIndex < attachmentPreviewItems.length - 1) {
+          openAttachmentPreviewByIndex(currentAttachmentPreviewIndex + 1);
+        }
+      }
+    });
 
     resetAttachmentPreviewZoom();
+    syncAttachmentPreviewControls();
 
     if (ticketTimelineCollapse && ticketTimelineToggleIcon) {
       $('#ticketTimelineCollapse').on('shown.bs.collapse', function() {
