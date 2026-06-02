@@ -1463,7 +1463,7 @@
       <option value="medium" {% if ticket.priority and ticket.priority.value == 'medium' %}selected{% endif %}>Medium</option>
       <option value="low" {% if ticket.priority and ticket.priority.value == 'low' %}selected{% endif %}>Low</option>
     `;
-    var realtimeSocket = window.io ? io() : null;
+    var realtimeSocket = window.getCerebroSocket ? window.getCerebroSocket() : null;
     var commentsCard = document.getElementById('ticket-comments-card');
     var commentsList = document.getElementById('ticket-comments-list');
     var commentScrollKey = 'ticket-comments-return-{{ ticket.id }}';
@@ -2163,28 +2163,34 @@
     }
 
     if (realtimeSocket) {
-      realtimeSocket.on('connect', function() {
-        realtimeSocket.emit('join_ticket_detail', { ticket_id: {{ ticket.id }} });
-      });
-      realtimeSocket.on('ticket_comment_added', function(payload) {
-        appendRealtimeComment(payload);
-        if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
-        if (Number(payload.user_id) !== {{ current_user.id }}) {
-          scheduleRealtimePageRefresh(600);
-        }
-      });
-      realtimeSocket.on('ticket_comment_reacted', function(payload) {
-        if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
-        updateReactionUI(payload.comment_id, payload.reactions || [], null);
-      });
-      realtimeSocket.on('ticket_changed', function(payload) {
-        if (payload && (payload.id === {{ ticket.id }} || payload.parent_ticket_id === {{ ticket.id }})) {
-          if (payload.action === 'commented' && Date.now() < suppressRealtimeReloadUntil) {
-            return;
+      if (!window.__cerebroTicketDetailSocketBound) {
+        window.__cerebroTicketDetailSocketBound = true;
+        realtimeSocket.on('connect', function() {
+          realtimeSocket.emit('join_ticket_detail', { ticket_id: {{ ticket.id }} });
+        });
+        realtimeSocket.on('ticket_comment_added', function(payload) {
+          appendRealtimeComment(payload);
+          if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
+          if (Number(payload.user_id) !== {{ current_user.id }}) {
+            scheduleRealtimePageRefresh(600);
           }
-          scheduleRealtimePageRefresh(700);
-        }
-      });
+        });
+        realtimeSocket.on('ticket_comment_reacted', function(payload) {
+          if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
+          updateReactionUI(payload.comment_id, payload.reactions || [], null);
+        });
+        realtimeSocket.on('ticket_changed', function(payload) {
+          if (payload && (payload.id === {{ ticket.id }} || payload.parent_ticket_id === {{ ticket.id }})) {
+            if (payload.action === 'commented' && Date.now() < suppressRealtimeReloadUntil) {
+              return;
+            }
+            scheduleRealtimePageRefresh(700);
+          }
+        });
+      }
+      if (realtimeSocket.connected) {
+        realtimeSocket.emit('join_ticket_detail', { ticket_id: {{ ticket.id }} });
+      }
     }
 
     document.querySelectorAll('[data-comment-id]').forEach(bindReactionControls);
