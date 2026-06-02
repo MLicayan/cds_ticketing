@@ -789,7 +789,7 @@
 
     function markWorkdayPromptHandled(action, promptDate) {
       try {
-        localStorage.setItem(workdayPromptStorageKey(promptDate), action || 'handled');
+        sessionStorage.setItem(workdayPromptStorageKey(promptDate), action || 'handled');
       } catch (err) {
       }
     }
@@ -853,7 +853,7 @@
         }
         workdayPromptDate = payload.prompt_date || currentWorkdayPromptDate();
         try {
-          if (localStorage.getItem(workdayPromptStorageKey(workdayPromptDate))) {
+          if (sessionStorage.getItem(workdayPromptStorageKey(workdayPromptDate))) {
             return;
           }
         } catch (err) {
@@ -915,7 +915,9 @@
       workdayPromptModalEl.addEventListener('hidden.bs.modal', function() {
         workdayPromptOpen = false;
       });
+      maybeShowWorkdayPrompt();
       setTimeout(maybeShowWorkdayPrompt, 1000);
+      setTimeout(maybeShowWorkdayPrompt, 3000);
       setInterval(maybeShowWorkdayPrompt, 60000);
     }
 
