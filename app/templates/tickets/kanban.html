@@ -173,6 +173,20 @@
 
 (function() {
   document.querySelectorAll('.kanban-card[data-href]').forEach(function(card) {
+    card.addEventListener('contextmenu', function(event) {
+      if (event.target.closest('a, button, input, select, textarea, label')) {
+        return;
+      }
+      if (card.classList.contains('is-dragging')) {
+        return;
+      }
+      var href = card.getAttribute('data-href');
+      if (href) {
+        event.preventDefault();
+        window.open(href, '_blank', 'noopener');
+      }
+    });
+
     card.addEventListener('click', function(event) {
       if (event.target.closest('a, button, input, select, textarea, label')) {
         return;
