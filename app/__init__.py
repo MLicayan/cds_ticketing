@@ -101,7 +101,7 @@ def create_app(config_class=Config):
             db.session.query(TicketComment)
             .join(Ticket, TicketComment.ticket_id == Ticket.id)
             .join(User, TicketComment.user_id == User.id)
-            .filter(TicketComment.is_internal.is_(False))
+            .filter(TicketComment.is_internal.is_(False), TicketComment.deleted.is_(False))
             .filter(Ticket.status != models.TicketStatus.CLOSED)
         )
 

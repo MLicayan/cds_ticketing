@@ -170,6 +170,34 @@
     });
   });
 })();
+
+(function() {
+  document.querySelectorAll('.kanban-card[data-href]').forEach(function(card) {
+    card.addEventListener('click', function(event) {
+      if (event.target.closest('a, button, input, select, textarea, label')) {
+        return;
+      }
+      if (card.classList.contains('is-dragging')) {
+        return;
+      }
+      var href = card.getAttribute('data-href');
+      if (href) {
+        window.location.href = href;
+      }
+    });
+
+    card.addEventListener('keydown', function(event) {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+      event.preventDefault();
+      var href = card.getAttribute('data-href');
+      if (href) {
+        window.location.href = href;
+      }
+    });
+  });
+})();
 </script>
 {% endblock %}
 
@@ -228,6 +256,9 @@
   margin-bottom: 10px;
   background: #fff;
   box-shadow: 0 4px 12px rgba(15, 70, 140, 0.05);
+}
+.kanban-card.is-clickable {
+  cursor: pointer;
 }
 .kanban-card[draggable="true"] {
   cursor: grab;
@@ -342,10 +373,10 @@
           {% set priority_value = t.priority.value if t.priority else '' %}
           {% set priority_badge = 'secondary' if priority_value == '' else 'danger' if priority_value == 'critical' else 'warning' if priority_value == 'high' else 'info' if priority_value == 'medium' else 'secondary' %}
           {% set latest_log = (t.service_logs|sort(attribute='created_at'))[-1] if t.service_logs else None %}
-          <div class="kanban-card" {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and status_value != 'closed' %}draggable="true" data-ticket-id="{{ t.id }}" data-update-url="{{ url_for('tickets.update_task_kanban_status', task_id=t.id) if is_task_kanban else url_for('tickets.update_kanban_status', ticket_id=t.id) }}" data-status="{{ drop_status or status_value }}"{% endif %}>
+          <div class="kanban-card is-clickable" tabindex="0" role="button" aria-label="Open {{ t.ticket_no }}" data-href="{{ url_for('tickets.task_detail', task_id=t.id) if is_task_kanban else url_for('tickets.detail', ticket_id=t.id) }}" {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and status_value != 'closed' %}draggable="true" data-ticket-id="{{ t.id }}" data-update-url="{{ url_for('tickets.update_task_kanban_status', task_id=t.id) if is_task_kanban else url_for('tickets.update_kanban_status', ticket_id=t.id) }}" data-status="{{ drop_status or status_value }}"{% endif %}>
             <div class="d-flex justify-content-between align-items-center mb-1">
               <div class="title">
-                <a href="{{ url_for('tickets.task_detail', task_id=t.id) if is_task_kanban else url_for('tickets.detail', ticket_id=t.id) }}">{{ t.ticket_no }}</a>
+                {{ t.ticket_no }}
               </div>
               <span class="badge badge-{{ badge }}">
                 {{ status_labels.get(t.status, status_value.replace('_', ' ')|title) }}

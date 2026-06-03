@@ -381,6 +381,8 @@ class TicketComment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     comment_text = db.Column(db.Text, nullable=False)
     is_internal = db.Column(db.Boolean, default=False)
+    deleted = db.Column(db.Boolean, default=False, nullable=False)
+    deleted_at = db.Column(db.DateTime, nullable=True)
     reactions_json = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -444,6 +446,12 @@ class TicketComment(db.Model):
             }
             for reaction_code, count in counts.items()
         ]
+
+    @property
+    def display_comment_text(self):
+        if self.deleted:
+            return "This comment was deleted."
+        return self.comment_text or ""
 
     def __repr__(self):
         return f"<TicketComment {self.id}>"
@@ -549,6 +557,8 @@ class TicketTaskComment(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     comment_text = db.Column(db.Text, nullable=False)
     is_internal = db.Column(db.Boolean, default=False)
+    deleted = db.Column(db.Boolean, default=False, nullable=False)
+    deleted_at = db.Column(db.DateTime, nullable=True)
     reactions_json = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -567,6 +577,10 @@ class TicketTaskComment(db.Model):
 
     def reaction_summary(self):
         return TicketComment.reaction_summary(self)
+
+    @property
+    def display_comment_text(self):
+        return TicketComment.display_comment_text.fget(self)
 
     def __repr__(self):
         return f"<TicketTaskComment {self.id}>"

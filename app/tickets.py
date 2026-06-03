@@ -57,6 +57,8 @@ def require_ticket_nav_access():
         "tickets.toggle_task_work_state",
         "tickets.update_task_kanban_status",
         "tickets.react_task_comment",
+        "tickets.edit_task_comment",
+        "tickets.delete_task_comment",
         "tickets.create_task",
         "tickets.task_workday_prompt_state",
         "tickets.task_workday_prompt_pause",
@@ -464,13 +466,14 @@ def _ticket_comment_payload(comment: TicketComment, attachments=None) -> dict:
         "parent_comment": _ticket_comment_parent_payload(parent) if parent else None,
         "user_id": comment.user_id,
         "user": comment.user.full_name or comment.user.username if comment.user else "",
-        "comment_text": comment.comment_text,
+        "comment_text": comment.display_comment_text,
         "is_internal": bool(comment.is_internal),
+        "deleted": bool(comment.deleted),
         "user_is_client": bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES),
         "user_is_provider": user_is_provider,
         "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
-        "reactions": comment.reaction_summary(),
-        "attachments": [_ticket_attachment_payload(att) for att in (attachments or [])],
+        "reactions": [] if comment.deleted else comment.reaction_summary(),
+        "attachments": [] if comment.deleted else [_ticket_attachment_payload(att) for att in (attachments or [])],
     }
 
 
@@ -478,7 +481,7 @@ def _ticket_comment_parent_payload(comment: TicketComment) -> dict:
     return {
         "comment_id": comment.id,
         "user": comment.user.full_name or comment.user.username if comment.user else "",
-        "comment_text": comment.comment_text,
+        "comment_text": comment.display_comment_text,
         "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
     }
 
@@ -496,13 +499,14 @@ def _task_comment_payload(comment: TicketTaskComment, attachments=None) -> dict:
         "parent_comment": _task_comment_parent_payload(parent) if parent else None,
         "user_id": comment.user_id,
         "user": comment.user.full_name or comment.user.username if comment.user else "",
-        "comment_text": comment.comment_text,
+        "comment_text": comment.display_comment_text,
         "is_internal": bool(comment.is_internal),
+        "deleted": bool(comment.deleted),
         "user_is_client": bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES),
         "user_is_provider": user_is_provider,
         "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
-        "reactions": comment.reaction_summary(),
-        "attachments": [_ticket_attachment_payload(att) for att in (attachments or [])],
+        "reactions": [] if comment.deleted else comment.reaction_summary(),
+        "attachments": [] if comment.deleted else [_ticket_attachment_payload(att) for att in (attachments or [])],
     }
 
 
@@ -510,7 +514,7 @@ def _task_comment_parent_payload(comment: TicketTaskComment) -> dict:
     return {
         "comment_id": comment.id,
         "user": comment.user.full_name or comment.user.username if comment.user else "",
-        "comment_text": comment.comment_text,
+        "comment_text": comment.display_comment_text,
         "created_at": to_localtime(comment.created_at).strftime("%Y-%m-%d %H:%M") if comment.created_at else "",
     }
 
@@ -562,6 +566,10 @@ def _can_create_tasks(user: User) -> bool:
     return bool(user and (user.role == UserRole.ADMIN or user.role == UserRole.ENGINEER))
 
 
+def _can_edit_core_ticket_fields(user: User) -> bool:
+    return _is_support_user(user)
+
+
 def _task_assignee_filters(user: Optional[User] = None):
     if not user:
         return [db.func.lower(User.user_type) == "support"]
@@ -593,7 +601,7 @@ def _emit_comment_reaction(comment: TicketComment) -> None:
 
 
 def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User) -> bool:
-    if not comment or not user or comment.is_internal:
+    if not comment or not user or comment.is_internal or comment.deleted:
         return False
     if comment.user_id == user.id:
         return False
@@ -648,6 +656,18 @@ def _notification_recipients_for_comment(ticket: Ticket, comment: TicketComment)
     ]
 
 
+def _can_modify_ticket_comment(comment: TicketComment) -> bool:
+    if not comment or comment.deleted or _is_change_comment(comment.comment_text):
+        return False
+    return comment.user_id == current_user.id
+
+
+def _can_modify_task_comment(comment: TicketTaskComment) -> bool:
+    if not comment or comment.deleted or _is_change_comment(comment.comment_text):
+        return False
+    return comment.user_id == current_user.id
+
+
 def _ticket_comment_notification_count_for_user(user: User) -> int:
     if not user:
         return 0
@@ -656,7 +676,11 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
         TicketComment.query
         .join(Ticket, TicketComment.ticket_id == Ticket.id)
         .join(User, TicketComment.user_id == User.id)
-        .filter(TicketComment.is_internal.is_(False), TicketComment.user_id != user.id)
+        .filter(
+            TicketComment.is_internal.is_(False),
+            TicketComment.deleted.is_(False),
+            TicketComment.user_id != user.id,
+        )
         .filter(Ticket.status != TicketStatus.CLOSED)
     )
 
@@ -695,7 +719,11 @@ def _ticket_comment_notification_snapshot_for_user(user: User, limit: int = 8) -
         TicketComment.query
         .join(Ticket, TicketComment.ticket_id == Ticket.id)
         .join(User, TicketComment.user_id == User.id)
-        .filter(TicketComment.is_internal.is_(False), TicketComment.user_id != user.id)
+        .filter(
+            TicketComment.is_internal.is_(False),
+            TicketComment.deleted.is_(False),
+            TicketComment.user_id != user.id,
+        )
         .filter(Ticket.status != TicketStatus.CLOSED)
     )
 
@@ -2548,9 +2576,18 @@ def developer_workload():
                 task.created_at or datetime.min,
             ),
         )
+        completed_recent_tasks = sorted(
+            completed_tasks,
+            key=lambda task: (
+                0 if task.status == TicketStatus.RESOLVED else 1,
+                -(_completed_at(task).timestamp() if _completed_at(task) else 0),
+                -(task.id or 0),
+            ),
+        )
+        display_tasks = recent_tasks + completed_recent_tasks
         recent_task_states = {
             task.id: _task_work_session_state(task)
-            for task in recent_tasks
+            for task in display_tasks
         }
 
         rows.append(
@@ -2576,6 +2613,7 @@ def developer_workload():
                 "completion_rate": completion_rate,
                 "workload_score": workload_score,
                 "recent_tasks": recent_tasks,
+                "display_tasks": display_tasks,
                 "recent_task_states": recent_task_states,
             }
         )
@@ -2597,6 +2635,7 @@ def developer_workload():
         rows=rows,
         totals=totals,
         status_labels=status_labels,
+        TicketStatus=TicketStatus,
         date_from_value=date_from_value,
         date_to_value=date_to_value,
         period_label=period_label,
@@ -2719,7 +2758,7 @@ def detail(ticket_id):
                 id=parent_comment_id,
                 ticket_id=ticket.id,
             ).first()
-            if not parent_comment or _is_change_comment(parent_comment.comment_text):
+            if not parent_comment or parent_comment.deleted or _is_change_comment(parent_comment.comment_text):
                 if wants_json:
                     return jsonify({"ok": False, "message": "Reply target was not found."}), 400
                 flash("Reply target was not found.", "warning")
@@ -2855,6 +2894,9 @@ def detail(ticket_id):
     assigned_attachment_ids = set()
     non_initial_attachments = [att for att in ticket.attachments if not _is_initial_attachment(att)]
     for comment in comments:
+        if comment.deleted:
+            comment_attachments[comment.id] = []
+            continue
         matched = []
         for att in non_initial_attachments:
             if att.id in assigned_attachment_ids:
@@ -2882,6 +2924,9 @@ def detail(ticket_id):
         (TicketPriority.MEDIUM, "Medium"),
         (TicketPriority.LOW, "Low"),
     ]
+    support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
+    editable_clients = Client.query.order_by(Client.name.asc()).all() if support_can_edit_core_fields else []
+    editable_apps = App.query.order_by(App.name.asc()).all() if support_can_edit_core_fields else []
 
     return render_template(
         "tickets/detail.html",
@@ -2903,6 +2948,9 @@ def detail(ticket_id):
         timeline_events=timeline_events,
         comment_attachments=comment_attachments,
         remaining_attachments=remaining_attachments,
+        editable_clients=editable_clients,
+        editable_apps=editable_apps,
+        support_can_edit_core_fields=support_can_edit_core_fields,
     )
 
 
@@ -2937,7 +2985,7 @@ def task_detail(task_id):
                 id=parent_comment_id,
                 ticket_task_id=task.id,
             ).first()
-            if not parent_comment or _is_change_comment(parent_comment.comment_text):
+            if not parent_comment or parent_comment.deleted or _is_change_comment(parent_comment.comment_text):
                 if wants_json:
                     return jsonify({"ok": False, "message": "Reply target was not found."}), 400
                 flash("Reply target was not found.", "warning")
@@ -3070,6 +3118,9 @@ def task_detail(task_id):
     assigned_attachment_ids = set()
     non_initial_attachments = [att for att in task.attachments if not _is_initial_attachment(att)]
     for comment in comments:
+        if comment.deleted:
+            comment_attachments[comment.id] = []
+            continue
         matched = []
         for att in non_initial_attachments:
             if att.id in assigned_attachment_ids:
@@ -3095,6 +3146,9 @@ def task_detail(task_id):
         (TicketPriority.MEDIUM, "Medium"),
         (TicketPriority.LOW, "Low"),
     ]
+    support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
+    editable_clients = Client.query.order_by(Client.name.asc()).all() if support_can_edit_core_fields else []
+    editable_apps = App.query.order_by(App.name.asc()).all() if support_can_edit_core_fields else []
 
     return render_template(
         "tickets/detail.html",
@@ -3118,7 +3172,96 @@ def task_detail(task_id):
         timeline_events=timeline_events,
         comment_attachments=comment_attachments,
         remaining_attachments=remaining_attachments,
+        editable_clients=editable_clients,
+        editable_apps=editable_apps,
+        support_can_edit_core_fields=support_can_edit_core_fields,
     )
+
+
+@tickets_bp.route("/comments/<int:comment_id>/edit", methods=["POST"])
+@login_required
+def edit_comment(comment_id):
+    comment = TicketComment.query.get_or_404(comment_id)
+    ticket = comment.ticket
+
+    _ensure_client_ticket_access(ticket)
+    if ticket.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        return jsonify({"error": "Closed or cancelled tickets are read-only."}), 403
+    if not _can_modify_ticket_comment(comment):
+        return jsonify({"error": "You can only edit your own active comments."}), 403
+
+    comment_text = (request.form.get("comment_text") or "").strip()
+    if not comment_text:
+        return jsonify({"error": "Comment text is required."}), 400
+
+    comment.comment_text = comment_text
+    db.session.commit()
+    _emit_ticket_changed(ticket, "updated")
+    return jsonify({"ok": True, "comment": _ticket_comment_payload(comment)})
+
+
+@tickets_bp.route("/comments/<int:comment_id>/delete", methods=["POST"])
+@login_required
+def delete_comment(comment_id):
+    comment = TicketComment.query.get_or_404(comment_id)
+    ticket = comment.ticket
+
+    _ensure_client_ticket_access(ticket)
+    if ticket.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        return jsonify({"error": "Closed or cancelled tickets are read-only."}), 403
+    if not _can_modify_ticket_comment(comment):
+        return jsonify({"error": "You can only delete your own active comments."}), 403
+
+    comment.deleted = True
+    comment.deleted_at = datetime.utcnow()
+    comment.reactions_json = None
+    db.session.commit()
+    _emit_ticket_changed(ticket, "updated")
+    return jsonify({"ok": True, "comment": _ticket_comment_payload(comment)})
+
+
+@tickets_bp.route("/task-comments/<int:comment_id>/edit", methods=["POST"])
+@login_required
+def edit_task_comment(comment_id):
+    comment = TicketTaskComment.query.get_or_404(comment_id)
+    task = comment.task
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+    if task.status == TicketStatus.CLOSED:
+        return jsonify({"error": "Closed tasks are read-only."}), 403
+    if not _can_modify_task_comment(comment):
+        return jsonify({"error": "You can only edit your own active comments."}), 403
+
+    comment_text = (request.form.get("comment_text") or "").strip()
+    if not comment_text:
+        return jsonify({"error": "Comment text is required."}), 400
+
+    comment.comment_text = comment_text
+    task.updated_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    db.session.commit()
+    _emit_ticket_changed(task, "updated")
+    return jsonify({"ok": True, "comment": _task_comment_payload(comment)})
+
+
+@tickets_bp.route("/task-comments/<int:comment_id>/delete", methods=["POST"])
+@login_required
+def delete_task_comment(comment_id):
+    comment = TicketTaskComment.query.get_or_404(comment_id)
+    task = comment.task
+    if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+    if task.status == TicketStatus.CLOSED:
+        return jsonify({"error": "Closed tasks are read-only."}), 403
+    if not _can_modify_task_comment(comment):
+        return jsonify({"error": "You can only delete your own active comments."}), 403
+
+    comment.deleted = True
+    comment.deleted_at = datetime.utcnow()
+    comment.reactions_json = None
+    task.updated_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    db.session.commit()
+    _emit_ticket_changed(task, "updated")
+    return jsonify({"ok": True, "comment": _task_comment_payload(comment)})
 
 
 @tickets_bp.route("/comments/<int:comment_id>/react", methods=["POST"])
@@ -3134,6 +3277,8 @@ def react_comment(comment_id):
         abort(403)
     if comment.is_internal and current_user.role in READ_ONLY_ROLES:
         abort(403)
+    if comment.deleted:
+        return jsonify({"error": "Deleted comments cannot be reacted to."}), 400
 
     emoji = (request.form.get("emoji") or "").strip()
     allowed_emojis = {"👍", "❤️", "😂", "😮", "😢", "😡"}
@@ -3180,6 +3325,8 @@ def react_task_comment(comment_id):
         return jsonify({"error": "Closed tasks are read-only."}), 403
     if comment.is_internal and current_user.role in READ_ONLY_ROLES:
         abort(403)
+    if comment.deleted:
+        return jsonify({"error": "Deleted comments cannot be reacted to."}), 400
 
     emoji = (request.form.get("emoji") or "").strip()
     allowed_reactions = {item["code"] for item in REACTION_OPTIONS} | {"acknowledge"}
@@ -3984,6 +4131,7 @@ def update_task_info(task_id):
 
     changed = False
     user_name = current_user.full_name or current_user.username
+    support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
 
     new_target_date_raw = (request.form.get("target_date") or "").strip()
     old_target_date = task.target_date
@@ -4061,6 +4209,73 @@ def update_task_info(task_id):
                 f"Engineer/IT assigned to {new_engineer.full_name or new_engineer.username if new_engineer else 'None'} (previously {old_engineer.full_name or old_engineer.username if old_engineer else 'None'}) by {user_name}."
             )
             changed = True
+
+    if any(key in request.form for key in ("subject", "description", "client_id", "app_id")):
+        if not support_can_edit_core_fields:
+            abort(403)
+
+        subject = (request.form.get("subject") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        client_id_raw = (request.form.get("client_id") or "").strip()
+        app_id_raw = (request.form.get("app_id") or "").strip()
+
+        if not subject:
+            flash("Title is required.", "danger")
+            return redirect(url_for("tickets.task_detail", task_id=task.id))
+        if len(subject) > 100:
+            flash("Title must be 100 characters or fewer.", "danger")
+            return redirect(url_for("tickets.task_detail", task_id=task.id))
+        if not client_id_raw:
+            flash("Client is required.", "danger")
+            return redirect(url_for("tickets.task_detail", task_id=task.id))
+        try:
+            client_id = int(client_id_raw)
+        except ValueError:
+            flash("Invalid client selection.", "danger")
+            return redirect(url_for("tickets.task_detail", task_id=task.id))
+        client = Client.query.get(client_id)
+        if not client:
+            flash("Invalid client selection.", "danger")
+            return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+        normalized_description = description or None
+        if task.subject != subject or (task.description or None) != normalized_description:
+            task.subject = subject
+            task.description = normalized_description
+            _record_task_change(task, f"Title/description updated by {user_name}.")
+            changed = True
+
+        if task.client_id != client.id:
+            previous_client = task.client.name if task.client else "None"
+            task.client_id = client.id
+            if task.instrument_id and task.instrument and task.instrument.client_id != client.id:
+                task.instrument_id = None
+            if task.app_id and task.app and client not in task.app.clients:
+                task.app_id = None
+            _record_task_change(task, f"Client changed from {previous_client} to {client.name} by {user_name}.")
+            changed = True
+
+        if app_id_raw:
+            try:
+                app_id = int(app_id_raw)
+            except ValueError:
+                flash("Invalid application selection.", "danger")
+                return redirect(url_for("tickets.task_detail", task_id=task.id))
+            app_obj = App.query.get(app_id)
+            if not app_obj:
+                flash("Invalid application selection.", "danger")
+                return redirect(url_for("tickets.task_detail", task_id=task.id))
+            if client not in app_obj.clients:
+                flash("Selected application does not belong to the selected client.", "danger")
+                return redirect(url_for("tickets.task_detail", task_id=task.id))
+
+            if task.app_id != app_obj.id or task.ticket_for != "app":
+                previous_app = task.app.name if task.app else "None"
+                task.app_id = app_obj.id
+                task.ticket_for = "app"
+                task.instrument_id = None
+                _record_task_change(task, f"Application changed from {previous_app} to {app_obj.name} by {user_name}.")
+                changed = True
 
     if changed:
         db.session.commit()
@@ -4325,6 +4540,7 @@ def update_ticket_info(ticket_id):
     changed = False
     user_name = current_user.full_name or current_user.username
     closed_child_tasks = []
+    support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
     # =========================
     # TARGET DATE
     # =========================
@@ -4509,6 +4725,73 @@ def update_ticket_info(ticket_id):
                     f"Engineer/IT assignment cleared (previously {old_engineer.full_name or old_engineer.username if old_engineer else 'None'}) by {user_name}."
                 )
             changed = True
+
+    if any(key in request.form for key in ("subject", "description", "client_id", "app_id")):
+        if not support_can_edit_core_fields:
+            abort(403)
+
+        subject = (request.form.get("subject") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        client_id_raw = (request.form.get("client_id") or "").strip()
+        app_id_raw = (request.form.get("app_id") or "").strip()
+
+        if not subject:
+            flash("Title is required.", "danger")
+            return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+        if len(subject) > 100:
+            flash("Title must be 100 characters or fewer.", "danger")
+            return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+        if not client_id_raw:
+            flash("Client is required.", "danger")
+            return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+        try:
+            client_id = int(client_id_raw)
+        except ValueError:
+            flash("Invalid client selection.", "danger")
+            return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+        client = Client.query.get(client_id)
+        if not client:
+            flash("Invalid client selection.", "danger")
+            return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+
+        normalized_description = description or None
+        if ticket.subject != subject or (ticket.description or None) != normalized_description:
+            ticket.subject = subject
+            ticket.description = normalized_description
+            _record_ticket_change(ticket, f"Title/description updated by {user_name}.")
+            changed = True
+
+        if ticket.client_id != client.id:
+            previous_client = ticket.client.name if ticket.client else "None"
+            ticket.client_id = client.id
+            if ticket.instrument_id and ticket.instrument and ticket.instrument.client_id != client.id:
+                ticket.instrument_id = None
+            if ticket.app_id and ticket.app and client not in ticket.app.clients:
+                ticket.app_id = None
+            _record_ticket_change(ticket, f"Client changed from {previous_client} to {client.name} by {user_name}.")
+            changed = True
+
+        if app_id_raw:
+            try:
+                app_id = int(app_id_raw)
+            except ValueError:
+                flash("Invalid application selection.", "danger")
+                return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+            app_obj = App.query.get(app_id)
+            if not app_obj:
+                flash("Invalid application selection.", "danger")
+                return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+            if client not in app_obj.clients:
+                flash("Selected application does not belong to the selected client.", "danger")
+                return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+
+            if ticket.app_id != app_obj.id or ticket.ticket_for != "app":
+                previous_app = ticket.app.name if ticket.app else "None"
+                ticket.app_id = app_obj.id
+                ticket.ticket_for = "app"
+                ticket.instrument_id = None
+                _record_ticket_change(ticket, f"Application changed from {previous_app} to {app_obj.name} by {user_name}.")
+                changed = True
 
     if changed:
         db.session.commit()

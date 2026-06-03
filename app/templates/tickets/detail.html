@@ -244,8 +244,24 @@
   font-size: 12px;
 }
 
-.reply-button:hover {
+.reply-button:hover,
+.comment-action-button:hover {
   color: #007bff;
+}
+
+.comment-action-button {
+  border: 0;
+  background: transparent;
+  color: #6c757d;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+
+.ticket-chat-row.deleted .ticket-chat-bubble {
+  background: #f8f9fa;
+  color: #6c757d;
+  font-style: italic;
+  box-shadow: inset 0 0 0 1px #e9ecef;
 }
 
 .reply-target {
@@ -934,16 +950,18 @@
         {% set commenter_is_provider = c.user and c.user.role and c.user.role.value == 'engineer' and (c.user.user_type or '').lower() in ['it', 'support'] %}
         {% set viewer_can_distinguish_comment_roles = current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support']) %}
         {% set can_acknowledge = viewer_is_client != commenter_is_client %}
+        {% set can_manage_comment = (c.user_id == current_user.id) and not c.deleted %}
         <div
-          class="ticket-chat-row {{ 'mine' if is_mine else 'theirs' }}{% if viewer_can_distinguish_comment_roles and commenter_is_provider %} provider{% elif viewer_can_distinguish_comment_roles and commenter_is_client %} client{% endif %}"
+          class="ticket-chat-row {{ 'mine' if is_mine else 'theirs' }}{% if viewer_can_distinguish_comment_roles and commenter_is_provider %} provider{% elif viewer_can_distinguish_comment_roles and commenter_is_client %} client{% endif %}{% if c.deleted %} deleted{% endif %}"
           id="comment-{{ c.id }}"
           data-comment-id="{{ c.id }}"
           data-comment-user="{{ c.user.full_name or c.user.username }}"
-          data-comment-text="{{ (c.comment_text or '')|replace('\n', ' ') }}"
+          data-comment-text="{{ (c.display_comment_text or '')|replace('\n', ' ') }}"
           data-comment-created-at="{{ to_localtime(c.created_at).strftime('%Y-%m-%d %H:%M') }}"
           data-commenter-is-client="{{ 'true' if commenter_is_client else 'false' }}"
           data-commenter-is-provider="{{ 'true' if commenter_is_provider else 'false' }}"
           data-my-acknowledged="{{ 'true' if my_reaction_state.get('acknowledge') else 'false' }}"
+          data-comment-deleted="{{ 'true' if c.deleted else 'false' }}"
         >
           <div class="ticket-chat-item">
             <div class="ticket-chat-meta">
@@ -956,12 +974,10 @@
             {% if c.parent_comment %}
             <a href="#comment-{{ c.parent_comment.id }}" class="ticket-reply-preview">
               <span class="ticket-reply-author">Replying to {{ c.parent_comment.user.full_name or c.parent_comment.user.username if c.parent_comment.user else 'User' }}</span>
-              <span class="ticket-reply-text">{{ c.parent_comment.comment_text or 'Attachment' }}</span>
+              <span class="ticket-reply-text">{{ c.parent_comment.display_comment_text or 'Attachment' }}</span>
             </a>
             {% endif %}
-            {% if c.comment_text %}
-            <div class="ticket-chat-bubble">{{ c.comment_text }}</div>
-            {% endif %}
+            <div class="ticket-chat-bubble">{{ c.display_comment_text }}</div>
             {% set attachments = comment_attachments.get(c.id, []) %}
             {% if attachments %}
             <div class="comment-attachments">
@@ -995,7 +1011,7 @@
               {% endfor %}
             </div>
             {% endif %}
-            {% if not ticket_is_read_only %}
+            {% if not ticket_is_read_only and not c.deleted %}
             <div class="ticket-chat-actions">
               {% if can_acknowledge %}
               <button
@@ -1012,6 +1028,14 @@
               <button type="button" class="reply-button" data-reply-to="{{ c.id }}" title="Reply">
                 <i class="fas fa-reply"></i> Reply
               </button>
+              {% if can_manage_comment %}
+              <button type="button" class="comment-action-button" data-edit-comment="{{ c.id }}" title="Edit">
+                <i class="fas fa-pen"></i> Edit
+              </button>
+              <button type="button" class="comment-action-button text-danger" data-delete-comment="{{ c.id }}" title="Delete">
+                <i class="fas fa-trash"></i> Delete
+              </button>
+              {% endif %}
               <div class="reaction-summary" data-reaction-summary>
                 {% for reaction in c.reaction_summary() %}
                 {% if reaction.code == 'acknowledge' and viewer_is_client == commenter_is_client %}
@@ -1038,6 +1062,7 @@
       <div class="card-footer">
         <form method="post" enctype="multipart/form-data" id="ticket-comment-form">
           <input type="hidden" name="parent_comment_id" id="parent_comment_id">
+          <input type="hidden" id="comment_edit_id">
           <div class="reply-target" id="reply-target">
             <div class="reply-target-text">
               <span class="reply-target-title" id="reply-target-title">Replying to comment</span>
@@ -1050,6 +1075,10 @@
           <div class="form-group">
             <label for="comment_text">Add Comment</label>
             <textarea id="comment_text" name="comment_text" rows="3" class="form-control"></textarea>
+          </div>
+          <div class="d-none mb-2" id="edit-comment-banner">
+            <small class="text-muted">Editing your comment.</small>
+            <button type="button" class="btn btn-link btn-sm p-0 ml-2 align-baseline" id="cancel-edit-comment">Cancel</button>
           </div>
           {# Internal Note option hidden per request.
           <div class="form-group form-check">
@@ -1067,8 +1096,8 @@
             <input type="file" name="attachment" id="attachment" class="form-control-file" multiple>
             <ul class="selected-files-list d-none" id="attachment-selected-list"></ul>
           </div>
-          <button type="submit" class="btn btn-primary">
-            <i class="fas fa-comment"></i> Save Comment / Attachment
+          <button type="submit" class="btn btn-primary" id="comment-submit-button">
+            <i class="fas fa-comment"></i> <span id="comment-submit-label">Save Comment / Attachment</span>
           </button>
         </form>
       </div>
@@ -1338,6 +1367,54 @@
             </div>
 
             <input type="hidden" name="signature_data" id="ticket_signature_data_update">
+
+            {% if support_can_edit_core_fields %}
+            <hr>
+            <div class="form-group">
+              <label for="edit_subject">Title</label>
+              <input
+                type="text"
+                name="subject"
+                id="edit_subject"
+                class="form-control"
+                maxlength="100"
+                value="{{ ticket.subject or '' }}">
+            </div>
+            <div class="form-group">
+              <label for="edit_description">Description</label>
+              <textarea
+                name="description"
+                id="edit_description"
+                rows="4"
+                class="form-control">{{ ticket.description or '' }}</textarea>
+            </div>
+            <div class="row">
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="edit_client_id">Client</label>
+                  <select name="client_id" id="edit_client_id" class="form-control">
+                    <option value="">Select client</option>
+                    {% for client in editable_clients %}
+                      <option value="{{ client.id }}" {% if ticket.client_id == client.id %}selected{% endif %}>{{ client.name }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-group">
+                  <label for="edit_app_id">Application</label>
+                  <select name="app_id" id="edit_app_id" class="form-control">
+                    <option value="">No application change</option>
+                    {% for app in editable_apps %}
+                      <option value="{{ app.id }}" {% if ticket.app_id == app.id %}selected{% endif %}>
+                        {{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
+              </div>
+            </div>
+            {% endif %}
           </div>
         </div>
         <div class="modal-footer">
@@ -1540,10 +1617,14 @@
     var addTaskRowBtn = document.getElementById('add-ticket-task-row');
     var commentTextarea = document.getElementById('comment_text');
     var parentCommentInput = document.getElementById('parent_comment_id');
+    var commentEditInput = document.getElementById('comment_edit_id');
     var replyTarget = document.getElementById('reply-target');
     var replyTargetTitle = document.getElementById('reply-target-title');
     var replyTargetSnippet = document.getElementById('reply-target-snippet');
     var clearReplyTargetBtn = document.getElementById('clear-reply-target');
+    var editCommentBanner = document.getElementById('edit-comment-banner');
+    var cancelEditCommentBtn = document.getElementById('cancel-edit-comment');
+    var commentSubmitLabel = document.getElementById('comment-submit-label');
     var attachmentInput = document.getElementById('attachment');
     var attachmentSelectedList = document.getElementById('attachment-selected-list');
     var taskEngineerOptions = `{% for eng in task_engineers %}<option value="{{ eng.id }}">{{ eng.full_name or eng.username }}</option>{% endfor %}`;
@@ -1579,6 +1660,7 @@
     var confirmDoneWorkBtn = document.getElementById('confirmDoneWorkBtn');
     var engineerSelect = document.getElementById('engineer_id');
     var suppressRealtimeReloadUntil = 0;
+    var suppressRealtimeReloadAction = '';
     var pendingRealtimeReload = null;
     var activePreviewImage = null;
     var activePreviewImageWrap = null;
@@ -1607,6 +1689,9 @@
     var reactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '😡'];
 
     var reactionOptions = {{ reaction_options|tojson }};
+    var createCommentUrl = '{{ url_for("tickets.task_detail", task_id=ticket.id) if is_task_ticket else url_for("tickets.detail", ticket_id=ticket.id) }}';
+    var editCommentUrlTemplate = '{{ url_for("tickets.edit_task_comment", comment_id=0) if is_task_ticket else url_for("tickets.edit_comment", comment_id=0) }}';
+    var deleteCommentUrlTemplate = '{{ url_for("tickets.delete_task_comment", comment_id=0) if is_task_ticket else url_for("tickets.delete_comment", comment_id=0) }}';
 
     if (sessionStorage.getItem(commentScrollKey) === '1') {
       sessionStorage.removeItem(commentScrollKey);
@@ -1725,6 +1810,27 @@
       }
     }
 
+    function focusWithoutScroll(element) {
+      if (!element || typeof element.focus !== 'function') return;
+      try {
+        element.focus({ preventScroll: true });
+      } catch (error) {
+        element.focus();
+      }
+    }
+
+    function preserveViewport(callback) {
+      var pageScrollY = window.scrollY || window.pageYOffset || 0;
+      var commentsScrollTop = commentsList ? commentsList.scrollTop : 0;
+      callback();
+      window.requestAnimationFrame(function() {
+        window.scrollTo(window.scrollX || window.pageXOffset || 0, pageScrollY);
+        if (commentsList) {
+          commentsList.scrollTop = commentsScrollTop;
+        }
+      });
+    }
+
     function trimReplyText(text) {
       text = (text || '').replace(/\s+/g, ' ').trim();
       return text || 'Attachment';
@@ -1739,13 +1845,58 @@
       if (replyTargetTitle) replyTargetTitle.textContent = 'Replying to ' + user;
       if (replyTargetSnippet) replyTargetSnippet.textContent = text;
       replyTarget.classList.add('show');
-      if (commentTextarea) commentTextarea.focus();
+      if (commentTextarea) focusWithoutScroll(commentTextarea);
     }
 
     function clearReplyTarget() {
       if (parentCommentInput) parentCommentInput.value = '';
       if (replyTarget) replyTarget.classList.remove('show');
       if (replyTargetSnippet) replyTargetSnippet.textContent = '';
+    }
+
+    function setCommentFormMode(mode) {
+      var isEdit = mode === 'edit';
+      if (editCommentBanner) {
+        editCommentBanner.classList.toggle('d-none', !isEdit);
+      }
+      if (commentSubmitLabel) {
+        commentSubmitLabel.textContent = isEdit ? 'Update Comment' : 'Save Comment / Attachment';
+      }
+      if (attachmentInput) {
+        attachmentInput.disabled = isEdit;
+        if (isEdit) {
+          attachmentInput.value = '';
+        }
+      }
+    }
+
+    function resetCommentForm() {
+      if (commentEditInput) {
+        commentEditInput.value = '';
+      }
+      if (commentTextarea) {
+        commentTextarea.value = '';
+      }
+      if (attachmentInput) {
+        attachmentInput.value = '';
+      }
+      clearReplyTarget();
+      setCommentFormMode('create');
+      renderAttachmentList();
+    }
+
+    function startCommentEdit(row) {
+      if (!row || !commentEditInput || !commentTextarea) return;
+      var commentId = row.getAttribute('data-comment-id') || '';
+      var bubble = row.querySelector('.ticket-chat-bubble');
+      var text = bubble ? bubble.textContent : (row.getAttribute('data-comment-text') || '');
+      commentEditInput.value = commentId;
+      commentTextarea.value = text;
+      clearReplyTarget();
+      setCommentFormMode('edit');
+      renderAttachmentList();
+      focusWithoutScroll(commentTextarea);
+      commentTextarea.setSelectionRange(commentTextarea.value.length, commentTextarea.value.length);
     }
 
     function buildReplyPreview(parentComment) {
@@ -1775,6 +1926,11 @@
         sessionStorage.setItem(commentScrollKey, '1');
         window.location.reload();
       }, delay || 500);
+    }
+
+    function suppressRealtimeReload(action, durationMs) {
+      suppressRealtimeReloadUntil = Date.now() + (durationMs || 3000);
+      suppressRealtimeReloadAction = action || '*';
     }
 
     function updateImageZoomState() {
@@ -2211,6 +2367,44 @@
       }
     }
 
+    function updateCommentRow(comment) {
+      if (!comment) return;
+      var row = document.querySelector('[data-comment-id="' + comment.comment_id + '"]');
+      if (!row) return;
+
+      row.setAttribute('data-comment-text', comment.comment_text || '');
+      row.setAttribute('data-comment-deleted', comment.deleted ? 'true' : 'false');
+      row.classList.toggle('deleted', !!comment.deleted);
+
+      var bubble = row.querySelector('.ticket-chat-bubble');
+      if (!bubble) {
+        bubble = document.createElement('div');
+        bubble.className = 'ticket-chat-bubble';
+        var replyPreview = row.querySelector('.ticket-reply-preview');
+        if (replyPreview && replyPreview.nextSibling) {
+          row.querySelector('.ticket-chat-item').insertBefore(bubble, replyPreview.nextSibling);
+        } else {
+          row.querySelector('.ticket-chat-item').appendChild(bubble);
+        }
+      }
+      bubble.textContent = comment.comment_text || '';
+
+      if (comment.deleted) {
+        row.querySelectorAll('.comment-attachments').forEach(function(block) {
+          block.remove();
+        });
+      }
+
+      document.querySelectorAll('.ticket-reply-preview[href="#comment-' + comment.comment_id + '"] .ticket-reply-text').forEach(function(node) {
+        node.textContent = trimReplyText(comment.comment_text || '');
+      });
+
+      var actions = row.querySelector('.ticket-chat-actions');
+      if (actions) {
+        actions.style.display = comment.deleted ? 'none' : '';
+      }
+    }
+
     function appendRealtimeComment(comment) {
       if (!comment || comment.ticket_id !== {{ ticket.id }}) return;
       var list = document.getElementById('ticket-comments-list');
@@ -2228,6 +2422,9 @@
           rowClass += ' client';
         }
       }
+      if (comment.deleted) {
+        rowClass += ' deleted';
+      }
       var row = document.createElement('div');
       row.className = rowClass;
       row.id = 'comment-' + comment.comment_id;
@@ -2238,6 +2435,7 @@
       row.setAttribute('data-commenter-is-client', comment.user_is_client ? 'true' : 'false');
       row.setAttribute('data-commenter-is-provider', comment.user_is_provider ? 'true' : 'false');
       row.setAttribute('data-my-acknowledged', 'false');
+      row.setAttribute('data-comment-deleted', comment.deleted ? 'true' : 'false');
 
       var item = document.createElement('div');
       item.className = 'ticket-chat-item';
@@ -2279,6 +2477,9 @@
 
       var actions = document.createElement('div');
       actions.className = 'ticket-chat-actions';
+      if (comment.deleted) {
+        actions.style.display = 'none';
+      }
 
       var canAcknowledge = Boolean(currentUserIsClient) !== Boolean(comment.user_is_client);
       if (canAcknowledge) {
@@ -2303,6 +2504,24 @@
       replyButton.setAttribute('data-reply-to', comment.comment_id);
       replyButton.setAttribute('title', 'Reply');
       replyButton.innerHTML = '<i class="fas fa-reply"></i> Reply';
+
+      if (isMine) {
+        var editButton = document.createElement('button');
+        editButton.type = 'button';
+        editButton.className = 'comment-action-button';
+        editButton.setAttribute('data-edit-comment', comment.comment_id);
+        editButton.setAttribute('title', 'Edit');
+        editButton.innerHTML = '<i class="fas fa-pen"></i> Edit';
+        actions.appendChild(editButton);
+
+        var deleteButton = document.createElement('button');
+        deleteButton.type = 'button';
+        deleteButton.className = 'comment-action-button text-danger';
+        deleteButton.setAttribute('data-delete-comment', comment.comment_id);
+        deleteButton.setAttribute('title', 'Delete');
+        deleteButton.innerHTML = '<i class="fas fa-trash"></i> Delete';
+        actions.appendChild(deleteButton);
+      }
 
       var summary = document.createElement('div');
       summary.className = 'reaction-summary';
@@ -2339,7 +2558,13 @@
         });
         realtimeSocket.on('ticket_changed', function(payload) {
           if (payload && (payload.id === {{ ticket.id }} || payload.parent_ticket_id === {{ ticket.id }})) {
-            if (payload.action === 'commented' && Date.now() < suppressRealtimeReloadUntil) {
+            if (
+              Date.now() < suppressRealtimeReloadUntil &&
+              (
+                suppressRealtimeReloadAction === '*' ||
+                suppressRealtimeReloadAction === payload.action
+              )
+            ) {
               return;
             }
             scheduleRealtimePageRefresh(700);
@@ -2358,7 +2583,48 @@
       if (replyButton) {
         event.preventDefault();
         var targetRow = document.querySelector('[data-comment-id="' + replyButton.getAttribute('data-reply-to') + '"]');
+        if (commentEditInput) {
+          commentEditInput.value = '';
+        }
+        setCommentFormMode('create');
         setReplyTargetFromRow(targetRow);
+        return;
+      }
+
+      var editButton = event.target.closest('[data-edit-comment]');
+      if (editButton) {
+        event.preventDefault();
+        startCommentEdit(document.querySelector('[data-comment-id="' + editButton.getAttribute('data-edit-comment') + '"]'));
+        return;
+      }
+
+      var deleteButton = event.target.closest('[data-delete-comment]');
+      if (deleteButton) {
+        event.preventDefault();
+        var commentId = deleteButton.getAttribute('data-delete-comment');
+        if (!commentId || !window.confirm('Delete this comment?')) {
+          return;
+        }
+        fetch(deleteCommentUrlTemplate.replace('0', commentId), {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        })
+        .then(function(response) { return response.json(); })
+        .then(function(payload) {
+          if (!payload || !payload.ok || !payload.comment) return;
+          suppressRealtimeReload('updated', 3000);
+          updateCommentRow(payload.comment);
+          if (commentEditInput && commentEditInput.value === String(payload.comment.comment_id)) {
+            resetCommentForm();
+          }
+        })
+        .catch(function() {
+          sessionStorage.setItem(commentScrollKey, '1');
+          window.location.reload();
+        });
         return;
       }
 
@@ -2375,6 +2641,10 @@
 
     if (clearReplyTargetBtn) {
       clearReplyTargetBtn.addEventListener('click', clearReplyTarget);
+    }
+
+    if (cancelEditCommentBtn) {
+      cancelEditCommentBtn.addEventListener('click', resetCommentForm);
     }
 
     if (attachmentPreviewModal) {
@@ -2650,17 +2920,21 @@
 
     if (commentForm) {
       commentForm.addEventListener('submit', function(e) {
-        var hasFiles = attachmentInput && attachmentInput.files && attachmentInput.files.length > 0;
+        var isEditMode = commentEditInput && commentEditInput.value;
+        var hasFiles = !isEditMode && attachmentInput && attachmentInput.files && attachmentInput.files.length > 0;
         var commentTextValue = commentTextarea ? commentTextarea.value.trim() : '';
         if (!hasFiles && !commentTextValue) {
           e.preventDefault();
           return;
         }
 
-        suppressRealtimeReloadUntil = Date.now() + 3000;
+        suppressRealtimeReload(isEditMode ? 'updated' : 'commented', 3000);
         e.preventDefault();
         var formData = new FormData(commentForm);
-        fetch(commentForm.action || window.location.href, {
+        var submitUrl = isEditMode
+          ? editCommentUrlTemplate.replace('0', commentEditInput.value)
+          : (commentForm.action || createCommentUrl || window.location.href);
+        fetch(submitUrl, {
           method: 'POST',
           body: formData,
           credentials: 'same-origin',
@@ -2671,17 +2945,17 @@
         .then(function(response) { return response.json(); })
         .then(function(payload) {
           if (!payload || !payload.ok) return;
-          if (payload.comment) {
+          if (payload.comment && isEditMode) {
+            preserveViewport(function() {
+              updateCommentRow(payload.comment);
+              resetCommentForm();
+            });
+          } else if (payload.comment) {
             appendRealtimeComment(payload.comment);
+            resetCommentForm();
             if (commentTextarea) {
-              commentTextarea.value = '';
-              commentTextarea.focus();
+              focusWithoutScroll(commentTextarea);
             }
-            if (attachmentInput) {
-              attachmentInput.value = '';
-            }
-            clearReplyTarget();
-            renderAttachmentList();
             scrollCommentsToBottom();
           } else if (payload.reload) {
             sessionStorage.setItem(commentScrollKey, '1');
@@ -2690,7 +2964,7 @@
         })
         .catch(function() {
           sessionStorage.setItem(commentScrollKey, '1');
-          commentForm.submit();
+          window.location.reload();
         });
       });
     }

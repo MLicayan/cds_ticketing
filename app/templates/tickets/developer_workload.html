@@ -410,7 +410,7 @@
                         <div class="list-detail-item"><span>Due Today</span><strong>{{ row.due_today }}</strong></div>
                       </div>
                       <div class="task-mini-list">
-                        {% for task in row.recent_tasks %}
+                        {% for task in row.display_tasks %}
                           {% set status_label = status_labels.get(task.status) if task.status in status_labels else (task.status.value.replace('_', ' ')|title if task.status else '') %}
                           {% set task_state = row.recent_task_states.get(task.id) %}
                           <a class="task-mini" href="{{ url_for('tickets.task_detail', task_id=task.id) }}">
@@ -423,12 +423,16 @@
                               <span class="badge badge-success">Working</span>
                             {% elif task_state == 'paused' %}
                               <span class="badge badge-warning">Paused</span>
+                            {% elif task.status == TicketStatus.RESOLVED %}
+                              <span class="badge badge-success">Fix/Completed</span>
+                            {% elif task.status == TicketStatus.CLOSED %}
+                              <span class="badge badge-dark">Closed</span>
                             {% elif task.target_date and task.target_date < now.date() %}
                               <span class="badge badge-danger">Overdue</span>
                             {% endif %}
                           </a>
                         {% else %}
-                          <div class="text-muted small">No active tasks.</div>
+                          <div class="text-muted small">No tasks to show.</div>
                         {% endfor %}
                       </div>
                     </div>
@@ -486,7 +490,7 @@
               <div class="work-row"><span>Due today</span><strong>{{ row.due_today }}</strong></div>
 
               <div class="task-mini-list mt-3">
-                {% for task in row.recent_tasks %}
+                {% for task in row.display_tasks %}
                   {% set status_label = status_labels.get(task.status) if task.status in status_labels else (task.status.value.replace('_', ' ')|title if task.status else '') %}
                   {% set task_state = row.recent_task_states.get(task.id) %}
                   <a class="task-mini" href="{{ url_for('tickets.task_detail', task_id=task.id) }}">
@@ -499,12 +503,16 @@
                       <span class="badge badge-success">Working</span>
                     {% elif task_state == 'paused' %}
                       <span class="badge badge-warning">Paused</span>
+                    {% elif task.status == TicketStatus.RESOLVED %}
+                      <span class="badge badge-success">Fix/Completed</span>
+                    {% elif task.status == TicketStatus.CLOSED %}
+                      <span class="badge badge-dark">Closed</span>
                     {% elif task.target_date and task.target_date < now.date() %}
                       <span class="badge badge-danger">Overdue</span>
                     {% endif %}
                   </a>
                 {% else %}
-                  <div class="text-muted small">No active tasks.</div>
+                  <div class="text-muted small">No tasks to show.</div>
                 {% endfor %}
               </div>
             </div>
