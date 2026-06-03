@@ -69,7 +69,14 @@
                 </span>
               </td>
               <td>{{ task.client.name if task.client else 'N/A' }}</td>
-              <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') if task.created_at else '' }}</td>
+              {% set created_local = local_naive_to_localtime(task.created_at) if task.created_at else None %}
+              <td
+                class="js-timezone-datetime"
+                data-iso="{{ created_local.isoformat() if created_local else '' }}"
+                data-order="{{ created_local.isoformat() if created_local else '' }}"
+              >
+                {{ created_local.strftime('%Y-%m-%d %H:%M') if created_local else '' }}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

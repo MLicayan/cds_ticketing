@@ -700,7 +700,14 @@
               <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td>{{ to_localtime(t.created_at).strftime('%Y-%m-%d %H:%M') if t.created_at else '' }}</td>
+          {% set created_local = local_naive_to_localtime(t.created_at) if t.created_at else None %}
+          <td
+            class="js-timezone-datetime"
+            data-iso="{{ created_local.isoformat() if created_local else '' }}"
+            data-order="{{ created_local.isoformat() if created_local else '' }}"
+          >
+            {{ created_local.strftime('%Y-%m-%d %H:%M') if created_local else '' }}
+          </td>
           <td>
             {% if t.date_needed %}
               {{ t.date_needed.strftime('%Y-%m-%d') }}
@@ -724,9 +731,16 @@
           {% if is_task_list %}
             <td>
               {% if t.status == TicketStatus.RESOLVED and t.closed_at %}
-                {{ to_localtime(t.closed_at).strftime('%Y-%m-%d %H:%M') }}
+                {% set completed_local = local_naive_to_localtime(t.closed_at) %}
+                <span
+                  class="js-timezone-datetime"
+                  data-iso="{{ completed_local.isoformat() }}"
+                  data-order="{{ completed_local.isoformat() }}"
+                >
+                  {{ completed_local.strftime('%Y-%m-%d %H:%M') }}
+                </span>
               {% else %}
-                <span class="text-muted">â€”</span>
+                <span class="text-muted">—</span>
               {% endif %}
             </td>
           {% endif %}
@@ -743,6 +757,40 @@
 {{ super() }}
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script>
+var ticketsTimestampFormatter = null;
+
+function getTicketsTimestampFormatter() {
+  if (!window.Intl || !Intl.DateTimeFormat) return null;
+  if (!ticketsTimestampFormatter) {
+    ticketsTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+  }
+  return ticketsTimestampFormatter;
+}
+
+function formatTicketsTableTimestamps() {
+  var formatter = getTicketsTimestampFormatter();
+  var timezone = window.Intl && Intl.DateTimeFormat
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone
+    : '';
+  document.querySelectorAll('.js-timezone-datetime[data-iso]').forEach(function(cell) {
+    var isoValue = cell.getAttribute('data-iso');
+    if (!isoValue) return;
+    var dateValue = new Date(isoValue);
+    if (isNaN(dateValue.getTime())) return;
+    if (formatter) {
+      cell.textContent = formatter.format(dateValue).replace(', ', ' ').replace(/\//g, '-');
+    }
+    cell.title = timezone ? timezone : isoValue;
+  });
+}
+
 function syncTableViewportHeight(containerId) {
   var container = document.getElementById(containerId);
   if (!container) return;
@@ -754,6 +802,7 @@ function syncTableViewportHeight(containerId) {
 }
 
 function initTicketsTable() {
+  formatTicketsTableTimestamps();
   if (!window.$ || !$.fn.DataTable || !$('#tickets-table').length) return null;
   if ($.fn.DataTable.isDataTable('#tickets-table')) {
     $('#tickets-table').DataTable().destroy();

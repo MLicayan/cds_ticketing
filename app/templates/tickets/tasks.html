@@ -368,6 +368,41 @@
   var table = null;
   var autoSubmitTimer = null;
   var filterRequestController = null;
+  var taskTimestampFormatter = null;
+
+  function getTaskTimestampFormatter() {
+    if (!window.Intl || !Intl.DateTimeFormat) {
+      return null;
+    }
+    if (!taskTimestampFormatter) {
+      taskTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      });
+    }
+    return taskTimestampFormatter;
+  }
+
+  function formatTaskTableTimestamps() {
+    var formatter = getTaskTimestampFormatter();
+    var timezone = window.Intl && Intl.DateTimeFormat
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone
+      : '';
+    document.querySelectorAll('.js-timezone-datetime[data-iso]').forEach(function(cell) {
+      var isoValue = cell.getAttribute('data-iso');
+      if (!isoValue) return;
+      var dateValue = new Date(isoValue);
+      if (isNaN(dateValue.getTime())) return;
+      if (formatter) {
+        cell.textContent = formatter.format(dateValue);
+      }
+      cell.title = timezone ? timezone : isoValue;
+    });
+  }
 
   function syncTaskTableViewportHeight() {
     var container = document.getElementById('developer-tasks-table-shell');
@@ -380,6 +415,8 @@
   }
 
   function initDeveloperTasksTable() {
+    formatTaskTableTimestamps();
+
     if (!(window.$ && $.fn.DataTable && $('#developer-tasks-table').length)) {
       syncTaskTableViewportHeight();
       return;

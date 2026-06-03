@@ -67,7 +67,11 @@ def create_app(config_class=Config):
     )
     migrate = Migrate(app, db)
     app.jinja_env.filters["localtime"] = to_localtime
+    app.jinja_env.filters["local_naive_to_localtime"] = local_naive_to_localtime
+    app.jinja_env.filters["utc_naive_to_localtime"] = utc_naive_to_localtime
     app.jinja_env.globals["to_localtime"] = to_localtime
+    app.jinja_env.globals["local_naive_to_localtime"] = local_naive_to_localtime
+    app.jinja_env.globals["utc_naive_to_localtime"] = utc_naive_to_localtime
 
     from . import models  # noqa: F401
     from . import realtime  # noqa: F401

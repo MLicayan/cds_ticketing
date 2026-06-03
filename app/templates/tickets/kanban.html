@@ -390,7 +390,7 @@
               {% endif %}
             </div>
             <div class="meta mt-2 d-flex justify-content-between align-items-center">
-              <span><i class="fas fa-clock mr-1"></i>{{ to_localtime(t.created_at).strftime('%Y-%m-%d') if t.created_at else '' }}</span>
+              <span><i class="fas fa-clock mr-1"></i>{{ local_naive_to_localtime(t.created_at).strftime('%Y-%m-%d') if t.created_at else '' }}</span>
               {% if t.ticket_for == 'app' %}
                 <span class="badge badge-primary">CDS App</span>
               {% else %}
