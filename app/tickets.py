@@ -965,6 +965,23 @@ def _record_task_change(task: TicketTask, message: str, is_internal: bool = Fals
     db.session.add(comment)
 
 
+def _task_fix_completed_at(task: TicketTask):
+    if not task:
+        return None
+    if task.status == TicketStatus.RESOLVED:
+        return task.closed_at or task.updated_at or task.created_at
+
+    latest_resolved_comment = max(
+        (
+            comment.created_at
+            for comment in (task.comments or [])
+            if comment.created_at and " to Fix/Completed by " in (comment.comment_text or "")
+        ),
+        default=None,
+    )
+    return latest_resolved_comment
+
+
 def _enum_label(value) -> str:
     return value.value.replace("_", " ").title() if value else "N/A"
 
@@ -1278,9 +1295,14 @@ def _render_ticket_index(my_tickets_only=False):
     else:
         tickets = query.order_by(list_model.created_at.asc()).all()
     task_work_status_map = {}
+    task_fix_completed_at_map = {}
     if is_task_list:
         task_work_status_map = {
             task.id: _task_work_session_state(task)
+            for task in tickets
+        }
+        task_fix_completed_at_map = {
+            task.id: _task_fix_completed_at(task)
             for task in tickets
         }
     now = datetime.now(APP_TIMEZONE)
@@ -1302,6 +1324,7 @@ def _render_ticket_index(my_tickets_only=False):
         ticket_list_endpoint="tickets.my_tickets" if my_tickets_only else "tickets.index",
         is_task_list=is_task_list,
         task_work_status_map=task_work_status_map,
+        task_fix_completed_at_map=task_fix_completed_at_map,
         can_create_task=can_create_task,
         selected_filters={
             "client_ids": client_ids,

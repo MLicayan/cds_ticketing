@@ -730,8 +730,9 @@
           {% endif %}
           {% if is_task_list %}
             <td>
-              {% if t.status == TicketStatus.RESOLVED and t.closed_at %}
-                {% set completed_local = local_naive_to_localtime(t.closed_at) %}
+              {% set fix_completed_at = task_fix_completed_at_map.get(t.id) if task_fix_completed_at_map is defined else None %}
+              {% if fix_completed_at %}
+                {% set completed_local = local_naive_to_localtime(fix_completed_at) %}
                 <span
                   class="js-timezone-datetime"
                   data-iso="{{ completed_local.isoformat() }}"
