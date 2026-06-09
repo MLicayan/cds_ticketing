@@ -113,7 +113,15 @@ def _apply_client_ticket_scope(query):
             Ticket.reported_by_id == current_user.id,
         )
     if current_user.role == UserRole.CLIENT_ADMIN:
-        return query.filter(Ticket.client_id == current_user.client_id)
+        return query.filter(
+            Ticket.client_id == current_user.client_id,
+            Ticket.reported_by.has(
+                db.or_(
+                    User.user_type.is_(None),
+                    db.func.lower(User.user_type) != "support",
+                )
+            ),
+        )
     return query
 
 
@@ -123,6 +131,9 @@ def _ensure_client_ticket_access(ticket: Ticket) -> None:
             abort(403)
     elif current_user.role == UserRole.CLIENT_ADMIN:
         if ticket.client_id != current_user.client_id:
+            abort(403)
+        reporter_user_type = ((ticket.reported_by.user_type or "").strip().lower() if ticket.reported_by else "")
+        if reporter_user_type == "support":
             abort(403)
 
 

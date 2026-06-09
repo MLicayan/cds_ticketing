@@ -81,7 +81,7 @@
         <div class="form-group mb-2">
           <label for="profile_notification_sound_volume" class="d-flex justify-content-between align-items-center">
             <span>Volume</span>
-            <span class="text-muted" id="profile_notification_sound_volume_value">70%</span>
+            <span class="text-muted" id="profile_notification_sound_volume_value">50%</span>
           </label>
           <input
             type="range"
@@ -90,7 +90,7 @@
             min="0"
             max="100"
             step="5"
-            value="70"
+            value="50"
           >
         </div>
         <small class="text-muted d-block mb-3">Controls notification sounds and the new ticket alert sound.</small>
@@ -186,19 +186,28 @@
             <label class="font-weight-bold mb-2">Application List</label>
             <div class="row">
               {% for app in apps or [] %}
-                {% set checked = (client and app in client.apps) or (app.id|string in request.form.getlist('app_ids')) %}
                 <div class="col-md-6">
                   <div class="custom-control custom-checkbox mb-2">
-                    <input type="checkbox" class="custom-control-input" id="app_{{ app.id }}" name="app_ids" value="{{ app.id }}" {% if checked %}checked{% endif %}>
-                    <label class="custom-control-label" for="app_{{ app.id }}">
+                    <input
+                      type="checkbox"
+                      class="custom-control-input"
+                      id="app_{{ app.id }}"
+                      checked
+                      disabled
+                    >
+                    <label class="custom-control-label text-muted" for="app_{{ app.id }}">
                       {{ app.name }}
                       {% if app.code %}<span class="text-muted">({{ app.code }})</span>{% endif %}
                     </label>
                   </div>
                 </div>
+              {% else %}
+                <div class="col-12">
+                  <p class="text-muted mb-0">No CDS applications assigned.</p>
+                </div>
               {% endfor %}
             </div>
-            <small class="text-muted">Select all applications enabled for this hospital.</small>
+            <small class="text-muted">Application assignment is read-only for client administrators. Only administrators can assign CDS applications.</small>
           </div>
         </div>
       </div>
@@ -295,7 +304,7 @@
       }
     } catch (err) {
     }
-    return 0.7;
+    return 0.5;
   }
 
   function setStoredVolume(volume) {

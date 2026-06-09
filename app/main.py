@@ -31,7 +31,15 @@ def _apply_client_ticket_scope(query):
             Ticket.reported_by_id == current_user.id,
         )
     if current_user.role == UserRole.CLIENT_ADMIN:
-        return query.filter(Ticket.client_id == current_user.client_id)
+        return query.filter(
+            Ticket.client_id == current_user.client_id,
+            Ticket.reported_by.has(
+                db.or_(
+                    User.user_type.is_(None),
+                    db.func.lower(User.user_type) != "support",
+                )
+            ),
+        )
     return query
 
 

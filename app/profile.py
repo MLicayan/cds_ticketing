@@ -2,7 +2,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 
 from . import db
-from .models import App, Client, Instrument, User, UserRole
+from .models import Client, Instrument, User, UserRole
 
 
 profile_bp = Blueprint("profile", __name__, template_folder="templates")
@@ -23,7 +23,7 @@ def _current_client_or_404():
 @login_required
 def index():
     client = _current_client_or_404() if current_user.role == UserRole.CLIENT_ADMIN and current_user.client_id else None
-    apps = App.query.order_by(App.name.asc()).all() if client else []
+    apps = sorted(client.apps, key=lambda app: (app.name or "").lower()) if client else []
     instruments = Instrument.query.filter(Instrument.client_id == client.id).order_by(Instrument.name.asc()).all() if client else []
 
     if request.method == "POST":
@@ -34,8 +34,6 @@ def index():
         client.contact_person = request.form.get("contact_person")
         client.contact_number = request.form.get("contact_number")
         client.email = request.form.get("email")
-        app_ids = request.form.getlist("app_ids")
-        client.apps = App.query.filter(App.id.in_(app_ids)).all() if app_ids else []
 
         if not client.name:
             flash("Hospital name is required.", "danger")

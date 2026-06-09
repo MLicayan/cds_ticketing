@@ -4,7 +4,7 @@ from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from . import APP_TIMEZONE, db, to_localtime
-from .models import Ticket, TicketStatus, UserRole
+from .models import Ticket, TicketStatus, User, UserRole
 
 monitoring_bp = Blueprint("monitoring", __name__, template_folder="templates")
 
@@ -20,6 +20,15 @@ def _scoped_ticket_query():
     query = _exclude_task_tickets(Ticket.query)
     if current_user.role in CLIENT_SCOPED_ROLES:
         query = query.filter(Ticket.client_id == current_user.client_id)
+        if current_user.role == UserRole.CLIENT_ADMIN:
+            query = query.filter(
+                Ticket.reported_by.has(
+                    db.or_(
+                        User.user_type.is_(None),
+                        db.func.lower(User.user_type) != "support",
+                    )
+                )
+            )
     return query
 
 
