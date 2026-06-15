@@ -13,7 +13,7 @@ from datetime import datetime, date, timedelta, time
 from flask import Blueprint, render_template, request, redirect, url_for, flash, Response, current_app, abort, jsonify
 from flask_login import login_required, current_user
 
-from . import APP_TIMEZONE, db, local_naive_to_localtime, socketio, to_localtime, utc_naive_to_localtime
+from . import APP_TIMEZONE, db, format_reported_by_name, local_naive_to_localtime, socketio, to_localtime, utc_naive_to_localtime
 from .models import (
     Ticket,
     Client,
@@ -113,15 +113,7 @@ def _apply_client_ticket_scope(query):
             Ticket.reported_by_id == current_user.id,
         )
     if current_user.role == UserRole.CLIENT_ADMIN:
-        return query.filter(
-            Ticket.client_id == current_user.client_id,
-            Ticket.reported_by.has(
-                db.or_(
-                    User.user_type.is_(None),
-                    db.func.lower(User.user_type) != "support",
-                )
-            ),
-        )
+        return query.filter(Ticket.client_id == current_user.client_id)
     return query
 
 
@@ -131,9 +123,6 @@ def _ensure_client_ticket_access(ticket: Ticket) -> None:
             abort(403)
     elif current_user.role == UserRole.CLIENT_ADMIN:
         if ticket.client_id != current_user.client_id:
-            abort(403)
-        reporter_user_type = ((ticket.reported_by.user_type or "").strip().lower() if ticket.reported_by else "")
-        if reporter_user_type == "support":
             abort(403)
 
 
@@ -4144,7 +4133,7 @@ def export():
             t.subject,
             t.priority.value if t.priority else "",
             status_labels.get(t.status, t.status.value if t.status else ""),
-            t.reported_by.full_name or t.reported_by.username if t.reported_by else "",
+            format_reported_by_name(t, current_user),
             t.created_at.strftime("%Y-%m-%d %H:%M") if t.created_at else "",
         ])
 

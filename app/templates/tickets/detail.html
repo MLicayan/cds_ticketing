@@ -793,7 +793,7 @@
               #}
 
               <dt class="col-sm-4">Reported By</dt>
-              <dd class="col-sm-8">{{ ticket.reported_by.full_name or ticket.reported_by.username }}</dd>
+              <dd class="col-sm-8">{{ format_reported_by_name(ticket, current_user) }}</dd>
 
               {% if is_task_ticket %}
               <dt class="col-sm-4">Assigned To</dt>

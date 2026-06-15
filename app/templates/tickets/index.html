@@ -679,9 +679,9 @@
             {% endif %}
           </td>
           <td>{{ t.subject }}</td>
-          <td>{{ t.reported_by.full_name or t.reported_by.username }}</td>
+          <td>{{ format_reported_by_name(t, current_user) }}</td>
           {% if show_assigned_column %}
-            <td>{{ t.assigned_engineer.full_name or t.assigned_engineer.username if t.assigned_engineer else 'Unassigned' }}</td>
+            <td>{{ format_assigned_to_name(t) }}</td>
           {% endif %}
           <td>
             {% if t.ticket_for == 'app' %}

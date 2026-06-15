@@ -20,6 +20,48 @@ migrate = None
 APP_TIMEZONE = timezone(timedelta(hours=8))
 
 
+def format_reported_by_name(ticket_like, viewer=None):
+    reporter = getattr(ticket_like, "reported_by", None)
+    if not reporter:
+        return ""
+
+    reporter_name = reporter.full_name or reporter.username or ""
+    viewer_role = getattr(viewer, "role", None)
+    reporter_user_type = (getattr(reporter, "user_type", "") or "").strip().lower()
+
+    viewer_role = getattr(viewer_role, "value", viewer_role)
+
+    if viewer_role in ("client", "client_admin") and reporter_user_type == "support":
+        return f"{reporter_name} - (CDS Support)"
+
+    return reporter_name
+
+
+def format_assigned_to_name(ticket_like):
+    assigned_engineer = getattr(ticket_like, "assigned_engineer", None)
+    tasks = getattr(ticket_like, "tasks", None)
+
+    if tasks:
+        seen = set()
+        task_assignees = []
+        for task in tasks:
+            engineer = getattr(task, "assigned_engineer", None)
+            if not engineer:
+                continue
+            engineer_name = engineer.full_name or engineer.username or ""
+            if not engineer_name or engineer_name in seen:
+                continue
+            seen.add(engineer_name)
+            task_assignees.append(engineer_name)
+        if task_assignees:
+            return ", ".join(task_assignees)
+
+    if assigned_engineer:
+        return assigned_engineer.full_name or assigned_engineer.username or "Unassigned"
+
+    return "Unassigned"
+
+
 def local_naive_to_localtime(value):
     if value is None:
         return None
@@ -72,6 +114,8 @@ def create_app(config_class=Config):
     app.jinja_env.globals["to_localtime"] = to_localtime
     app.jinja_env.globals["local_naive_to_localtime"] = local_naive_to_localtime
     app.jinja_env.globals["utc_naive_to_localtime"] = utc_naive_to_localtime
+    app.jinja_env.globals["format_assigned_to_name"] = format_assigned_to_name
+    app.jinja_env.globals["format_reported_by_name"] = format_reported_by_name
 
     from . import models  # noqa: F401
     from . import realtime  # noqa: F401

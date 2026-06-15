@@ -522,10 +522,10 @@
             <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=t.id) if admin_data.uses_task_items else url_for('tickets.detail', ticket_id=t.id) }}'" style="cursor:pointer;">
               <td><a href="{{ url_for('tickets.task_detail', task_id=t.id) if admin_data.uses_task_items else url_for('tickets.detail', ticket_id=t.id) }}">{{ t.ticket_no }}</a></td>
               <td>{{ t.client.name if t.client else '' }}</td>
-              <td>{{ t.reported_by.full_name or t.reported_by.username if t.reported_by else 'Unknown' }}</td>
+              <td>{{ format_reported_by_name(t, current_user) if t.reported_by else 'Unknown' }}</td>
               <td>{{ ticket_item(t) }}</td>
               {% if current_user.role.value not in ['client', 'client_admin'] %}
-              <td>{{ t.assigned_engineer.full_name or t.assigned_engineer.username if t.assigned_engineer else 'Unassigned' }}</td>
+              <td>{{ format_assigned_to_name(t) }}</td>
               <td><span class="pill pill-{{ pval }}">{{ pval.replace('_', ' ')|title }}</span></td>
               {% endif %}
               <td><span class="pill pill-{{ sval }}">{{ sval.replace('_', ' ')|title }}</span></td>
