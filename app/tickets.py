@@ -570,6 +570,19 @@ def _can_edit_core_ticket_fields(user: User) -> bool:
     return _is_support_user(user)
 
 
+def _can_fully_edit_task_detail(user: Optional[User]) -> bool:
+    return bool(
+        user and (
+            user.role == UserRole.ADMIN
+            or _is_support_user(user)
+            or (
+                user.has_nav_access("developer_tasks")
+                and user.has_nav_access("developer_workload")
+            )
+        )
+    )
+
+
 def _task_assignee_filters(user: Optional[User] = None):
     if not user:
         return [db.func.lower(User.user_type) == "support"]
@@ -1046,13 +1059,7 @@ def _apply_my_ticket_scope(query):
 def _apply_my_task_scope(query):
     user_type = (current_user.user_type or "").strip().lower()
     if current_user.role == UserRole.ENGINEER and not _is_support_user(current_user):
-        return query.filter(
-            db.or_(
-                TicketTask.reported_by_id == current_user.id,
-                TicketTask.assigned_engineer_id == current_user.id,
-                TicketTask.assigned_by_id == current_user.id,
-            )
-        )
+        return query.filter(TicketTask.assigned_engineer_id == current_user.id)
     if _is_support_user(current_user):
         return query.filter(TicketTask.assigned_engineer_id == current_user.id)
     if current_user.role == UserRole.ADMIN or user_type == "administrator":
@@ -2947,7 +2954,7 @@ def detail(ticket_id):
         (TicketPriority.MEDIUM, "Medium"),
         (TicketPriority.LOW, "Low"),
     ]
-    support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
+    support_can_edit_core_fields = _can_fully_edit_task_detail(current_user)
     editable_clients = Client.query.order_by(Client.name.asc()).all() if support_can_edit_core_fields else []
     editable_apps = App.query.order_by(App.name.asc()).all() if support_can_edit_core_fields else []
 
@@ -3169,7 +3176,7 @@ def task_detail(task_id):
         (TicketPriority.MEDIUM, "Medium"),
         (TicketPriority.LOW, "Low"),
     ]
-    support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
+    support_can_edit_core_fields = _can_fully_edit_task_detail(current_user)
     editable_clients = Client.query.order_by(Client.name.asc()).all() if support_can_edit_core_fields else []
     editable_apps = App.query.order_by(App.name.asc()).all() if support_can_edit_core_fields else []
 

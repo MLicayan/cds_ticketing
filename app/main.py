@@ -87,6 +87,37 @@ def _dashboard_work_item_scope_for_user():
     return _dashboard_ticket_scope_for_user()
 
 
+def _dashboard_task_scope_for_user():
+    role = current_user.role
+    user_type = (current_user.user_type or "").strip().lower()
+    can_view_overall = role == UserRole.ADMIN or (role == UserRole.ENGINEER and user_type == "support")
+    task_scope = TicketTask.query
+
+    if role == UserRole.SALES:
+        sales_clients = Client.query.filter(Client.assigned_sales_id == current_user.id).all()
+        scoped_client_ids = [client.id for client in sales_clients]
+        task_scope = (
+            task_scope.filter(TicketTask.client_id.in_(scoped_client_ids))
+            if scoped_client_ids
+            else task_scope.filter(db.false())
+        )
+    elif role == UserRole.CLIENT:
+        task_scope = task_scope.filter(
+            TicketTask.client_id == current_user.client_id,
+            TicketTask.reported_by_id == current_user.id,
+        ) if current_user.client_id else task_scope.filter(db.false())
+    elif role == UserRole.CLIENT_ADMIN:
+        task_scope = (
+            task_scope.filter(TicketTask.client_id == current_user.client_id)
+            if current_user.client_id
+            else task_scope.filter(db.false())
+        )
+    elif role == UserRole.ENGINEER and not can_view_overall:
+        task_scope = task_scope.filter(TicketTask.assigned_engineer_id == current_user.id)
+
+    return task_scope
+
+
 def _schedule_calendar_data(item_scope, item_model, selected_calendar_month, today):
     month_calendar = calendar.Calendar(firstweekday=0).monthdatescalendar(
         selected_calendar_month.year,
@@ -451,6 +482,62 @@ def dashboard():
             reverse=True,
         )[:8]
 
+        client_app_groups = {}
+        can_open_app_workload_task = (
+            current_user.has_nav_access("developer_tasks")
+            and current_user.has_nav_access("developer_workload")
+        )
+        task_scope = TicketTask.query
+        active_app_items = (
+            task_scope.filter(
+                TicketTask.status == TicketStatus.IN_PROGRESS,
+                TicketTask.app_id.isnot(None),
+                TicketTask.client.has(
+                    ~db.func.lower(db.func.trim(Client.name)).like("%cerebro%")
+                ),
+                db.or_(
+                    TicketTask.assigned_engineer_id.is_(None),
+                    TicketTask.assigned_engineer.has(
+                        db.func.lower(db.func.trim(User.user_type)) != "support"
+                    ),
+                ),
+            )
+            .order_by(
+                TicketTask.client_id.asc(),
+                TicketTask.app_id.asc(),
+                TicketTask.updated_at.desc(),
+            )
+            .all()
+        )
+        for item in active_app_items:
+            client_name = item.client.name if item.client else "Unknown Client"
+            developer = getattr(item, "assigned_engineer", None)
+            developer_name = (
+                (developer.full_name or developer.username)
+                if developer
+                else "Unassigned"
+            )
+            client_bucket = client_app_groups.setdefault(
+                client_name,
+                {
+                    "client_name": client_name,
+                    "applications": [],
+                },
+            )
+            client_bucket["applications"].append(
+                {
+                    "task_id": item.id,
+                    "app_name": item.app.name if item.app else "Unknown App",
+                    "developer_name": developer_name,
+                    "status": item.status,
+                    "can_open": can_open_app_workload_task,
+                }
+            )
+        client_app_workload = sorted(
+            client_app_groups.values(),
+            key=lambda row: row["client_name"].lower(),
+        )
+
         admin_data = {
             "can_view_overall": can_view_overall,
             "pm_week": pm_week,
@@ -465,6 +552,7 @@ def dashboard():
             **calendar_data,
             "engineer_performance": engineer_performance,
             "recent_activity": recent_activity,
+            "client_app_workload": client_app_workload,
             "week_range": week_range,
             "current_year": today.year,
             "uses_task_items": dashboard_item_model is TicketTask,

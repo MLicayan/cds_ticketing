@@ -1340,7 +1340,7 @@
               </div>
             </div>
 
-            {% if is_task_ticket and (current_user.role.value == 'admin' or current_user.has_nav_access('developer_tasks') or current_user.has_nav_access('developer_workload')) %}
+            {% if is_task_ticket and support_can_edit_core_fields %}
             <div class="form-group">
               <label for="engineer_id">Assigned To</label>
               <select name="engineer_id" id="engineer_id" class="form-control">
