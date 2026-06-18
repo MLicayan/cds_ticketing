@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from flask import Flask
+from flask import url_for
 from flask_login import current_user
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
@@ -91,6 +92,361 @@ def to_localtime(value):
     return value.astimezone(APP_TIMEZONE)
 
 
+def _ticket_creation_notification_payload(notification):
+    from .models import TicketStatus
+
+    ticket = getattr(notification, "ticket", None)
+    actor = getattr(notification, "actor", None)
+    if not ticket:
+        return None
+    if getattr(ticket, "status", None) in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        return None
+
+    actor_name = ""
+    if actor:
+        actor_name = actor.full_name or actor.username or ""
+
+    return {
+        "id": notification.id,
+        "type": notification.notification_type,
+        "ticket_id": ticket.id,
+        "ticket_no": ticket.ticket_no,
+        "subject": ticket.subject,
+        "reported_by": ticket.reported_by.full_name or ticket.reported_by.username if ticket.reported_by else "",
+        "url": url_for("tickets.detail", ticket_id=ticket.id) + "#ticket-comments-card",
+        "comment_id": None,
+        "comment_text": notification.comment_preview or (f"New ticket created by {actor_name}." if actor_name else "New ticket created."),
+        "user": actor_name or "System",
+        "created_at": to_localtime(notification.created_at).strftime("%Y-%m-%d %H:%M") if notification.created_at else "",
+        "count": 1,
+    }
+
+
+def _ticket_comment_notification_payload(notification):
+    from .models import TicketStatus
+
+    ticket = getattr(notification, "ticket", None)
+    actor = getattr(notification, "actor", None)
+    if not ticket:
+        return None
+    if getattr(ticket, "status", None) in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        return None
+
+    actor_name = ""
+    if actor:
+        actor_name = actor.full_name or actor.username or ""
+
+    return {
+        "id": notification.id,
+        "type": notification.notification_type,
+        "ticket_id": ticket.id,
+        "ticket_no": ticket.ticket_no,
+        "subject": ticket.subject,
+        "reported_by": ticket.reported_by.full_name or ticket.reported_by.username if ticket.reported_by else "",
+        "url": url_for("tickets.detail", ticket_id=ticket.id) + "#ticket-comments-card",
+        "comment_id": None,
+        "comment_text": notification.comment_preview or (f"New comment from {actor_name}." if actor_name else "New ticket comment."),
+        "user": actor_name or "System",
+        "created_at": to_localtime(notification.created_at).strftime("%Y-%m-%d %H:%M") if notification.created_at else "",
+        "count": 1,
+    }
+
+
+def _task_comment_notification_payload(notification):
+    from .models import TicketStatus
+
+    task = getattr(notification, "task", None)
+    actor = getattr(notification, "actor", None)
+    if not task:
+        return None
+    if getattr(task, "status", None) in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        return None
+
+    actor_name = ""
+    if actor:
+        actor_name = actor.full_name or actor.username or ""
+
+    return {
+        "id": notification.id,
+        "type": notification.notification_type,
+        "ticket_id": task.id,
+        "ticket_no": task.ticket_no,
+        "subject": task.subject,
+        "reported_by": task.reported_by.full_name or task.reported_by.username if task.reported_by else "",
+        "url": url_for("tickets.task_detail", task_id=task.id) + "#ticket-comments-card",
+        "comment_id": None,
+        "comment_text": notification.comment_preview or (f"New comment from {actor_name}." if actor_name else "New task comment."),
+        "user": actor_name or "System",
+        "created_at": to_localtime(notification.created_at).strftime("%Y-%m-%d %H:%M") if notification.created_at else "",
+        "count": 1,
+    }
+
+
+def header_notification_payload(notification):
+    notification_type = getattr(notification, "notification_type", "")
+    if notification_type == "ticket_comment":
+        return _ticket_comment_notification_payload(notification)
+    if notification_type == "task_comment":
+        return _task_comment_notification_payload(notification)
+    return _ticket_creation_notification_payload(notification)
+
+
+def build_header_notifications_for_user(user, limit: int = 8) -> dict:
+    if not user:
+        return {"count": 0, "notifications": []}
+
+    from .models import TicketNotification
+
+    notifications = []
+
+    stored_notifications = (
+        TicketNotification.query
+        .filter(
+            TicketNotification.recipient_id == user.id,
+            TicketNotification.notification_type.in_(("ticket_created", "ticket_comment", "task_comment")),
+            TicketNotification.read_at.is_(None),
+        )
+        .order_by(TicketNotification.created_at.desc(), TicketNotification.id.desc())
+        .all()
+    )
+    for notification in stored_notifications:
+        payload = header_notification_payload(notification)
+        if payload:
+            notifications.append(payload)
+
+    notifications.sort(key=lambda item: item.get("created_at") or "", reverse=True)
+    return {
+        "count": len(notifications),
+        "notifications": notifications[:limit],
+    }
+
+
+def queue_ticket_creation_notifications(ticket, actor=None):
+    if not ticket:
+        return []
+
+    from .models import TicketNotification, User, UserRole
+
+    actor_id = getattr(actor, "id", None)
+    support_or_admin_users = (
+        User.query.filter(
+            User.is_active_user.is_(True),
+            db.or_(
+                User.role == UserRole.ADMIN,
+                db.and_(
+                    User.role == UserRole.ENGINEER,
+                    db.func.lower(db.func.trim(User.user_type)) == "support",
+                ),
+            ),
+        )
+        .order_by(User.id.asc())
+        .all()
+    )
+
+    recipients = []
+    for recipient in support_or_admin_users:
+        if actor_id and recipient.id == actor_id:
+            continue
+        notification = TicketNotification(
+            ticket_id=ticket.id,
+            task_id=None,
+            recipient_id=recipient.id,
+            actor_id=actor_id,
+            notification_type="ticket_created",
+            comment_preview=f"New ticket created by {actor.full_name or actor.username}." if actor else "New ticket created.",
+            created_at=datetime.now(APP_TIMEZONE).replace(tzinfo=None),
+        )
+        db.session.add(notification)
+        recipients.append((recipient, notification))
+    return recipients
+
+
+def queue_ticket_comment_notifications(ticket, comment):
+    if not ticket or not comment or not comment.user or comment.is_internal or comment.deleted:
+        return []
+
+    from .models import TicketNotification, User, UserRole
+
+    commenter_is_client = comment.user.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
+    if not commenter_is_client:
+        return []
+
+    recipients = (
+        User.query.filter(
+            User.is_active_user.is_(True),
+            db.or_(
+                User.role == UserRole.ADMIN,
+                db.and_(
+                    User.role == UserRole.ENGINEER,
+                    db.func.lower(db.func.trim(User.user_type)) == "support",
+                ),
+            ),
+        )
+        .order_by(User.id.asc())
+        .all()
+    )
+
+    preview = (comment.comment_text or "").strip() or "Attachment added"
+    created_at = comment.created_at or datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    queued_recipients = []
+    for recipient in recipients:
+        if recipient.id == comment.user_id:
+            continue
+        notification = TicketNotification(
+            ticket_id=ticket.id,
+            task_id=None,
+            recipient_id=recipient.id,
+            actor_id=comment.user_id,
+            notification_type="ticket_comment",
+            comment_preview=preview,
+            created_at=created_at,
+        )
+        db.session.add(notification)
+        queued_recipients.append((recipient, notification))
+    return queued_recipients
+
+
+def queue_task_comment_notifications(task, actor=None):
+    if not task or not actor:
+        return []
+
+    from .models import TicketNotification, UserRole
+
+    if actor.role != UserRole.ENGINEER:
+        return []
+    if not task.reported_by_id or task.reported_by_id == actor.id:
+        return []
+
+    recipient = task.reported_by
+    if not recipient or not getattr(recipient, "is_active_user", False):
+        return []
+
+    notification = TicketNotification(
+        ticket_id=None,
+        task_id=task.id,
+        recipient_id=recipient.id,
+        actor_id=actor.id,
+        notification_type="task_comment",
+        comment_preview="New comment from {}.".format(actor.full_name or actor.username or "System"),
+        created_at=datetime.now(APP_TIMEZONE).replace(tzinfo=None),
+    )
+    db.session.add(notification)
+    return [(recipient, notification)]
+
+
+def mark_ticket_notifications_read_for_user(ticket_id: int, user) -> bool:
+    if not ticket_id or not user:
+        return False
+
+    from .models import TicketNotification
+
+    notifications = (
+        TicketNotification.query
+        .filter(
+            TicketNotification.ticket_id == ticket_id,
+            TicketNotification.recipient_id == user.id,
+            TicketNotification.read_at.is_(None),
+        )
+        .all()
+    )
+    if not notifications:
+        return False
+
+    read_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    for notification in notifications:
+        notification.read_at = read_at
+    return True
+
+
+def mark_task_notifications_read_for_user(task_id: int, user) -> bool:
+    if not task_id or not user:
+        return False
+
+    from .models import TicketNotification
+
+    notifications = (
+        TicketNotification.query
+        .filter(
+            TicketNotification.task_id == task_id,
+            TicketNotification.recipient_id == user.id,
+            TicketNotification.notification_type == "task_comment",
+            TicketNotification.read_at.is_(None),
+        )
+        .all()
+    )
+    if not notifications:
+        return False
+
+    read_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    for notification in notifications:
+        notification.read_at = read_at
+    return True
+
+
+def mark_shared_ticket_comment_notifications_read(ticket_id: int) -> list:
+    if not ticket_id:
+        return []
+
+    from .models import TicketNotification
+
+    notifications = (
+        TicketNotification.query
+        .filter(
+            TicketNotification.ticket_id == ticket_id,
+            TicketNotification.notification_type == "ticket_comment",
+            TicketNotification.read_at.is_(None),
+        )
+        .all()
+    )
+    if not notifications:
+        return []
+
+    read_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    recipient_ids = []
+    for notification in notifications:
+        notification.read_at = read_at
+        recipient_ids.append(notification.recipient_id)
+    return sorted(set(recipient_ids))
+
+
+
+
+def emit_header_notification_snapshot(user) -> None:
+    if not user:
+        return
+
+    payload = build_header_notifications_for_user(user)
+    socketio.emit(
+        "ticket_comment_notification_count",
+        {"count": payload.get("count", 0)},
+        room=f"user_notifications:{user.id}",
+    )
+    socketio.emit(
+        "ticket_comment_notification_snapshot",
+        payload,
+        room=f"user_notifications:{user.id}",
+    )
+
+
+def emit_header_notification_added(user, notification) -> None:
+    if not user or not notification:
+        return
+
+    payload = header_notification_payload(notification)
+    if not payload:
+        emit_header_notification_snapshot(user)
+        return
+
+    socketio.emit(
+        "ticket_comment_notification_added",
+        {
+            "count": build_header_notifications_for_user(user).get("count", 0),
+            "notification": payload,
+        },
+        room=f"user_notifications:{user.id}",
+    )
+
+
 def create_app(config_class=Config):
     app = Flask(__name__)
     app.config.from_object(config_class)
@@ -127,69 +483,10 @@ def create_app(config_class=Config):
                 "client_comment_notifications": [],
                 "client_comment_notification_count": 0,
             }
-
-        from .models import Ticket, TicketComment, User, UserRole
-
-        change_prefixes = (
-            "Status changed",
-            "Priority changed",
-            "Target schedule changed",
-            "Date needed changed",
-            "Complaint/details updated",
-            "Engineer/IT assigned",
-            "Engineer/IT assignment cleared",
-            "Work status changed",
-        )
-
-        query = (
-            db.session.query(TicketComment)
-            .join(Ticket, TicketComment.ticket_id == Ticket.id)
-            .join(User, TicketComment.user_id == User.id)
-            .filter(TicketComment.is_internal.is_(False), TicketComment.deleted.is_(False))
-            .filter(Ticket.status != models.TicketStatus.CLOSED)
-        )
-
-        if current_user.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN):
-            query = query.filter(~User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
-            query = query.filter(
-                Ticket.client_id == current_user.client_id,
-                Ticket.reported_by_id == current_user.id,
-            )
-        else:
-            query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
-
-        current_user_type = (current_user.user_type or "").strip().lower()
-        is_support_user = (
-            current_user.role == UserRole.ENGINEER
-            and current_user_type == "support"
-        )
-
-        if current_user.role == UserRole.ENGINEER and not is_support_user:
-            query = query.filter(Ticket.assigned_engineer_id == current_user.id)
-        elif current_user.role == UserRole.SALES:
-            query = query.join(
-                models.Client,
-                Ticket.client_id == models.Client.id,
-            ).filter(models.Client.assigned_sales_id == current_user.id)
-
-        comments = query.order_by(TicketComment.created_at.desc()).limit(100).all()
-        by_ticket = {}
-        for comment in comments:
-            if any((comment.comment_text or "").startswith(prefix) for prefix in change_prefixes):
-                continue
-            if comment.reaction_state_map().get(str(current_user.id), {}).get("acknowledge"):
-                continue
-            if comment.ticket_id not in by_ticket:
-                by_ticket[comment.ticket_id] = {
-                    "ticket": comment.ticket,
-                    "latest_comment": comment,
-                    "count": 0,
-                }
-            by_ticket[comment.ticket_id]["count"] += 1
-
+        snapshot = build_header_notifications_for_user(current_user, limit=8)
         return {
-            "client_comment_notifications": list(by_ticket.values())[:8],
-            "client_comment_notification_count": len(by_ticket),
+            "client_comment_notifications": snapshot.get("notifications", []),
+            "client_comment_notification_count": snapshot.get("count", 0),
         }
 
     from .auth import auth_bp

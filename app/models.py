@@ -372,6 +372,28 @@ class Ticket(db.Model):
         return None
 
 
+class TicketNotification(db.Model):
+    __tablename__ = "ticket_notifications"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=True)
+    task_id = db.Column(db.Integer, db.ForeignKey("ticket_tasks.id"), nullable=True)
+    recipient_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    actor_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    notification_type = db.Column(db.String(50), nullable=False, default="ticket_created")
+    comment_preview = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=_local_now_naive, nullable=False)
+    read_at = db.Column(db.DateTime, nullable=True)
+
+    ticket = db.relationship("Ticket", foreign_keys=[ticket_id])
+    task = db.relationship("TicketTask", foreign_keys=[task_id])
+    recipient = db.relationship("User", foreign_keys=[recipient_id])
+    actor = db.relationship("User", foreign_keys=[actor_id])
+
+    def __repr__(self):
+        return f"<TicketNotification {self.notification_type} ticket={self.ticket_id} task={self.task_id} recipient={self.recipient_id}>"
+
+
 class TicketComment(db.Model):
     __tablename__ = "ticket_comments"
 

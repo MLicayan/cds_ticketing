@@ -335,7 +335,7 @@
     <ul class="navbar-nav ml-auto">
       {% if current_user.is_authenticated %}
       <li class="nav-item dropdown header-notification" id="header-client-comment-notification">
-        <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false" title="Ticket comment notifications">
+        <a class="nav-link dropdown-toggle" data-toggle="dropdown" href="#" role="button" aria-haspopup="true" aria-expanded="false" title="Ticket notifications">
           <i class="far fa-bell"></i>
           {% if client_comment_notification_count %}
           <span class="badge badge-warning navbar-badge" data-notification-badge>{{ client_comment_notification_count }}</span>
@@ -343,33 +343,31 @@
         </a>
         <div class="dropdown-menu dropdown-menu-right header-notification-menu">
           <span class="dropdown-header" data-notification-header>
-            {{ client_comment_notification_count }} ticket comment{{ '' if client_comment_notification_count == 1 else 's' }}
+            {{ client_comment_notification_count }} notification{{ '' if client_comment_notification_count == 1 else 's' }}
           </span>
           <div class="dropdown-divider"></div>
           <div data-notification-items>
           {% if client_comment_notifications %}
             {% for notification in client_comment_notifications %}
-            {% set n_ticket = notification.ticket %}
-            {% set n_comment = notification.latest_comment %}
-            <a href="{{ url_for('tickets.detail', ticket_id=n_ticket.id) }}#ticket-comments-card" class="dropdown-item" data-ticket-id="{{ n_ticket.id }}" data-ticket-count="{{ notification.count }}">
+            <a href="{{ notification.url }}" class="dropdown-item" data-ticket-id="{{ notification.ticket_id }}" data-ticket-count="{{ notification.count or 1 }}">
               <div class="d-flex justify-content-between align-items-start">
-                <span class="notification-ticket-no">{{ n_ticket.ticket_no }}</span>
-                {% if notification.count > 1 %}
+                <span class="notification-ticket-no">{{ notification.ticket_no }}</span>
+                {% if (notification.count or 1) > 1 %}
                 <span class="badge badge-primary" data-ticket-notification-count>{{ notification.count }}</span>
                 {% endif %}
               </div>
-              <div>{{ n_ticket.subject }}</div>
+              <div>{{ notification.subject }}</div>
               <div class="notification-comment-preview">
-                {{ n_comment.comment_text if n_comment.comment_text else 'Attachment added' }}
+                {{ notification.comment_text if notification.comment_text else 'Attachment added' }}
               </div>
               <div class="notification-time">
-                {{ n_comment.user.full_name or n_comment.user.username if n_comment.user else 'Unknown' }} - {{ to_localtime(n_comment.created_at).strftime('%Y-%m-%d %H:%M') if n_comment.created_at else '' }}
+                {{ notification.user if notification.user else 'Unknown' }} - {{ notification.created_at if notification.created_at else '' }}
               </div>
             </a>
             {% if not loop.last %}<div class="dropdown-divider"></div>{% endif %}
             {% endfor %}
           {% else %}
-            <span class="dropdown-item text-muted" data-notification-empty>No new ticket comments.</span>
+            <span class="dropdown-item text-muted" data-notification-empty>No new notifications.</span>
           {% endif %}
           </div>
         </div>
@@ -709,7 +707,7 @@
     let workdayPromptOpen = false;
     let workdayPromptDate = null;
     const notificationSoundVolumeKey = 'notification-sound-volume';
-    const canHearNewTicketSound = {{ 'true' if current_user.is_authenticated and current_user.role.value not in ['client', 'client_admin'] else 'false' }};
+    const canHearNewTicketSound = {{ 'true' if current_user.is_authenticated and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) else 'false' }};
 
     function getNotificationSoundVolume() {
       try {
@@ -1006,7 +1004,7 @@
       function updateNotificationCount(count) {
         count = Number(count || 0);
         if (notificationHeader) {
-          notificationHeader.textContent = count + ' ticket comment' + (count === 1 ? '' : 's');
+          notificationHeader.textContent = count + ' notification' + (count === 1 ? '' : 's');
         }
 
         let badge = notificationRoot.querySelector('[data-notification-badge]');
@@ -1106,7 +1104,7 @@
           const empty = document.createElement('span');
           empty.className = 'dropdown-item text-muted';
           empty.setAttribute('data-notification-empty', '');
-          empty.textContent = 'No new ticket comments.';
+          empty.textContent = 'No new notifications.';
           notificationItems.appendChild(empty);
           return;
         }

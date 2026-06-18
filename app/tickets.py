@@ -13,7 +13,23 @@ from datetime import datetime, date, timedelta, time
 from flask import Blueprint, render_template, request, redirect, url_for, flash, Response, current_app, abort, jsonify
 from flask_login import login_required, current_user
 
-from . import APP_TIMEZONE, db, format_reported_by_name, local_naive_to_localtime, socketio, to_localtime, utc_naive_to_localtime
+from . import (
+    APP_TIMEZONE,
+    db,
+    emit_header_notification_added,
+    emit_header_notification_snapshot,
+    format_reported_by_name,
+    local_naive_to_localtime,
+    mark_shared_ticket_comment_notifications_read,
+    mark_task_notifications_read_for_user,
+    mark_ticket_notifications_read_for_user,
+    queue_ticket_comment_notifications,
+    queue_task_comment_notifications,
+    queue_ticket_creation_notifications,
+    socketio,
+    to_localtime,
+    utc_naive_to_localtime,
+)
 from .models import (
     Ticket,
     Client,
@@ -622,7 +638,7 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
         return False
 
     ticket = comment.ticket
-    if not ticket or ticket.status == TicketStatus.CLOSED:
+    if not ticket or ticket.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
         return False
 
     commenter_is_client = bool(comment.user and comment.user.role in CLIENT_SCOPED_ROLES)
@@ -644,18 +660,12 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
 
 
 def _notification_recipients_for_comment(ticket: Ticket, comment: TicketComment):
-    if not comment.user or not ticket or ticket.status == TicketStatus.CLOSED:
+    if not comment.user or not ticket or ticket.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
         return []
 
     user_ids = set()
     commenter_is_client = comment.user.role in CLIENT_SCOPED_ROLES
-    if commenter_is_client:
-        support_users = User.query.filter(
-            User.role == UserRole.ENGINEER,
-            db.func.lower(User.user_type) == "support",
-        ).all()
-        user_ids.update(user.id for user in support_users)
-    elif ticket.reported_by and ticket.reported_by.role in CLIENT_SCOPED_ROLES:
+    if not commenter_is_client and ticket.reported_by and ticket.reported_by.role in CLIENT_SCOPED_ROLES:
         user_ids.add(ticket.reported_by_id)
 
     user_ids.discard(comment.user_id)
@@ -684,6 +694,8 @@ def _can_modify_task_comment(comment: TicketTaskComment) -> bool:
 def _ticket_comment_notification_count_for_user(user: User) -> int:
     if not user:
         return 0
+    if user.role == UserRole.ADMIN or _is_support_user(user):
+        return 0
 
     query = (
         TicketComment.query
@@ -694,7 +706,7 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
             TicketComment.deleted.is_(False),
             TicketComment.user_id != user.id,
         )
-        .filter(Ticket.status != TicketStatus.CLOSED)
+        .filter(Ticket.status.notin_([TicketStatus.CLOSED, TicketStatus.CANCELLED]))
     )
 
     if _is_support_user(user):
@@ -727,6 +739,8 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
 def _ticket_comment_notification_snapshot_for_user(user: User, limit: int = 8) -> dict:
     if not user:
         return {"count": 0, "notifications": []}
+    if user.role == UserRole.ADMIN or _is_support_user(user):
+        return {"count": 0, "notifications": []}
 
     query = (
         TicketComment.query
@@ -737,7 +751,7 @@ def _ticket_comment_notification_snapshot_for_user(user: User, limit: int = 8) -
             TicketComment.deleted.is_(False),
             TicketComment.user_id != user.id,
         )
-        .filter(Ticket.status != TicketStatus.CLOSED)
+        .filter(Ticket.status.notin_([TicketStatus.CLOSED, TicketStatus.CANCELLED]))
     )
 
     if _is_support_user(user):
@@ -775,6 +789,8 @@ def _ticket_comment_notification_snapshot_for_user(user: User, limit: int = 8) -
     for entry in list(by_ticket.values())[:limit]:
         ticket = entry["ticket"]
         comment = entry["latest_comment"]
+        if not ticket or ticket.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+            continue
         notifications.append({
             "ticket_id": ticket.id,
             "ticket_no": ticket.ticket_no,
@@ -813,17 +829,10 @@ def _header_notification_payload(comment: TicketComment, recipient: User) -> dic
 
 
 def _emit_ticket_comment_notification(ticket: Ticket, comment: TicketComment) -> None:
-    for recipient in _notification_recipients_for_comment(ticket, comment):
-        socketio.emit(
-            "ticket_comment_notification_added",
-            _header_notification_payload(comment, recipient),
-            room=f"user_notifications:{recipient.id}",
-        )
-        socketio.emit(
-            "ticket_comment_notification_snapshot",
-            _ticket_comment_notification_snapshot_for_user(recipient),
-            room=f"user_notifications:{recipient.id}",
-        )
+    queued_notifications = queue_ticket_comment_notifications(ticket, comment)
+    if queued_notifications:
+        for recipient, notification in queued_notifications:
+            emit_header_notification_added(recipient, notification)
 
 
 def _emit_ticket_comment_notification_count(comment: TicketComment) -> None:
@@ -2019,7 +2028,10 @@ def create():
                 )
                 db.session.add(attachment)
 
+        ticket_creation_notifications = queue_ticket_creation_notifications(ticket, actor=current_user)
         db.session.commit()
+        for recipient, notification in ticket_creation_notifications:
+            emit_header_notification_added(recipient, notification)
         _emit_ticket_changed(ticket, "created")
         flash("Ticket created successfully.", "success")
         # return redirect(url_for("tickets.index"))
@@ -2691,6 +2703,23 @@ def detail(ticket_id):
         closed_redirect = _ensure_ticket_not_closed(ticket)
         if closed_redirect:
             return closed_redirect
+    else:
+        did_mark_notifications = False
+        recipients_to_refresh = []
+        if mark_ticket_notifications_read_for_user(ticket.id, current_user):
+            did_mark_notifications = True
+            recipients_to_refresh.append(current_user.id)
+        if current_user.role == UserRole.ADMIN or _is_support_user(current_user):
+            shared_recipient_ids = mark_shared_ticket_comment_notifications_read(ticket.id)
+            if shared_recipient_ids:
+                did_mark_notifications = True
+                recipients_to_refresh.extend(shared_recipient_ids)
+        if did_mark_notifications:
+            db.session.commit()
+            for recipient_id in sorted(set(recipients_to_refresh)):
+                recipient = User.query.get(recipient_id)
+                if recipient:
+                    emit_header_notification_snapshot(recipient)
 
     is_task_ticket = _is_task_ticket(ticket)
     parent_ticket = None
@@ -2993,6 +3022,9 @@ def task_detail(task_id):
         abort(403)
     if not _can_view_task_detail(task):
         abort(403)
+    if request.method != "POST" and mark_task_notifications_read_for_user(task.id, current_user):
+        db.session.commit()
+        emit_header_notification_snapshot(current_user)
 
     if request.method == "POST":
         closed_redirect = _ensure_task_not_closed(task)
@@ -3056,7 +3088,12 @@ def task_detail(task_id):
 
         if did_something:
             task.updated_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+            task_comment_notifications = []
+            if new_comment and not new_comment.is_internal:
+                task_comment_notifications = queue_task_comment_notifications(task, actor=current_user)
             db.session.commit()
+            for recipient, notification in task_comment_notifications:
+                emit_header_notification_added(recipient, notification)
             _emit_ticket_changed(task, "commented" if new_comment else "updated")
             if wants_json and new_comment:
                 return jsonify({"ok": True, "comment": _task_comment_payload(new_comment, attachments=added_attachments)})
