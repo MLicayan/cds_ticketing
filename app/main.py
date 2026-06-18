@@ -517,6 +517,11 @@ def dashboard():
                 if developer
                 else "Unassigned"
             )
+            is_paused = any(
+                session.paused_at and not session.ended_at
+                for session in (item.work_sessions or [])
+            )
+            work_state = "working" if item.is_working else "paused" if is_paused else "paused"
             client_bucket = client_app_groups.setdefault(
                 client_name,
                 {
@@ -529,7 +534,8 @@ def dashboard():
                     "task_id": item.id,
                     "app_name": item.app.name if item.app else "Unknown App",
                     "developer_name": developer_name,
-                    "status": item.status,
+                    "work_state": work_state,
+                    "work_state_label": "Working" if work_state == "working" else "Paused",
                     "can_open": can_open_app_workload_task,
                 }
             )

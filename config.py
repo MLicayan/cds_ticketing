@@ -23,7 +23,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL",
         "mysql+pymysql://cerebro_ticketing:Alp65230071@localhost:3306/cerebro_ticketing",
-        # "mysql+pymysql://root:6523007@localhost:3306/cerebro_ticketing"
+        # "mysql+pymysql://root:6523007@localhost:3306/cerebro_ticketing",
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

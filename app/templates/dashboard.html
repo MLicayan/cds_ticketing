@@ -10,6 +10,8 @@
   .status-resolved { background: rgba(40,167,69,0.14); color: #22863a; }
   .status-closed { background: rgba(52,58,64,0.14); color: #343a40; }
   .status-reopened, .status-on_hold, .status-backlog { background: rgba(108,117,125,0.16); color: #495057; }
+  .status-working { background: rgba(34,197,94,0.14); color: #15803d; }
+  .status-paused { background: rgba(245,158,11,0.16); color: #c2410c; }
   .timeline-item { border-left: 3px solid var(--primary); padding-left: 12px; margin-bottom: 12px; }
   .timeline-date { font-weight: 700; }
   .list-unstyled li { margin-bottom: 8px; }
@@ -335,12 +337,14 @@
 
 {% block content %}
 {% macro status_badge(status) -%}
-  {%- set sval = status.value if status is not none and status.value is not none else status or '' -%}
+  {%- set sval = ((status.value | default('', true)) if status is not none else '') or status or '' -%}
   {%- set cls = 'status-open' -%}
   {%- if sval in ['in_progress'] -%}{% set cls = 'status-in_progress' %}
   {%- elif sval in ['resolved'] -%}{% set cls = 'status-resolved' %}
   {%- elif sval in ['closed'] -%}{% set cls = 'status-closed' %}
   {%- elif sval in ['reopened', 'on_hold', 'backlog'] -%}{% set cls = 'status-reopened' %}
+  {%- elif sval in ['working'] -%}{% set cls = 'status-working' %}
+  {%- elif sval in ['paused'] -%}{% set cls = 'status-paused' %}
   {%- endif -%}
   <span class="status-chip {{ cls }}">{{ sval.replace('_', ' ')|replace('inprogress','In Process')|replace('InProcess','In Process')|title }}</span>
 {%- endmacro %}
@@ -526,14 +530,14 @@
                   <div class="client-workload-meta">
                     <strong>{{ app_item.app_name }}</strong> - {{ app_item.developer_name }}
                   </div>
-                  <div>{{ status_badge(app_item.status) }}</div>
+                  <div>{{ status_badge(app_item.work_state_label|lower) }}</div>
                 </a>
                 {% else %}
                 <div class="client-workload-row client-workload-row-static">
                   <div class="client-workload-meta">
                     <strong>{{ app_item.app_name }}</strong> - {{ app_item.developer_name }}
                   </div>
-                  <div>{{ status_badge(app_item.status) }}</div>
+                  <div>{{ status_badge(app_item.work_state_label|lower) }}</div>
                 </div>
                 {% endif %}
                 {% endfor %}
