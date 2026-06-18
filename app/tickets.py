@@ -616,6 +616,43 @@ def _status_matches(column, raw_values):
     return db.func.lower(db.cast(column, db.String)).in_(normalized)
 
 
+def _priority_rank(priority: Optional[TicketPriority]) -> int:
+    ranking = {
+        TicketPriority.NOT_SET: 0,
+        TicketPriority.LOW: 1,
+        TicketPriority.MEDIUM: 2,
+        TicketPriority.HIGH: 3,
+        TicketPriority.CRITICAL: 4,
+    }
+    return ranking.get(priority or TicketPriority.NOT_SET, 0)
+
+
+def _sync_parent_ticket_priority_from_tasks(parent_ticket: Optional[Ticket], actor_name: str) -> bool:
+    if not parent_ticket or _is_task_ticket(parent_ticket):
+        return False
+
+    child_tasks = TicketTask.query.filter(TicketTask.ticket_id == parent_ticket.id).all()
+    task_priorities = [
+        task.priority
+        for task in child_tasks
+        if task.priority and task.priority != TicketPriority.NOT_SET
+    ]
+    if not task_priorities:
+        return False
+
+    highest_priority = max(task_priorities, key=_priority_rank)
+    current_priority = parent_ticket.priority or TicketPriority.NOT_SET
+    if current_priority == highest_priority:
+        return False
+
+    parent_ticket.priority = highest_priority
+    _record_ticket_change(
+        parent_ticket,
+        f"Priority changed from {_enum_label(current_priority)} to {_enum_label(highest_priority)} by {actor_name}.",
+    )
+    return True
+
+
 def _emit_comment_reaction(comment: TicketComment) -> None:
     socketio.emit(
         "ticket_comment_reacted",
@@ -2288,6 +2325,8 @@ def create_task():
                     uploaded_at=task_ticket.created_at,
                 )
                 db.session.add(attachment)
+        if parent_ticket and _is_support_user(current_user):
+            _sync_parent_ticket_priority_from_tasks(parent_ticket, current_user.full_name or current_user.username)
         db.session.commit()
 
         _emit_ticket_changed(task_ticket, "created")
@@ -3540,6 +3579,8 @@ def create_tasks(ticket_id):
         _clone_ticket_attachments(ticket, task_ticket, uploaded_at=task_ticket.created_at)
         created_task_tickets.append(task_ticket)
 
+    if _is_support_user(current_user):
+        _sync_parent_ticket_priority_from_tasks(ticket, current_user.full_name or current_user.username)
     db.session.commit()
     for task_ticket in created_task_tickets:
         _emit_ticket_changed(task_ticket, "created")
@@ -4344,9 +4385,14 @@ def update_task_info(task_id):
                 _record_task_change(task, f"Application changed from {previous_app} to {app_obj.name} by {user_name}.")
                 changed = True
 
+    if changed and task.parent_ticket and _is_support_user(current_user):
+        changed = _sync_parent_ticket_priority_from_tasks(task.parent_ticket, user_name) or changed
+
     if changed:
         db.session.commit()
         _emit_ticket_changed(task, "updated")
+        if task.parent_ticket and _is_support_user(current_user):
+            _emit_ticket_changed(task.parent_ticket, "updated")
         flash("Task info updated successfully.", "success")
     else:
         flash("No changes detected.", "warning")

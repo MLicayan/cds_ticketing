@@ -809,7 +809,7 @@ function initTicketsTable() {
     $('#tickets-table').DataTable().destroy();
   }
   window.ticketsDataTable = $('#tickets-table').DataTable({
-    pageLength: 10,
+    pageLength: 100,
     order: [[0, "asc"]],
     searching: true
   });
