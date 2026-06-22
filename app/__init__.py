@@ -152,7 +152,7 @@ def _ticket_comment_notification_payload(notification):
     }
 
 
-def _task_comment_notification_payload(notification):
+def _task_notification_payload(notification):
     from .models import TicketStatus
 
     task = getattr(notification, "task", None)
@@ -166,16 +166,23 @@ def _task_comment_notification_payload(notification):
     if actor:
         actor_name = actor.full_name or actor.username or ""
 
+    notification_type = getattr(notification, "notification_type", "")
+    default_comment_text = "New task notification."
+    if notification_type == "task_comment":
+        default_comment_text = f"New comment from {actor_name}." if actor_name else "New task comment."
+    elif notification_type == "task_completed":
+        default_comment_text = f"Task marked Fix/Completed by {actor_name}." if actor_name else "Task marked Fix/Completed."
+
     return {
         "id": notification.id,
-        "type": notification.notification_type,
+        "type": notification_type,
         "ticket_id": task.id,
         "ticket_no": task.ticket_no,
         "subject": task.subject,
         "reported_by": task.reported_by.full_name or task.reported_by.username if task.reported_by else "",
         "url": url_for("tickets.task_detail", task_id=task.id) + "#ticket-comments-card",
         "comment_id": None,
-        "comment_text": notification.comment_preview or (f"New comment from {actor_name}." if actor_name else "New task comment."),
+        "comment_text": notification.comment_preview or default_comment_text,
         "user": actor_name or "System",
         "created_at": to_localtime(notification.created_at).strftime("%Y-%m-%d %H:%M") if notification.created_at else "",
         "count": 1,
@@ -186,8 +193,8 @@ def header_notification_payload(notification):
     notification_type = getattr(notification, "notification_type", "")
     if notification_type == "ticket_comment":
         return _ticket_comment_notification_payload(notification)
-    if notification_type == "task_comment":
-        return _task_comment_notification_payload(notification)
+    if notification_type in ("task_comment", "task_completed"):
+        return _task_notification_payload(notification)
     return _ticket_creation_notification_payload(notification)
 
 
@@ -203,7 +210,7 @@ def build_header_notifications_for_user(user, limit: int = 8) -> dict:
         TicketNotification.query
         .filter(
             TicketNotification.recipient_id == user.id,
-            TicketNotification.notification_type.in_(("ticket_created", "ticket_comment", "task_comment")),
+            TicketNotification.notification_type.in_(("ticket_created", "ticket_comment", "task_comment", "task_completed")),
             TicketNotification.read_at.is_(None),
         )
         .order_by(TicketNotification.created_at.desc(), TicketNotification.id.desc())
@@ -312,26 +319,104 @@ def queue_task_comment_notifications(task, actor=None):
 
     from .models import TicketNotification, UserRole
 
-    if actor.role != UserRole.ENGINEER:
-        return []
-    if not task.reported_by_id or task.reported_by_id == actor.id:
-        return []
+    actor_user_type = (getattr(actor, "user_type", "") or "").strip().lower()
+    recipients = []
 
-    recipient = task.reported_by
-    if not recipient or not getattr(recipient, "is_active_user", False):
-        return []
-
-    notification = TicketNotification(
-        ticket_id=None,
-        task_id=task.id,
-        recipient_id=recipient.id,
-        actor_id=actor.id,
-        notification_type="task_comment",
-        comment_preview="New comment from {}.".format(actor.full_name or actor.username or "System"),
-        created_at=datetime.now(APP_TIMEZONE).replace(tzinfo=None),
+    actor_is_support_side = bool(
+        actor.role == UserRole.ADMIN
+        or actor_user_type == "support"
+        or actor.id == task.reported_by_id
+        or actor.id == task.assigned_by_id
     )
-    db.session.add(notification)
-    return [(recipient, notification)]
+
+    if actor_is_support_side:
+        if task.assigned_engineer_id and task.assigned_engineer_id != actor.id:
+            recipients.append(task.assigned_engineer)
+    else:
+        if task.reported_by_id and task.reported_by_id != actor.id:
+            recipients.append(task.reported_by)
+        if task.assigned_by_id and task.assigned_by_id != actor.id:
+            recipients.append(task.assigned_by)
+
+    queued_recipients = []
+    seen_recipient_ids = set()
+    created_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    preview = "New comment from {}.".format(actor.full_name or actor.username or "System")
+
+    for recipient in recipients:
+        if (
+            not recipient
+            or not getattr(recipient, "is_active_user", False)
+            or recipient.id in seen_recipient_ids
+        ):
+            continue
+        seen_recipient_ids.add(recipient.id)
+        notification = TicketNotification(
+            ticket_id=None,
+            task_id=task.id,
+            recipient_id=recipient.id,
+            actor_id=actor.id,
+            notification_type="task_comment",
+            comment_preview=preview,
+            created_at=created_at,
+        )
+        db.session.add(notification)
+        queued_recipients.append((recipient, notification))
+
+    return queued_recipients
+
+
+def queue_task_completed_notifications(task, actor=None):
+    if not task or not actor:
+        return []
+
+    from .models import TicketNotification, UserRole
+
+    actor_user_type = (getattr(actor, "user_type", "") or "").strip().lower()
+    recipients = []
+
+    actor_is_support_side = bool(
+        actor.role == UserRole.ADMIN
+        or actor_user_type == "support"
+        or actor.id == task.reported_by_id
+        or actor.id == task.assigned_by_id
+    )
+
+    if actor_is_support_side:
+        if task.assigned_engineer_id and task.assigned_engineer_id != actor.id:
+            recipients.append(task.assigned_engineer)
+    else:
+        if task.reported_by_id and task.reported_by_id != actor.id:
+            recipients.append(task.reported_by)
+        if task.assigned_by_id and task.assigned_by_id != actor.id:
+            recipients.append(task.assigned_by)
+
+    queued_recipients = []
+    seen_recipient_ids = set()
+    created_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    preview = "Task marked Fix/Completed by {}.".format(actor.full_name or actor.username or "System")
+
+    for recipient in recipients:
+        if (
+            not recipient
+            or not getattr(recipient, "is_active_user", False)
+            or recipient.id in seen_recipient_ids
+        ):
+            continue
+        seen_recipient_ids.add(recipient.id)
+        notification = TicketNotification(
+            ticket_id=None,
+            task_id=task.id,
+            recipient_id=recipient.id,
+            actor_id=actor.id,
+            notification_type="task_completed",
+            comment_preview=preview,
+            created_at=created_at,
+        )
+        db.session.add(notification)
+        queued_recipients.append((recipient, notification))
+
+    return queued_recipients
 
 
 def mark_ticket_notifications_read_for_user(ticket_id: int, user) -> bool:
@@ -369,7 +454,7 @@ def mark_task_notifications_read_for_user(task_id: int, user) -> bool:
         .filter(
             TicketNotification.task_id == task_id,
             TicketNotification.recipient_id == user.id,
-            TicketNotification.notification_type == "task_comment",
+            TicketNotification.notification_type.in_(("task_comment", "task_completed")),
             TicketNotification.read_at.is_(None),
         )
         .all()

@@ -71,6 +71,22 @@
       white-space: normal;
       padding: 0.75rem 1rem;
     }
+    .header-notification-menu .dropdown-item.notification-task-completed {
+      background: #e8f7ee;
+      color: #155724 !important;
+    }
+    .header-notification-menu .dropdown-item.notification-task-completed:hover,
+    .header-notification-menu .dropdown-item.notification-task-completed:focus {
+      background: #d8f0e1;
+      color: #155724 !important;
+    }
+    .header-notification-menu .dropdown-item.notification-task-completed .notification-ticket-no {
+      color: #1e7e34;
+    }
+    .header-notification-menu .dropdown-item.notification-task-completed .notification-comment-preview,
+    .header-notification-menu .dropdown-item.notification-task-completed .notification-time {
+      color: #2f6b3b;
+    }
     .header-notification-sound {
       padding: 0.75rem 1rem;
     }
@@ -349,7 +365,7 @@
           <div data-notification-items>
           {% if client_comment_notifications %}
             {% for notification in client_comment_notifications %}
-            <a href="{{ notification.url }}" class="dropdown-item" data-ticket-id="{{ notification.ticket_id }}" data-ticket-count="{{ notification.count or 1 }}">
+            <a href="{{ notification.url }}" class="dropdown-item{% if notification.type == 'task_completed' %} notification-task-completed{% endif %}" data-ticket-id="{{ notification.ticket_id }}" data-ticket-count="{{ notification.count or 1 }}" data-notification-type="{{ notification.type or '' }}">
               <div class="d-flex justify-content-between align-items-start">
                 <span class="notification-ticket-no">{{ notification.ticket_no }}</span>
                 {% if (notification.count or 1) > 1 %}
@@ -1027,6 +1043,10 @@
         item.className = 'dropdown-item';
         item.setAttribute('data-ticket-id', notification.ticket_id);
         item.setAttribute('data-ticket-count', '1');
+        item.setAttribute('data-notification-type', notification.type || '');
+        if (notification.type === 'task_completed') {
+          item.classList.add('notification-task-completed');
+        }
 
         const top = document.createElement('div');
         top.className = 'd-flex justify-content-between align-items-start';

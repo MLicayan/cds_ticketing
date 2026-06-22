@@ -25,6 +25,7 @@ from . import (
     mark_ticket_notifications_read_for_user,
     queue_ticket_comment_notifications,
     queue_task_comment_notifications,
+    queue_task_completed_notifications,
     queue_ticket_creation_notifications,
     socketio,
     to_localtime,
@@ -3685,6 +3686,7 @@ def update_kanban_status(ticket_id):
 
     actor_name = current_user.full_name or current_user.username
     changed = False
+    completion_notifications = []
 
     if column_key == "backlog":
         if ticket.kanban_bucket != "backlog":
@@ -3786,9 +3788,13 @@ def update_task_kanban_status(task_id):
         if task.is_working:
             task.is_working = False
             changed = True
+        if changed:
+            completion_notifications = queue_task_completed_notifications(task, actor=current_user)
 
     if changed:
         db.session.commit()
+        for recipient, notification in completion_notifications:
+            emit_header_notification_added(recipient, notification)
         _emit_ticket_changed(task, "updated")
 
     return jsonify(
@@ -4251,6 +4257,8 @@ def update_task_info(task_id):
             flash("Invalid target date format.", "danger")
             return redirect(url_for("tickets.task_detail", task_id=task.id))
 
+    completion_notifications = []
+
     if old_target_date != new_target_date:
         task.target_date = new_target_date
         _record_task_change(
@@ -4296,6 +4304,8 @@ def update_task_info(task_id):
             task.closed_at = None
         _record_task_change(task, f"Status changed from {_enum_label(old_status)} to {_enum_label(new_status)} by {user_name}.")
         changed = True
+        if new_status == TicketStatus.RESOLVED:
+            completion_notifications = queue_task_completed_notifications(task, actor=current_user)
 
     if "engineer_id" in request.form:
         if not _can_reassign_task():
@@ -4390,6 +4400,8 @@ def update_task_info(task_id):
 
     if changed:
         db.session.commit()
+        for recipient, notification in completion_notifications:
+            emit_header_notification_added(recipient, notification)
         _emit_ticket_changed(task, "updated")
         if task.parent_ticket and _is_support_user(current_user):
             _emit_ticket_changed(task.parent_ticket, "updated")
@@ -4414,6 +4426,7 @@ def toggle_task_work_state(task_id):
 
     action = (request.form.get("action") or "").strip()
     user_name = current_user.full_name or current_user.username
+    completion_notifications = []
     if action == "start":
         was_paused = _task_work_session_state(task) == "paused"
         if not task.target_date:
@@ -4494,11 +4507,14 @@ def toggle_task_work_state(task_id):
                 task,
                 f"Status changed from {_enum_label(old_status)} to Fix/Completed by {user_name}.",
             )
+            completion_notifications = queue_task_completed_notifications(task, actor=current_user)
     else:
         flash("Invalid work action.", "danger")
         return redirect(url_for("tickets.task_detail", task_id=task.id))
 
     db.session.commit()
+    for recipient, notification in completion_notifications:
+        emit_header_notification_added(recipient, notification)
     _emit_ticket_changed(task, "updated")
     if action == "start" and task.parent_ticket:
         _emit_ticket_changed(task.parent_ticket, "updated")
