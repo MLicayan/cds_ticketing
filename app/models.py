@@ -394,6 +394,51 @@ class TicketNotification(db.Model):
         return f"<TicketNotification {self.notification_type} ticket={self.ticket_id} task={self.task_id} recipient={self.recipient_id}>"
 
 
+class DeveloperPrompt(db.Model):
+    __tablename__ = "developer_prompts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    title = db.Column(db.String(255), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=_local_now_naive, nullable=False)
+
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+    responses = db.relationship(
+        "DeveloperPromptResponse",
+        backref="prompt",
+        lazy=True,
+        cascade="all, delete-orphan",
+    )
+
+    def response_counts(self):
+        counts = {"pending": 0, "confirmed": 0, "denied": 0}
+        for response in self.responses or []:
+            key = (response.response_status or "pending").strip().lower()
+            if key not in counts:
+                key = "pending"
+            counts[key] += 1
+        return counts
+
+    def __repr__(self):
+        return f"<DeveloperPrompt {self.id} by {self.created_by_id}>"
+
+
+class DeveloperPromptResponse(db.Model):
+    __tablename__ = "developer_prompt_responses"
+
+    id = db.Column(db.Integer, primary_key=True)
+    prompt_id = db.Column(db.Integer, db.ForeignKey("developer_prompts.id"), nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    response_status = db.Column(db.String(20), nullable=False, default="pending")
+    responded_at = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", foreign_keys=[user_id])
+
+    def __repr__(self):
+        return f"<DeveloperPromptResponse prompt={self.prompt_id} user={self.user_id} status={self.response_status}>"
+
+
 class TicketComment(db.Model):
     __tablename__ = "ticket_comments"
 

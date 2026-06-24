@@ -46,6 +46,8 @@ from .models import (
     UserRole,
     User,
     App,
+    DeveloperPrompt,
+    DeveloperPromptResponse,
 )
 
 
@@ -69,6 +71,10 @@ def require_ticket_nav_access():
         return
     task_endpoints = {
         "tickets.developer_tasks",
+        "tickets.developer_prompt_history",
+        "tickets.create_developer_prompt",
+        "tickets.developer_prompt_state",
+        "tickets.respond_developer_prompt",
         "tickets.task_detail",
         "tickets.update_task_info",
         "tickets.toggle_task_work_state",
@@ -579,8 +585,131 @@ def _can_prompt_client_resolution(user: User) -> bool:
     return bool(user and (user.role == UserRole.ADMIN or _is_it_or_support_user(user)))
 
 
+def _can_manage_developer_prompts(user: User) -> bool:
+    return bool(user and (user.role == UserRole.ADMIN or _is_it_or_support_user(user)))
+
+
 def _can_create_tasks(user: User) -> bool:
     return bool(user and (user.role == UserRole.ADMIN or user.role == UserRole.ENGINEER))
+
+
+def _developer_prompt_recipients(exclude_user_id: Optional[int] = None):
+    query = User.query.filter(
+        User.is_active_user.is_(True),
+        User.role == UserRole.ENGINEER,
+    ).order_by(User.full_name.asc(), User.username.asc())
+
+    if exclude_user_id:
+        query = query.filter(User.id != exclude_user_id)
+    return query.all()
+
+
+def _build_developer_prompt_title(message: str, raw_title: str = "") -> str:
+    title = (raw_title or "").strip()
+    if title:
+        return title[:255]
+
+    normalized = " ".join((message or "").strip().split())
+    if not normalized:
+        return "Developer Prompt"
+    if len(normalized) <= 80:
+        return normalized
+    return normalized[:77].rstrip() + "..."
+
+
+def _developer_prompt_payload_for_response(response: DeveloperPromptResponse) -> Optional[dict]:
+    prompt = response.prompt if response else None
+    creator = prompt.created_by if prompt else None
+    if not prompt:
+        return None
+
+    creator_name = ""
+    if creator:
+        creator_name = creator.full_name or creator.username or ""
+
+    return {
+        "prompt_id": prompt.id,
+        "title": prompt.title,
+        "message": prompt.message,
+        "created_at": to_localtime(prompt.created_at).strftime("%Y-%m-%d %H:%M") if prompt.created_at else "",
+        "created_by": creator_name or "System",
+        "response_status": (response.response_status or "pending").strip().lower(),
+    }
+
+
+def _pending_developer_prompt_state_for_user(user: User) -> dict:
+    if not user or user.role != UserRole.ENGINEER:
+        return {"count": 0, "prompt": None}
+
+    pending_rows = (
+        DeveloperPromptResponse.query
+        .join(DeveloperPrompt, DeveloperPromptResponse.prompt_id == DeveloperPrompt.id)
+        .filter(
+            DeveloperPromptResponse.user_id == user.id,
+            DeveloperPromptResponse.response_status == "pending",
+        )
+        .order_by(DeveloperPrompt.created_at.desc(), DeveloperPrompt.id.desc())
+        .all()
+    )
+    if not pending_rows:
+        return {"count": 0, "prompt": None}
+    return {
+        "count": len(pending_rows),
+        "prompt": _developer_prompt_payload_for_response(pending_rows[0]),
+    }
+
+
+def _create_developer_prompt(creator: User, title: str, message: str):
+    recipients = _developer_prompt_recipients(exclude_user_id=getattr(creator, "id", None))
+    if not recipients:
+        return None, 0
+
+    prompt = DeveloperPrompt(
+        created_by_id=creator.id,
+        title=_build_developer_prompt_title(message, title),
+        message=message.strip(),
+        created_at=datetime.now(APP_TIMEZONE).replace(tzinfo=None),
+    )
+    db.session.add(prompt)
+    db.session.flush()
+
+    for recipient in recipients:
+        db.session.add(
+            DeveloperPromptResponse(
+                prompt_id=prompt.id,
+                user_id=recipient.id,
+                response_status="pending",
+            )
+        )
+
+    return prompt, len(recipients)
+
+
+def _emit_developer_prompt(prompt: DeveloperPrompt) -> int:
+    if not prompt:
+        return 0
+
+    sent = 0
+    rows = (
+        DeveloperPromptResponse.query
+        .filter(DeveloperPromptResponse.prompt_id == prompt.id)
+        .all()
+    )
+    for row in rows:
+        payload = _developer_prompt_payload_for_response(row)
+        if not payload:
+            continue
+        state = _pending_developer_prompt_state_for_user(row.user)
+        socketio.emit(
+            "developer_prompt",
+            {
+                "count": state.get("count", 0),
+                "prompt": payload,
+            },
+            room=f"user_notifications:{row.user_id}",
+        )
+        sent += 1
+    return sent
 
 
 def _can_edit_core_ticket_fields(user: User) -> bool:
@@ -2468,6 +2597,7 @@ def developer_tasks():
         apps=apps,
         reporters=reporters,
         assignees=assignees,
+        can_manage_developer_prompts=_can_manage_developer_prompts(current_user),
         current_date=datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d"),
         selected_filters={
             "ticket_no": ticket_no_raw,
@@ -4132,6 +4262,121 @@ def prompt_client_resolution_global():
     else:
         flash("No Fix/Completed tickets are waiting for client acceptance.", "warning")
     return redirect(url_for("tickets.index"))
+
+
+@tickets_bp.route("/developer-prompts", methods=["GET"])
+@login_required
+def developer_prompt_history():
+    if not _can_manage_developer_prompts(current_user):
+        abort(403)
+
+    prompts = (
+        DeveloperPrompt.query
+        .filter(DeveloperPrompt.created_by_id == current_user.id)
+        .order_by(DeveloperPrompt.created_at.desc(), DeveloperPrompt.id.desc())
+        .all()
+    )
+
+    prompt_rows = []
+    for prompt in prompts:
+        counts = prompt.response_counts()
+        responses = sorted(
+            prompt.responses or [],
+            key=lambda row: (
+                0 if (row.response_status or "pending") == "pending" else 1,
+                (row.user.full_name or row.user.username or "").lower() if row.user else "",
+            ),
+        )
+        prompt_rows.append(
+            {
+                "prompt": prompt,
+                "counts": counts,
+                "responses": responses,
+            }
+        )
+
+    return render_template("tickets/developer_prompts.html", prompt_rows=prompt_rows)
+
+
+@tickets_bp.route("/developer-prompts", methods=["POST"])
+@login_required
+def create_developer_prompt():
+    if not _can_manage_developer_prompts(current_user):
+        abort(403)
+
+    title = (request.form.get("title") or "").strip()
+    message = (request.form.get("message") or "").strip()
+    if not message:
+        flash("Prompt message is required.", "warning")
+        return redirect(url_for("tickets.developer_tasks"))
+
+    prompt, recipient_count = _create_developer_prompt(current_user, title, message)
+    if not prompt or not recipient_count:
+        flash("No active developer accounts found for this prompt.", "warning")
+        return redirect(url_for("tickets.developer_tasks"))
+
+    db.session.commit()
+    _emit_developer_prompt(prompt)
+    flash(f"Developer prompt sent to {recipient_count} user{'s' if recipient_count != 1 else ''}.", "success")
+    return redirect(url_for("tickets.developer_prompt_history"))
+
+
+@tickets_bp.route("/developer-prompts/pending")
+@login_required
+def developer_prompt_state():
+    return jsonify(_pending_developer_prompt_state_for_user(current_user))
+
+
+@tickets_bp.route("/developer-prompts/<int:prompt_id>/respond", methods=["POST"])
+@login_required
+def respond_developer_prompt(prompt_id):
+    response_row = (
+        DeveloperPromptResponse.query
+        .filter(
+            DeveloperPromptResponse.prompt_id == prompt_id,
+            DeveloperPromptResponse.user_id == current_user.id,
+        )
+        .first_or_404()
+    )
+
+    action = (request.form.get("action") or "").strip().lower()
+    if request.is_json and not action:
+        payload = request.get_json(silent=True) or {}
+        action = (payload.get("action") or "").strip().lower()
+    if action not in {"confirm", "deny"}:
+        return jsonify({"ok": False, "error": "Invalid prompt response."}), 400
+    if (response_row.response_status or "pending") != "pending":
+        return jsonify({"ok": False, "error": "This prompt already has a recorded response."}), 409
+
+    response_row.response_status = "confirmed" if action == "confirm" else "denied"
+    response_row.responded_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    db.session.commit()
+
+    creator = response_row.prompt.created_by if response_row.prompt else None
+    if creator:
+        counts = response_row.prompt.response_counts()
+        socketio.emit(
+            "developer_prompt_response_updated",
+            {
+                "prompt_id": response_row.prompt_id,
+                "user_id": current_user.id,
+                "user": current_user.full_name or current_user.username or "User",
+                "response_status": response_row.response_status,
+                "responded_at": to_localtime(response_row.responded_at).strftime("%Y-%m-%d %H:%M") if response_row.responded_at else "",
+                "counts": counts,
+            },
+            room=f"user_notifications:{creator.id}",
+        )
+
+    next_state = _pending_developer_prompt_state_for_user(current_user)
+    return jsonify(
+        {
+            "ok": True,
+            "count": next_state.get("count", 0),
+            "prompt": next_state.get("prompt"),
+            "response_status": response_row.response_status,
+        }
+    )
 
 
 @tickets_bp.route("/<int:ticket_id>/assign", methods=["POST"])

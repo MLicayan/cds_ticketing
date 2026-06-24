@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Developer Prompts - Instrument Monitoring{% endblock %}
+
+{% block page_header %}
+<div class="row mb-2">
+  <div class="col-sm-6">
+    <h1 class="m-0 text-dark"><i class="fas fa-bullhorn text-primary mr-2"></i>Developer Prompts</h1>
+  </div>
+  <div class="col-sm-6 text-right">
+    <a href="{{ url_for('tickets.developer_tasks') }}" class="btn btn-secondary">
+      <i class="fas fa-tasks"></i> Back To Tasks
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">My Prompt History</h3>
+  </div>
+  <div class="card-body p-0">
+    {% if prompt_rows %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Created</th>
+            <th>Title</th>
+            <th>Message</th>
+            <th>Pending</th>
+            <th>Confirmed</th>
+            <th>Denied</th>
+            <th>Responses</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in prompt_rows %}
+          {% set prompt = row.prompt %}
+          {% set counts = row.counts %}
+          <tr>
+            <td>{{ prompt.created_at|localtime if prompt.created_at else '' }}</td>
+            <td class="font-weight-bold">{{ prompt.title }}</td>
+            <td style="min-width: 280px; white-space: pre-wrap;">{{ prompt.message }}</td>
+            <td><span class="badge badge-secondary">{{ counts.pending }}</span></td>
+            <td><span class="badge badge-success">{{ counts.confirmed }}</span></td>
+            <td><span class="badge badge-danger">{{ counts.denied }}</span></td>
+            <td style="min-width: 320px;">
+              {% if row.responses %}
+              <div class="small">
+                {% for response in row.responses %}
+                <div class="border rounded p-2 mb-2">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <strong>{{ response.user.full_name or response.user.username if response.user else 'User' }}</strong>
+                    {% if response.response_status == 'confirmed' %}
+                    <span class="badge badge-success">Confirmed</span>
+                    {% elif response.response_status == 'denied' %}
+                    <span class="badge badge-danger">Denied</span>
+                    {% else %}
+                    <span class="badge badge-secondary">Pending</span>
+                    {% endif %}
+                  </div>
+                  <div class="text-muted mt-1">
+                    {{ response.responded_at|localtime if response.responded_at else 'Waiting for response' }}
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <span class="text-muted">No recipients.</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="p-4 text-muted">No developer prompts created yet.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

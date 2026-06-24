@@ -109,6 +109,7 @@ def _ticket_creation_notification_payload(notification):
     return {
         "id": notification.id,
         "type": notification.notification_type,
+        "tone": _header_notification_tone(notification),
         "ticket_id": ticket.id,
         "ticket_no": ticket.ticket_no,
         "subject": ticket.subject,
@@ -139,6 +140,7 @@ def _ticket_comment_notification_payload(notification):
     return {
         "id": notification.id,
         "type": notification.notification_type,
+        "tone": _header_notification_tone(notification),
         "ticket_id": ticket.id,
         "ticket_no": ticket.ticket_no,
         "subject": ticket.subject,
@@ -176,6 +178,7 @@ def _task_notification_payload(notification):
     return {
         "id": notification.id,
         "type": notification_type,
+        "tone": _header_notification_tone(notification),
         "ticket_id": task.id,
         "ticket_no": task.ticket_no,
         "subject": task.subject,
@@ -187,6 +190,24 @@ def _task_notification_payload(notification):
         "created_at": to_localtime(notification.created_at).strftime("%Y-%m-%d %H:%M") if notification.created_at else "",
         "count": 1,
     }
+
+
+def _header_notification_tone(notification):
+    from .models import UserRole
+
+    notification_type = getattr(notification, "notification_type", "") or ""
+    actor = getattr(notification, "actor", None)
+    actor_role = getattr(actor, "role", None)
+
+    if notification_type == "task_completed":
+        return "green"
+    if notification_type == "ticket_comment":
+        return "blue"
+    if notification_type == "task_comment":
+        if actor_role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN):
+            return "blue"
+        return "purple"
+    return ""
 
 
 def header_notification_payload(notification):

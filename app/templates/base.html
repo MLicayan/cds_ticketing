@@ -71,21 +71,54 @@
       white-space: normal;
       padding: 0.75rem 1rem;
     }
-    .header-notification-menu .dropdown-item.notification-task-completed {
-      background: #e8f7ee;
-      color: #155724 !important;
+    .header-notification-menu .dropdown-item.notification-tone-blue,
+    .header-notification-menu .dropdown-item.notification-tone-purple,
+    .header-notification-menu .dropdown-item.notification-tone-green {
+      color: var(--notification-tone-text) !important;
+      background: var(--notification-tone-bg);
     }
-    .header-notification-menu .dropdown-item.notification-task-completed:hover,
-    .header-notification-menu .dropdown-item.notification-task-completed:focus {
-      background: #d8f0e1;
-      color: #155724 !important;
+    .header-notification-menu .dropdown-item.notification-tone-blue:hover,
+    .header-notification-menu .dropdown-item.notification-tone-blue:focus,
+    .header-notification-menu .dropdown-item.notification-tone-purple:hover,
+    .header-notification-menu .dropdown-item.notification-tone-purple:focus,
+    .header-notification-menu .dropdown-item.notification-tone-green:hover,
+    .header-notification-menu .dropdown-item.notification-tone-green:focus {
+      color: var(--notification-tone-text) !important;
+      background: var(--notification-tone-bg-hover);
     }
-    .header-notification-menu .dropdown-item.notification-task-completed .notification-ticket-no {
-      color: #1e7e34;
+    .header-notification-menu .dropdown-item.notification-tone-blue .notification-ticket-no,
+    .header-notification-menu .dropdown-item.notification-tone-purple .notification-ticket-no,
+    .header-notification-menu .dropdown-item.notification-tone-green .notification-ticket-no {
+      color: var(--notification-tone-accent);
     }
-    .header-notification-menu .dropdown-item.notification-task-completed .notification-comment-preview,
-    .header-notification-menu .dropdown-item.notification-task-completed .notification-time {
-      color: #2f6b3b;
+    .header-notification-menu .dropdown-item.notification-tone-blue .notification-comment-preview,
+    .header-notification-menu .dropdown-item.notification-tone-blue .notification-time,
+    .header-notification-menu .dropdown-item.notification-tone-purple .notification-comment-preview,
+    .header-notification-menu .dropdown-item.notification-tone-purple .notification-time,
+    .header-notification-menu .dropdown-item.notification-tone-green .notification-comment-preview,
+    .header-notification-menu .dropdown-item.notification-tone-green .notification-time {
+      color: var(--notification-tone-muted);
+    }
+    .header-notification-menu .dropdown-item.notification-tone-blue {
+      --notification-tone-bg: #eaf1ff;
+      --notification-tone-bg-hover: #dce7ff;
+      --notification-tone-text: #184a99;
+      --notification-tone-accent: #1e63ff;
+      --notification-tone-muted: #325da6;
+    }
+    .header-notification-menu .dropdown-item.notification-tone-purple {
+      --notification-tone-bg: #f8ecff;
+      --notification-tone-bg-hover: #f1ddff;
+      --notification-tone-text: #6f229c;
+      --notification-tone-accent: #9719ff;
+      --notification-tone-muted: #7e46a5;
+    }
+    .header-notification-menu .dropdown-item.notification-tone-green {
+      --notification-tone-bg: #e8f7ee;
+      --notification-tone-bg-hover: #d8f0e1;
+      --notification-tone-text: #155724;
+      --notification-tone-accent: #1e7e34;
+      --notification-tone-muted: #2f6b3b;
     }
     .header-notification-sound {
       padding: 0.75rem 1rem;
@@ -365,7 +398,7 @@
           <div data-notification-items>
           {% if client_comment_notifications %}
             {% for notification in client_comment_notifications %}
-            <a href="{{ notification.url }}" class="dropdown-item{% if notification.type == 'task_completed' %} notification-task-completed{% endif %}" data-ticket-id="{{ notification.ticket_id }}" data-ticket-count="{{ notification.count or 1 }}" data-notification-type="{{ notification.type or '' }}">
+            <a href="{{ notification.url }}" class="dropdown-item{% if notification.tone %} notification-tone-{{ notification.tone }}{% endif %}" data-ticket-id="{{ notification.ticket_id }}" data-ticket-count="{{ notification.count or 1 }}" data-notification-type="{{ notification.type or '' }}">
               <div class="d-flex justify-content-between align-items-start">
                 <span class="notification-ticket-no">{{ notification.ticket_no }}</span>
                 {% if (notification.count or 1) > 1 %}
@@ -686,6 +719,29 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="developerPromptResponseModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-bullhorn mr-2 text-warning"></i><span id="developerPromptTitle">Developer Prompt</span></h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-2" id="developerPromptMeta"></div>
+        <div class="border rounded p-3 bg-light" id="developerPromptMessage" style="white-space: pre-wrap;"></div>
+        <div class="small text-muted mt-3" id="developerPromptPendingCount"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Later</button>
+        <button type="button" class="btn btn-danger" id="developerPromptDenyBtn">Deny</button>
+        <button type="button" class="btn btn-success" id="developerPromptConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
@@ -718,10 +774,20 @@
     const resolutionPromptOpenLink = document.getElementById('ticketResolutionPromptOpenLink');
     const resolutionPromptList = document.getElementById('ticketResolutionPromptList');
     const resolutionPromptEmpty = document.getElementById('ticketResolutionPromptEmpty');
+    const developerPromptStateUrl = {{ url_for('tickets.developer_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
+    const developerPromptRespondUrlTemplate = {{ url_for('tickets.respond_developer_prompt', prompt_id=0)|tojson if current_user.is_authenticated else 'null' }};
+    const developerPromptModalEl = document.getElementById('developerPromptResponseModal');
+    const developerPromptTitle = document.getElementById('developerPromptTitle');
+    const developerPromptMeta = document.getElementById('developerPromptMeta');
+    const developerPromptMessage = document.getElementById('developerPromptMessage');
+    const developerPromptPendingCount = document.getElementById('developerPromptPendingCount');
+    const developerPromptConfirmBtn = document.getElementById('developerPromptConfirmBtn');
+    const developerPromptDenyBtn = document.getElementById('developerPromptDenyBtn');
     const soundVolumeSlider = document.querySelector('[data-sound-volume-slider]');
     const soundVolumeValue = document.querySelector('[data-sound-volume-value]');
     let workdayPromptOpen = false;
     let workdayPromptDate = null;
+    let activeDeveloperPrompt = null;
     const notificationSoundVolumeKey = 'notification-sound-volume';
     const canHearNewTicketSound = {{ 'true' if current_user.is_authenticated and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) else 'false' }};
 
@@ -1011,6 +1077,100 @@
       }
     }
 
+    function showDeveloperPrompt(payload) {
+      if (!developerPromptModalEl || !payload || !payload.prompt) {
+        return;
+      }
+      activeDeveloperPrompt = payload.prompt;
+      if (developerPromptTitle) {
+        developerPromptTitle.textContent = payload.prompt.title || 'Developer Prompt';
+      }
+      if (developerPromptMeta) {
+        developerPromptMeta.textContent = (payload.prompt.created_by || 'System') + ' - ' + (payload.prompt.created_at || '');
+      }
+      if (developerPromptMessage) {
+        developerPromptMessage.textContent = payload.prompt.message || '';
+      }
+      if (developerPromptPendingCount) {
+        var count = Number(payload.count || 0);
+        developerPromptPendingCount.textContent = count > 1
+          ? (count - 1) + ' more pending developer prompt' + ((count - 1) === 1 ? '' : 's') + ' after this one.'
+          : 'This is your last pending developer prompt.';
+      }
+      if (window.jQuery && $('#developerPromptResponseModal').modal) {
+        $('#developerPromptResponseModal').modal('show');
+      }
+    }
+
+    async function fetchDeveloperPromptState() {
+      if (!developerPromptStateUrl || !developerPromptModalEl) {
+        return;
+      }
+      try {
+        const response = await fetch(developerPromptStateUrl, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        if (payload && payload.prompt) {
+          showDeveloperPrompt(payload);
+        }
+      } catch (err) {
+      }
+    }
+
+    async function submitDeveloperPromptResponse(action) {
+      if (!activeDeveloperPrompt || !activeDeveloperPrompt.prompt_id || !developerPromptRespondUrlTemplate) {
+        return;
+      }
+      if (developerPromptConfirmBtn) developerPromptConfirmBtn.disabled = true;
+      if (developerPromptDenyBtn) developerPromptDenyBtn.disabled = true;
+      try {
+        const response = await fetch(developerPromptRespondUrlTemplate.replace('0', String(activeDeveloperPrompt.prompt_id)), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: new URLSearchParams({ action: action }).toString()
+        });
+        if (!response.ok) {
+          throw new Error('Failed to submit response');
+        }
+        const payload = await response.json();
+        if (payload && payload.prompt) {
+          showDeveloperPrompt(payload);
+        } else if (window.jQuery && $('#developerPromptResponseModal').modal) {
+          activeDeveloperPrompt = null;
+          $('#developerPromptResponseModal').modal('hide');
+        }
+      } catch (err) {
+      } finally {
+        if (developerPromptConfirmBtn) developerPromptConfirmBtn.disabled = false;
+        if (developerPromptDenyBtn) developerPromptDenyBtn.disabled = false;
+      }
+    }
+
+    if (developerPromptConfirmBtn) {
+      developerPromptConfirmBtn.addEventListener('click', function() {
+        submitDeveloperPromptResponse('confirm');
+      });
+    }
+
+    if (developerPromptDenyBtn) {
+      developerPromptDenyBtn.addEventListener('click', function() {
+        submitDeveloperPromptResponse('deny');
+      });
+    }
+
+    if (developerPromptModalEl) {
+      fetchDeveloperPromptState();
+      setTimeout(fetchDeveloperPromptState, 1500);
+      setInterval(fetchDeveloperPromptState, 60000);
+    }
+
     const notificationRoot = document.getElementById('header-client-comment-notification');
     if (notificationRoot && window.io) {
       const notificationLink = notificationRoot.querySelector('.nav-link');
@@ -1044,8 +1204,8 @@
         item.setAttribute('data-ticket-id', notification.ticket_id);
         item.setAttribute('data-ticket-count', '1');
         item.setAttribute('data-notification-type', notification.type || '');
-        if (notification.type === 'task_completed') {
-          item.classList.add('notification-task-completed');
+        if (notification.tone) {
+          item.classList.add('notification-tone-' + notification.tone);
         }
 
         const top = document.createElement('div');
@@ -1170,6 +1330,10 @@
       notificationSocket.on('ticket_resolution_prompt', function(payload) {
         playNotificationSound('notification');
         showTicketResolutionPrompt(payload);
+      });
+      notificationSocket.on('developer_prompt', function(payload) {
+        playNotificationSound('notification');
+        showDeveloperPrompt(payload);
       });
       notificationSocket.on('ticket_changed', function(payload) {
         if (canHearNewTicketSound && payload && payload.action === 'created' && !payload.parent_ticket_id) {

@@ -206,6 +206,14 @@
     <h1 class="m-0 text-dark"><i class="fas fa-tasks text-primary mr-2"></i>Developer Tasks</h1>
   </div>
   <div class="col-sm-6 text-right">
+    {% if can_manage_developer_prompts %}
+    <button type="button" class="btn btn-outline-warning mr-2" data-toggle="modal" data-target="#developerPromptModal">
+      <i class="fas fa-bullhorn"></i> Prompt Developers
+    </button>
+    <a href="{{ url_for('tickets.developer_prompt_history') }}" class="btn btn-outline-info mr-2">
+      <i class="fas fa-clipboard-check"></i> Prompt Status
+    </a>
+    {% endif %}
     <a href="{{ url_for('tickets.developer_workload') }}" class="btn btn-outline-primary mr-2">
       <i class="fas fa-chart-pie"></i> Workload
     </a>
@@ -217,6 +225,36 @@
 {% endblock %}
 
 {% block content %}
+{% if can_manage_developer_prompts %}
+<div class="modal fade" id="developerPromptModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog" role="document">
+    <form method="post" action="{{ url_for('tickets.create_developer_prompt') }}" class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-bullhorn mr-2 text-warning"></i>Prompt All Developers</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="developer_prompt_title">Title</label>
+          <input type="text" id="developer_prompt_title" name="title" class="form-control" maxlength="255" placeholder="Optional short title">
+        </div>
+        <div class="form-group mb-0">
+          <label for="developer_prompt_message">Message</label>
+          <textarea id="developer_prompt_message" name="message" class="form-control" rows="5" required placeholder="Write the message developers need to confirm or deny."></textarea>
+          <small class="text-muted">This will be sent to all active engineer accounts except your own account.</small>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+        <button type="submit" class="btn btn-warning">Send Prompt</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
 <div class="card mb-3 task-toolbar-card">
   <div class="card-body">
     <form method="get" id="task-filter-form">
