@@ -343,6 +343,42 @@
       font-weight: 600;
     }
 
+    .notification-legend {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px 16px;
+        font-size: 12px;
+    }
+
+    .notification-legend div {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .legend-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .legend-dot.new-ticket {
+      background-color: #ffffff;
+      border: 1px solid #adb5bd;
+    }
+
+    .legend-dot.client-comment {
+      background-color: #0d6efd; /* blue */
+    }
+
+    .legend-dot.dev-comment {
+      background-color: #6f42c1; /* Violet */
+    }
+    .legend-dot.resolved {
+      background-color: #198754; /* green */
+    }
+
     @media (max-width: 992px) {
       .content-header, .content {
         padding: 0 0.5rem;
@@ -394,6 +430,14 @@
           <span class="dropdown-header" data-notification-header>
             {{ client_comment_notification_count }} notification{{ '' if client_comment_notification_count == 1 else 's' }}
           </span>
+          {% if current_user.role.value not in ['client', 'client_admin'] %}
+          <div class="notification-legend px-3 py-2">
+            <div><span class="legend-dot new-ticket"></span> New Ticket</div>
+            <div><span class="legend-dot client-comment"></span> Client Comment</div>
+            <div><span class="legend-dot dev-comment"></span> Dev Comment</div>
+            <div><span class="legend-dot resolved"></span> Fix/Completed</div>
+          </div>
+          {% endif %}
           <div class="dropdown-divider"></div>
           <div data-notification-items>
           {% if client_comment_notifications %}
