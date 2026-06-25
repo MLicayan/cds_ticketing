@@ -919,3 +919,23 @@ class LISLog(db.Model):
 
     def __repr__(self):
         return f"<LISLog {self.id}>"
+
+class CommentTemplate(db.Model):
+    __tablename__ = "comment_templates"
+
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    template = db.Column(db.Text, nullable=False)
+    is_exclusive = db.Column(db.Boolean, nullable=False, default=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(APP_TIMEZONE).replace(tzinfo=None))
+    created_by = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=False)
+
+    updated_at = db.Column(db.DateTime, nullable=True, onupdate=lambda: datetime.now(APP_TIMEZONE).replace(tzinfo=None))
+    updated_by = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
+
+    deleted_at = db.Column(db.DateTime, nullable=True)
+    deleted_by = db.Column(db.BigInteger, db.ForeignKey("users.id"), nullable=True)
+    
+    def __repr__(self):
+        return f"<CommentTemplate {self.id}>"

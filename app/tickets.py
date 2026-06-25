@@ -31,6 +31,7 @@ from . import (
     to_localtime,
     utc_naive_to_localtime,
 )
+
 from .models import (
     Ticket,
     Client,
@@ -48,6 +49,7 @@ from .models import (
     App,
     DeveloperPrompt,
     DeveloperPromptResponse,
+    CommentTemplate,
 )
 
 
@@ -572,6 +574,34 @@ def _is_support_user(user: User) -> bool:
         and (user.user_type or "").strip().lower() == "support"
     )
 
+def _can_manage_comment_templates(user: User) -> bool:
+    return bool(
+        user
+        and (
+            user.role == UserRole.ADMIN
+            or (
+                user.role == UserRole.ENGINEER
+                and (user.user_type or "").strip().lower() == "support"
+            )
+        )
+    )
+
+
+def _comment_templates_for_user(user: User):
+    if not _can_manage_comment_templates(user):
+        return []
+
+    return CommentTemplate.query.filter(
+        CommentTemplate.is_active.is_(True),
+        CommentTemplate.deleted_at.is_(None),
+        db.or_(
+            CommentTemplate.is_exclusive.is_(False),
+            db.and_(
+                CommentTemplate.is_exclusive.is_(True),
+                CommentTemplate.created_by == user.id,
+            ),
+        ),
+    ).order_by(CommentTemplate.created_at.desc()).all()
 
 def _is_it_or_support_user(user: User) -> bool:
     return bool(
@@ -3156,7 +3186,8 @@ def detail(ticket_id):
     support_can_edit_core_fields = _can_fully_edit_task_detail(current_user)
     editable_clients = Client.query.order_by(Client.name.asc()).all() if support_can_edit_core_fields else []
     editable_apps = App.query.order_by(App.name.asc()).all() if support_can_edit_core_fields else []
-
+    comment_templates = _comment_templates_for_user(current_user)
+    
     return render_template(
         "tickets/detail.html",
         ticket=ticket,
@@ -3180,6 +3211,7 @@ def detail(ticket_id):
         editable_clients=editable_clients,
         editable_apps=editable_apps,
         support_can_edit_core_fields=support_can_edit_core_fields,
+        comment_templates=comment_templates,
     )
 
 
@@ -3386,6 +3418,7 @@ def task_detail(task_id):
     support_can_edit_core_fields = _can_fully_edit_task_detail(current_user)
     editable_clients = Client.query.order_by(Client.name.asc()).all() if support_can_edit_core_fields else []
     editable_apps = App.query.order_by(App.name.asc()).all() if support_can_edit_core_fields else []
+    comment_templates = _comment_templates_for_user(current_user)
 
     return render_template(
         "tickets/detail.html",
@@ -3412,6 +3445,7 @@ def task_detail(task_id):
         editable_clients=editable_clients,
         editable_apps=editable_apps,
         support_can_edit_core_fields=support_can_edit_core_fields,
+        comment_templates=comment_templates,
     )
 
 
@@ -5223,3 +5257,33 @@ def update_client_fields(ticket_id):
         flash("No changes detected.", "warning")
 
     return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+
+
+@tickets_bp.route("/<int:ticket_id>/comment-templates/create", methods=["POST"])
+@login_required
+def create_comment_template(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+
+    if not _can_manage_comment_templates(current_user):
+        abort(403)
+
+    template = (request.form.get("template") or "").strip()
+    is_exclusive = bool(request.form.get("is_exclusive"))
+
+    if not template:
+        flash("Template is required.", "warning")
+        return redirect(url_for("tickets.detail", ticket_id=ticket.id))
+
+    comment_template = CommentTemplate(
+        template=template,
+        is_exclusive=is_exclusive,
+        is_active=True,
+        created_at=datetime.now(APP_TIMEZONE).replace(tzinfo=None),
+        created_by=current_user.id,
+    )
+
+    db.session.add(comment_template)
+    db.session.commit()
+
+    flash("Comment template saved.", "success")
+    return redirect(f"{url_for('tickets.detail', ticket_id=ticket.id)}#ticket-comments-card")

@@ -1223,6 +1223,52 @@
     </div>
     {% endif %}
 
+    {% if current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support') %}
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">
+          <i class="fas fa-comment-dots metric-icon"></i>Comment Templates
+        </h3>
+      </div>
+
+      <div class="card-body">
+        <form method="post" action="{{ url_for('tickets.create_comment_template', ticket_id=ticket.id) }}">
+          <div class="form-group">
+            <label>New Template</label>
+            <textarea name="template" class="form-control" rows="3" required></textarea>
+          </div>
+
+          <div class="form-check mb-2">
+            <input type="checkbox" name="is_exclusive" value="1" class="form-check-input" id="is_exclusive">
+            <label class="form-check-label" for="is_exclusive">
+              For me only
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn-sm btn-primary btn-block">
+            <i class="fas fa-save"></i> Save Template
+          </button>
+        </form>
+
+        <hr>
+
+        <label>Select Template</label>
+        <select class="form-control form-control-sm" id="comment_template_select">
+          <option value="">-- Select template --</option>
+          {% for temp in comment_templates %}
+            <option value="{{ temp.template }}">
+              {{ temp.template[:60] }}{% if temp.template|length > 60 %}...{% endif %}
+            </option>
+          {% endfor %}
+        </select>
+
+        <small class="text-muted d-block mt-2">
+          Selecting a template will only place it in the comment box. It will not send automatically.
+        </small>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="card">
       <div class="card-header d-flex align-items-center">
         <button
@@ -1616,6 +1662,20 @@
     var taskTableBody = document.querySelector('#ticket-task-table tbody');
     var addTaskRowBtn = document.getElementById('add-ticket-task-row');
     var commentTextarea = document.getElementById('comment_text');
+    var commentTemplateSelect = document.getElementById('comment_template_select');
+
+    if (commentTemplateSelect && commentTextarea) {
+      commentTemplateSelect.addEventListener('change', function () {
+        var selectedTemplate = this.value || '';
+
+        if (!selectedTemplate) {
+          return;
+        }
+
+        commentTextarea.value = selectedTemplate;
+        commentTextarea.focus();
+      });
+    }
     var parentCommentInput = document.getElementById('parent_comment_id');
     var commentEditInput = document.getElementById('comment_edit_id');
     var replyTarget = document.getElementById('reply-target');
