@@ -149,7 +149,7 @@
 {% endblock %}
 {% block content %}
 <div class="card">
-  <form method="post" enctype="multipart/form-data">
+  <form method="post" enctype="multipart/form-data" id="create-ticket-form">
     <div class="card-body">
       <div class="form-row">
         <div class="form-group col-md-4">
@@ -239,7 +239,7 @@
       </div>
     </div>
     <div class="card-footer">
-      <button type="submit" class="btn btn-primary">
+      <button type="submit" id="create-ticket-btn" class="btn btn-primary">
         <i class="fas fa-save"></i> Create Ticket
       </button>
       <a href="{{ url_for('tickets.index') }}" class="btn btn-secondary">Cancel</a>
@@ -513,6 +513,16 @@
 
       syncFilesToInput();
       renderUploadList();
+    });
+  }
+
+  var ticketForm = document.getElementById('create-ticket-form');
+  var createTicketBtn = document.getElementById('create-ticket-btn');
+
+  if (ticketForm && createTicketBtn) {
+    ticketForm.addEventListener('submit', function () {
+      createTicketBtn.disabled = true;
+      createTicketBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating...';
     });
   }
 
