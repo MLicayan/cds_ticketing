@@ -4519,13 +4519,35 @@ def update_task_info(task_id):
     closed_redirect = _ensure_task_not_closed(task)
     if closed_redirect:
         return closed_redirect
+    # if current_user.role in READ_ONLY_ROLES:
+    #     abort(403)
+    
+    new_status_raw = (request.form.get("status") or "").strip()
+    
+    is_task_owner = current_user.id in [
+        task.reported_by_id,
+        task.assigned_engineer_id,
+        task.assigned_by_id,
+    ]
+
     if current_user.role in READ_ONLY_ROLES:
+        abort(403)
+
+    if (
+        new_status_raw == TicketStatus.CANCELLED.value
+        and not (
+            current_user.role == UserRole.ADMIN
+            or _is_support_user(current_user)
+            or is_task_owner
+        )
+    ):
         abort(403)
 
     changed = False
     user_name = current_user.full_name or current_user.username
-    support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
-
+    # support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
+    support_can_edit_core_fields = _can_fully_edit_task_detail(current_user)
+    
     new_target_date_raw = (request.form.get("target_date") or "").strip()
     old_target_date = task.target_date
     new_target_date = None
@@ -4569,7 +4591,8 @@ def update_task_info(task_id):
         TicketStatus.CLOSED.value: TicketStatus.CLOSED,
         TicketStatus.CANCELLED.value: TicketStatus.CANCELLED,
     }
-    new_status = valid_statuses.get((request.form.get("status") or "").strip())
+    # new_status = valid_statuses.get((request.form.get("status") or "").strip())
+    new_status = valid_statuses.get(new_status_raw)
     if not new_status:
         flash("Invalid status selection.", "danger")
         return redirect(url_for("tickets.task_detail", task_id=task.id))
