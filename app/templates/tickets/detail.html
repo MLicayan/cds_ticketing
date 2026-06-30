@@ -1651,6 +1651,7 @@
     var acceptForm = document.getElementById('accept-form');
     var statusSelect = document.getElementById('status');
     var commentForm = document.getElementById('ticket-comment-form');
+    var commentSubmitButton = document.getElementById('comment-submit-button');
     var acceptSignatureInput = document.getElementById('ticket_signature_data_accept');
     var updateSignatureInput = document.getElementById('ticket_signature_data_update');
     var modalEl = document.getElementById('ticketSignatureModal');
@@ -2978,22 +2979,48 @@
       });
     }
 
+    function resetCommentSubmitButton() {
+      if (!commentSubmitButton) return;
+
+      commentSubmitButton.disabled = false;
+
+      var isEditMode = commentEditInput && commentEditInput.value;
+      commentSubmitButton.innerHTML = isEditMode
+        ? '<i class="fas fa-comment"></i> <span id="comment-submit-label">Update Comment</span>'
+        : '<i class="fas fa-comment"></i> <span id="comment-submit-label">Save Comment / Attachment</span>';
+
+      commentSubmitLabel = document.getElementById('comment-submit-label');
+    }
+
     if (commentForm) {
       commentForm.addEventListener('submit', function(e) {
         var isEditMode = commentEditInput && commentEditInput.value;
         var hasFiles = !isEditMode && attachmentInput && attachmentInput.files && attachmentInput.files.length > 0;
         var commentTextValue = commentTextarea ? commentTextarea.value.trim() : '';
+
         if (!hasFiles && !commentTextValue) {
           e.preventDefault();
           return;
         }
 
+        if (commentSubmitButton && commentSubmitButton.disabled) {
+          e.preventDefault();
+          return;
+        }
+
+        if (commentSubmitButton) {
+          commentSubmitButton.disabled = true;
+          commentSubmitButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        }
+
         suppressRealtimeReload(isEditMode ? 'updated' : 'commented', 3000);
         e.preventDefault();
+
         var formData = new FormData(commentForm);
         var submitUrl = isEditMode
           ? editCommentUrlTemplate.replace('0', commentEditInput.value)
           : (commentForm.action || createCommentUrl || window.location.href);
+
         fetch(submitUrl, {
           method: 'POST',
           body: formData,
@@ -3002,9 +3029,21 @@
             'X-Requested-With': 'XMLHttpRequest'
           }
         })
-        .then(function(response) { return response.json(); })
+        .then(function(response) {
+          return response.json();
+        })
         .then(function(payload) {
-          if (!payload || !payload.ok) return;
+          if (!payload || !payload.ok) {
+            resetCommentSubmitButton();
+            return;
+          }
+
+          if (payload.reload) {
+            sessionStorage.setItem(commentScrollKey, '1');
+            window.location.reload();
+            return;
+          }
+
           if (payload.comment && isEditMode) {
             preserveViewport(function() {
               updateCommentRow(payload.comment);
@@ -3013,16 +3052,19 @@
           } else if (payload.comment) {
             appendRealtimeComment(payload.comment);
             resetCommentForm();
+
             if (commentTextarea) {
               focusWithoutScroll(commentTextarea);
             }
+
             scrollCommentsToBottom();
-          } else if (payload.reload) {
-            sessionStorage.setItem(commentScrollKey, '1');
-            window.location.reload();
           }
+
+          resetCommentSubmitButton();
         })
         .catch(function() {
+          resetCommentSubmitButton();
+
           sessionStorage.setItem(commentScrollKey, '1');
           window.location.reload();
         });
