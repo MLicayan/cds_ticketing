@@ -49,16 +49,18 @@
               </td>
               <td>
                 {% set work_state = task_states.get(task.id, 'not_started') %}
-                {% set work_badge = 'success' if task.is_working else 'secondary' %}
+                {% set work_class = 'badge-working' if task.is_working else 'badge-not-working' %}
                 {% set work_label = 'Working' if task.is_working else 'Not Working' %}
+
                 {% if status_value == 'resolved' %}
-                  {% set work_badge = 'success' %}
+                  {% set work_class = 'badge-working' %}
                   {% set work_label = 'Done' %}
                 {% elif work_state == 'paused' %}
-                  {% set work_badge = 'warning' %}
+                  {% set work_class = 'badge-paused' %}
                   {% set work_label = 'Paused' %}
                 {% endif %}
-                <span class="badge badge-{{ work_badge }}">
+
+                <span class="badge {{ work_class }}">
                   {{ work_label }}
                 </span>
               </td>

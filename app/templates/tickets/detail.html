@@ -655,6 +655,21 @@
   padding: 16px 22px 20px;
 }
 
+.badge-working {
+    background-color: #4CAF50;
+    color: #fff;
+}
+
+.badge-paused {
+    background-color: #FFC107;
+    color: #212529; /* better contrast on yellow */
+}
+
+.badge-not-working {
+    background-color: #F44336;
+    color: #fff;
+}
+
 @media (max-width: 640px) {
   .timeline::before { left: 26px; }
   .timeline-item { padding-left: 8px; }
@@ -769,9 +784,15 @@
               {% if (current_user.user_type or '').lower() == 'it' %}
               <dt class="col-sm-4">Work Status</dt>
               <dd class="col-sm-8">
-                {% set work_badge = 'success' if ticket.is_working else 'warning' if is_task_ticket and task_work_session_state == 'paused' else 'secondary' %}
+                <!-- {% set work_badge = 'success' if ticket.is_working else 'warning' if is_task_ticket and task_work_session_state == 'paused' else 'secondary' %} -->
+                {% set work_badge = 'badge-working' 
+                  if ticket.is_working
+                    else 'badge-paused' if is_task_ticket and task_work_session_state == 'paused'
+                    else 'badge-not-working'
+                %}
                 {% set work_label = 'Working' if ticket.is_working else 'Paused' if is_task_ticket and task_work_session_state == 'paused' else 'Not Working' %}
-                <span class="badge badge-{{ work_badge }}">{{ work_label }}</span>
+                <!-- <span class="badge badge-{{ work_badge }}">{{ work_label }}</span> -->
+                <span class="badge {{ work_badge }}">{{ work_label }}</span>
                 {% if ticket.started_date %}
                   <small class="text-muted ml-1">since {{ ticket.started_date.strftime('%Y-%m-%d') }}</small>
                 {% endif %}

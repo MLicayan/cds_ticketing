@@ -259,6 +259,21 @@
     box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
   }
 
+  .badge.badge-working {
+    background-color: #4CAF50 !important;
+    color: #fff !important;
+  }
+
+  .badge.badge-paused {
+    background-color: #FFC107 !important;
+    color: #212529 !important;
+  }
+
+  .badge.badge-not-working {
+    background-color: #F44336 !important;
+    color: #fff !important;
+  }
+
 </style>
 {% endblock %}
 
@@ -637,16 +652,18 @@
           {% if is_task_list %}
             <td>
               {% set work_state = task_work_status_map.get(t.id, 'not_started') %}
-              {% set work_status_badge = 'success' if t.is_working else 'secondary' %}
+              {% set work_status_class = 'badge-working' if t.is_working else 'badge-not-working' %}
               {% set work_status_label = 'Working' if t.is_working else 'Not Working' %}
+
               {% if status_value == 'resolved' %}
-                {% set work_status_badge = 'success' %}
+                {% set work_status_class = 'badge-working' %}
                 {% set work_status_label = 'Done' %}
               {% elif work_state == 'paused' %}
-                {% set work_status_badge = 'warning' %}
+                {% set work_status_class = 'badge-paused' %}
                 {% set work_status_label = 'Paused' %}
               {% endif %}
-              <span class="badge badge-{{ work_status_badge }}">
+
+              <span class="badge {{ work_status_class }}">
                 {{ work_status_label }}
               </span>
             </td>
