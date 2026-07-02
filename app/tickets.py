@@ -848,7 +848,7 @@ def _is_ticket_comment_notification_for_user(comment: TicketComment, user: User)
     if user.role == UserRole.CLIENT:
         return ticket.client_id == user.client_id and ticket.reported_by_id == user.id
     if user.role == UserRole.CLIENT_ADMIN:
-        return ticket.client_id == user.client_id and ticket.reported_by_id == user.id
+        return ticket.client_id == user.client_id
     if user.role == UserRole.ENGINEER:
         return ticket.assigned_engineer_id == user.id
     if user.role == UserRole.SALES:
@@ -864,6 +864,16 @@ def _notification_recipients_for_comment(ticket: Ticket, comment: TicketComment)
     commenter_is_client = comment.user.role in CLIENT_SCOPED_ROLES
     if not commenter_is_client and ticket.reported_by and ticket.reported_by.role in CLIENT_SCOPED_ROLES:
         user_ids.add(ticket.reported_by_id)
+        client_admin_ids = (
+            User.query.with_entities(User.id)
+            .filter(
+                User.is_active_user.is_(True),
+                User.role == UserRole.CLIENT_ADMIN,
+                User.client_id == ticket.client_id,
+            )
+            .all()
+        )
+        user_ids.update(row.id for row in client_admin_ids)
 
     user_ids.discard(comment.user_id)
     if not user_ids:
@@ -910,7 +920,9 @@ def _ticket_comment_notification_count_for_user(user: User) -> int:
         query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
     elif user.role in CLIENT_SCOPED_ROLES:
         query = query.filter(~User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
-        query = query.filter(Ticket.client_id == user.client_id, Ticket.reported_by_id == user.id)
+        query = query.filter(Ticket.client_id == user.client_id)
+        if user.role == UserRole.CLIENT:
+            query = query.filter(Ticket.reported_by_id == user.id)
     else:
         query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
 
@@ -955,7 +967,9 @@ def _ticket_comment_notification_snapshot_for_user(user: User, limit: int = 8) -
         query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
     elif user.role in CLIENT_SCOPED_ROLES:
         query = query.filter(~User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
-        query = query.filter(Ticket.client_id == user.client_id, Ticket.reported_by_id == user.id)
+        query = query.filter(Ticket.client_id == user.client_id)
+        if user.role == UserRole.CLIENT:
+            query = query.filter(Ticket.reported_by_id == user.id)
     else:
         query = query.filter(User.role.in_([UserRole.CLIENT, UserRole.CLIENT_ADMIN]))
 
@@ -1161,6 +1175,13 @@ def _emit_global_client_resolution_prompts(sender: Optional[User] = None, client
         )
         sent += 1
     return sent
+
+
+def _pending_client_resolution_prompt_state_for_user(user: User) -> dict:
+    payload = _client_resolution_prompt_payload(user)
+    if payload:
+        return payload
+    return {"sender": "", "count": 0, "tickets": [], "message": ""}
 
 
 def _record_ticket_change(ticket: Ticket, message: str, is_internal: bool = False) -> None:
@@ -1536,6 +1557,7 @@ def _render_ticket_index(my_tickets_only=False):
         ticket_list_title="My Task" if my_tickets_only else "All Tickets",
         ticket_list_endpoint="tickets.my_tickets" if my_tickets_only else "tickets.index",
         is_task_list=is_task_list,
+        is_my_tickets_view=my_tickets_only,
         task_work_status_map=task_work_status_map,
         task_fix_completed_at_map=task_fix_completed_at_map,
         can_create_task=can_create_task,
@@ -2077,7 +2099,7 @@ def create():
     if request.method == "POST":
         created_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
         client_id = current_user.client_id if is_client else request.form.get("client_id")
-        ticket_for = request.form.get("ticket_for") or "instrument"
+        ticket_for = request.form.get("ticket_for") or "app"
         instrument_id = request.form.get("instrument_id")
         app_id = request.form.get("app_id")
         subject = (request.form.get("subject") or "").strip()
@@ -2101,7 +2123,7 @@ def create():
                     clients=clients,
                     instruments=instruments,
                     apps=apps,
-                    default_ticket_for="instrument" if current_user.role == UserRole.ENGINEER else "app"
+                    default_ticket_for="app",
                 )
 
         date_needed = None
@@ -2115,7 +2137,7 @@ def create():
                     clients=clients,
                     instruments=instruments,
                     apps=apps,
-                    default_ticket_for="instrument" if current_user.role == UserRole.ENGINEER else "app"
+                    default_ticket_for="app",
                 )
 
         if not client_id or not subject:
@@ -2125,6 +2147,7 @@ def create():
                 clients=clients,
                 instruments=instruments,
                 apps=apps,
+                default_ticket_for="app",
             )
 
         if len(subject) > 100:
@@ -2134,6 +2157,7 @@ def create():
                 clients=clients,
                 instruments=instruments,
                 apps=apps,
+                default_ticket_for="app",
             )
 
         if ticket_for == "instrument" and not instrument_id:
@@ -2143,6 +2167,7 @@ def create():
                 clients=clients,
                 instruments=instruments,
                 apps=apps,
+                default_ticket_for="app",
             )
 
         if ticket_for == "app" and not app_id:
@@ -2152,16 +2177,16 @@ def create():
                 clients=clients,
                 instruments=instruments,
                 apps=apps,
+                default_ticket_for="app",
             )
 
         if is_client:
             if ticket_for == "instrument" and (not instrument or instrument.client_id != current_user.client_id):
                 flash("Invalid instrument selection for this client.", "danger")
-                return render_template("tickets/new.html", clients=clients, instruments=instruments, apps=apps)
-
+                return render_template("tickets/new.html", clients=clients, instruments=instruments, apps=apps, default_ticket_for="app")
             if ticket_for == "app" and (not app_obj or current_user.client not in app_obj.clients):
                 flash("Invalid application selection for this client.", "danger")
-                return render_template("tickets/new.html", clients=clients, instruments=instruments, apps=apps)
+                return render_template("tickets/new.html", clients=clients, instruments=instruments, apps=apps, default_ticket_for="app")
 
         if ticket_for == "instrument" and not instrument:
             flash("Invalid instrument selection.", "danger")
@@ -2170,6 +2195,7 @@ def create():
                 clients=clients,
                 instruments=instruments,
                 apps=apps,
+                default_ticket_for="app",
             )
 
         if ticket_for == "instrument" and instrument and str(instrument.client_id) != str(client_id):
@@ -2179,7 +2205,12 @@ def create():
                 clients=clients,
                 instruments=instruments,
                 apps=apps,
+                default_ticket_for="app",
             )
+
+        if ticket_for == "app" and not app_obj:
+            flash("Invalid application selection.", "danger")
+            return render_template("tickets/new.html", clients=clients, instruments=instruments, apps=apps, default_ticket_for="app")
 
         ticket = Ticket(
             ticket_no=f"TEMP-{int(datetime.utcnow().timestamp() * 1000)}",
@@ -2234,13 +2265,12 @@ def create():
         # return redirect(url_for("tickets.index"))
         return redirect(f"{url_for('tickets.detail', ticket_id=ticket.id)}#ticket-comments-card")
             
-    default_ticket_for = "instrument" if current_user.role == UserRole.ENGINEER else "app"
     return render_template(
         "tickets/new.html",
         clients=clients,
         instruments=instruments,
         apps=apps,
-        default_ticket_for=default_ticket_for
+        default_ticket_for="app",
     )
 
 
@@ -2273,7 +2303,7 @@ def create_task():
     if request.method == "POST":
         parent_ticket_id_raw = (request.form.get("ticket_id") or "").strip()
         client_id_raw = (request.form.get("client_id") or "").strip()
-        ticket_for = (request.form.get("ticket_for") or "instrument").strip()
+        ticket_for = (request.form.get("ticket_for") or "app").strip()
         instrument_id_raw = (request.form.get("instrument_id") or "").strip()
         app_id_raw = (request.form.get("app_id") or "").strip()
         subject = (request.form.get("subject") or "").strip()
@@ -2408,8 +2438,8 @@ def create_task():
                     apps=apps,
                     parent_tickets=parent_tickets,
                     task_assignees=task_assignees,
+                    default_ticket_for="app",
                 )
-
             if ticket_for == "app" and app_obj and client not in app_obj.clients:
                 flash("Selected application is not available for the chosen client.", "danger")
                 return render_template(
@@ -2419,6 +2449,29 @@ def create_task():
                     apps=apps,
                     parent_tickets=parent_tickets,
                     task_assignees=task_assignees,
+                    default_ticket_for="app",
+                )
+            if ticket_for == "app" and not app_obj:
+                flash("CDS Application is required when no parent ticket is selected.", "danger")
+                return render_template(
+                    "tickets/new_task.html",
+                    clients=clients,
+                    instruments=instruments,
+                    apps=apps,
+                    parent_tickets=parent_tickets,
+                    task_assignees=task_assignees,
+                    default_ticket_for="app",
+                )
+            if ticket_for == "instrument" and not instrument:
+                flash("Instrument is required when no parent ticket is selected.", "danger")
+                return render_template(
+                    "tickets/new_task.html",
+                    clients=clients,
+                    instruments=instruments,
+                    apps=apps,
+                    parent_tickets=parent_tickets,
+                    task_assignees=task_assignees,
+                    default_ticket_for="app",
                 )
 
             try:
@@ -2502,6 +2555,7 @@ def create_task():
         apps=apps,
         parent_tickets=parent_tickets,
         task_assignees=task_assignees,
+        default_ticket_for="app",
     )
 
 
@@ -3850,7 +3904,8 @@ def update_kanban_status(ticket_id):
 
     actor_name = current_user.full_name or current_user.username
     changed = False
-    completion_notifications = []
+    should_prompt_client = False
+    client_prompt_sent = 0
 
     if column_key == "backlog":
         if ticket.kanban_bucket != "backlog":
@@ -3876,6 +3931,7 @@ def update_kanban_status(ticket_id):
             ticket.started_date = datetime.utcnow().date()
             changed = True
     elif column_key == "resolved":
+        was_resolved = ticket.status == TicketStatus.RESOLVED
         changed = _update_ticket_status_value(ticket, TicketStatus.RESOLVED, actor_name)
         if ticket.kanban_bucket:
             ticket.kanban_bucket = None
@@ -3883,9 +3939,13 @@ def update_kanban_status(ticket_id):
         if ticket.is_working:
             ticket.is_working = False
             changed = True
+        if changed and not was_resolved and _can_prompt_client_resolution(current_user):
+            should_prompt_client = True
 
     if changed:
         db.session.commit()
+        if should_prompt_client:
+            client_prompt_sent = _emit_client_resolution_prompt(ticket, sender=current_user)
         _emit_ticket_changed(ticket, "updated")
 
     return jsonify(
@@ -3894,6 +3954,7 @@ def update_kanban_status(ticket_id):
             "changed": changed,
             "ticket_id": ticket.id,
             "status": ticket.status.value if ticket.status else "",
+            "client_prompt_sent": client_prompt_sent,
         }
     )
 
@@ -4359,6 +4420,12 @@ def create_developer_prompt():
 @login_required
 def developer_prompt_state():
     return jsonify(_pending_developer_prompt_state_for_user(current_user))
+
+
+@tickets_bp.route("/ticket-resolution-prompts/pending")
+@login_required
+def ticket_resolution_prompt_state():
+    return jsonify(_pending_client_resolution_prompt_state_for_user(current_user))
 
 
 @tickets_bp.route("/developer-prompts/<int:prompt_id>/respond", methods=["POST"])
@@ -4971,6 +5038,8 @@ def update_ticket_info(ticket_id):
     changed = False
     user_name = current_user.full_name or current_user.username
     closed_child_tasks = []
+    should_prompt_client = False
+    client_prompt_sent = 0
     support_can_edit_core_fields = _can_edit_core_ticket_fields(current_user)
     # =========================
     # TARGET DATE
@@ -5113,6 +5182,12 @@ def update_ticket_info(ticket_id):
             ticket,
             f"Status changed from {_enum_label(old_status)} to {_enum_label(new_status)} by {user_name}."
         )
+        if (
+            new_status == TicketStatus.RESOLVED
+            and old_status != TicketStatus.RESOLVED
+            and _can_prompt_client_resolution(current_user)
+        ):
+            should_prompt_client = True
         if new_status == TicketStatus.CLOSED:
             closed_child_tasks = _close_child_tasks(ticket, user_name)
         changed = True
@@ -5226,10 +5301,18 @@ def update_ticket_info(ticket_id):
 
     if changed:
         db.session.commit()
+        if should_prompt_client:
+            client_prompt_sent = _emit_client_resolution_prompt(ticket, sender=current_user)
         _emit_ticket_changed(ticket, "updated")
         for child_task in closed_child_tasks:
             _emit_ticket_changed(child_task, "updated")
-        flash("Ticket info updated successfully.", "success")
+        if should_prompt_client:
+            if client_prompt_sent:
+                flash("Ticket info updated successfully. Client prompt sent.", "success")
+            else:
+                flash("Ticket info updated successfully, but no active client account was available for the prompt.", "warning")
+        else:
+            flash("Ticket info updated successfully.", "success")
     else:
         flash("No changes detected.", "warning")
 

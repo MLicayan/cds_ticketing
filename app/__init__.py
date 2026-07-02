@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 
 from flask import Flask
 from flask import url_for
@@ -219,7 +220,7 @@ def header_notification_payload(notification):
     return _ticket_creation_notification_payload(notification)
 
 
-def build_header_notifications_for_user(user, limit: int = 8) -> dict:
+def build_header_notifications_for_user(user, limit: Optional[int] = None) -> dict:
     if not user:
         return {"count": 0, "notifications": []}
 
@@ -245,7 +246,7 @@ def build_header_notifications_for_user(user, limit: int = 8) -> dict:
     notifications.sort(key=lambda item: item.get("created_at") or "", reverse=True)
     return {
         "count": len(notifications),
-        "notifications": notifications[:limit],
+        "notifications": notifications if limit is None else notifications[:limit],
     }
 
 
@@ -296,30 +297,48 @@ def queue_ticket_comment_notifications(ticket, comment):
     from .models import TicketNotification, User, UserRole
 
     commenter_is_client = comment.user.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
-    if not commenter_is_client:
-        return []
-
-    recipients = (
-        User.query.filter(
-            User.is_active_user.is_(True),
-            db.or_(
-                User.role == UserRole.ADMIN,
-                db.and_(
-                    User.role == UserRole.ENGINEER,
-                    db.func.lower(db.func.trim(User.user_type)) == "support",
+    if commenter_is_client:
+        recipients = (
+            User.query.filter(
+                User.is_active_user.is_(True),
+                db.or_(
+                    User.role == UserRole.ADMIN,
+                    db.and_(
+                        User.role == UserRole.ENGINEER,
+                        db.func.lower(db.func.trim(User.user_type)) == "support",
+                    ),
                 ),
-            ),
+            )
+            .order_by(User.id.asc())
+            .all()
         )
-        .order_by(User.id.asc())
-        .all()
-    )
+    else:
+        recipients = []
+        if (
+            ticket.reported_by
+            and ticket.reported_by.is_active_user
+            and ticket.reported_by.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
+        ):
+            recipients.append(ticket.reported_by)
+        client_admins = (
+            User.query.filter(
+                User.is_active_user.is_(True),
+                User.role == UserRole.CLIENT_ADMIN,
+                User.client_id == ticket.client_id,
+            )
+            .order_by(User.id.asc())
+            .all()
+        )
+        recipients.extend(client_admins)
 
     preview = (comment.comment_text or "").strip() or "Attachment added"
     created_at = comment.created_at or datetime.now(APP_TIMEZONE).replace(tzinfo=None)
     queued_recipients = []
+    seen_recipient_ids = set()
     for recipient in recipients:
-        if recipient.id == comment.user_id:
+        if recipient.id == comment.user_id or recipient.id in seen_recipient_ids:
             continue
+        seen_recipient_ids.add(recipient.id)
         notification = TicketNotification(
             ticket_id=ticket.id,
             task_id=None,
@@ -589,7 +608,7 @@ def create_app(config_class=Config):
                 "client_comment_notifications": [],
                 "client_comment_notification_count": 0,
             }
-        snapshot = build_header_notifications_for_user(current_user, limit=8)
+        snapshot = build_header_notifications_for_user(current_user)
         return {
             "client_comment_notifications": snapshot.get("notifications", []),
             "client_comment_notification_count": snapshot.get("count", 0),

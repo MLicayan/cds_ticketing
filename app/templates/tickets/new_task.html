@@ -184,7 +184,7 @@
         </div>
       </div>
 
-      <div id="standalone-task-fields">
+        <div id="standalone-task-fields">
         <div class="form-row">
           <div class="form-group col-md-4">
             <label for="client_id">Client</label>
@@ -199,13 +199,13 @@
           </div>
           <div class="form-group col-md-4">
             <label for="ticket_for">Task For</label>
-            {% set selected_ticket_for = request.form.get('ticket_for', 'instrument') %}
+            {% set selected_ticket_for = request.form.get('ticket_for', default_ticket_for or 'app') %}
             <select name="ticket_for" id="ticket_for" class="form-control">
               <option value="instrument" {% if selected_ticket_for == 'instrument' %}selected{% endif %}>Instrument</option>
               <option value="app" {% if selected_ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
             </select>
           </div>
-          <div class="form-group col-md-4 standalone-target standalone-instrument">
+          <div class="form-group col-md-4 standalone-target standalone-instrument {% if selected_ticket_for != 'instrument' %}d-none{% endif %}">
             <label for="instrument_id">Instrument</label>
             <select name="instrument_id" id="instrument_id" class="form-control select2">
               <option value="">-- optional instrument --</option>
@@ -216,7 +216,7 @@
               {% endfor %}
             </select>
           </div>
-          <div class="form-group col-md-4 standalone-target standalone-app d-none">
+          <div class="form-group col-md-4 standalone-target standalone-app {% if selected_ticket_for == 'instrument' %}d-none{% endif %}">
             <label for="app_id">CDS Application</label>
             <select name="app_id" id="app_id" class="form-control select2">
               <option value="">-- optional application --</option>
@@ -340,7 +340,7 @@
 
   function toggleTargets() {
     var ticketFor = document.getElementById('ticket_for');
-    var target = ticketFor ? ticketFor.value : 'instrument';
+    var target = ticketFor ? ticketFor.value : 'app';
     var instrumentGrp = document.querySelector('.standalone-instrument');
     var appGrp = document.querySelector('.standalone-app');
     if (instrumentGrp) instrumentGrp.classList.toggle('d-none', target !== 'instrument');
@@ -367,7 +367,6 @@
 
   var ticketId = document.getElementById('ticket_id');
   if (ticketId) ticketId.addEventListener('change', toggleStandaloneFields);
-
   var ticketFor = document.getElementById('ticket_for');
   if (ticketFor) ticketFor.addEventListener('change', toggleTargets);
   toggleStandaloneFields();

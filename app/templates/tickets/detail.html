@@ -1596,6 +1596,26 @@
   </div>
 </div>
 {% endif %}
+<div class="modal fade" id="resolveClientPromptModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-check-circle mr-2 text-success"></i>Send Client Prompt</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        Mark this ticket as Fix/Completed? A prompt will be sent to the client for confirmation.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmResolveClientPromptBtn">Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="ticketSignatureModal" tabindex="-1" role="dialog" aria-hidden="true">
   <div class="modal-dialog modal-lg" role="document">
     <div class="modal-content">
@@ -1668,6 +1688,7 @@
 <script>
   document.addEventListener('DOMContentLoaded', function() {
     var reporterIsClient = {{ 'true' if ticket.reported_by and ticket.reported_by.role.value in ['client', 'client_admin'] else 'false' }};
+    var canPromptClientOnResolve = {{ 'true' if (not is_task_ticket) and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) else 'false' }};
     var statusForm = document.getElementById('update-ticket-info-form');
     var acceptForm = document.getElementById('accept-form');
     var statusSelect = document.getElementById('status');
@@ -1675,12 +1696,15 @@
     var commentSubmitButton = document.getElementById('comment-submit-button');
     var acceptSignatureInput = document.getElementById('ticket_signature_data_accept');
     var updateSignatureInput = document.getElementById('ticket_signature_data_update');
+    var resolveClientPromptModal = document.getElementById('resolveClientPromptModal');
+    var confirmResolveClientPromptBtn = document.getElementById('confirmResolveClientPromptBtn');
     var modalEl = document.getElementById('ticketSignatureModal');
     var signatureCanvas = document.getElementById('ticket-signature-canvas');
     var clearBtn = document.getElementById('ticket-clear-signature');
     var saveBtn = document.getElementById('ticket-save-signature');
     var ctx, drawing = false, lastPos = { x: 0, y: 0 };
     var pendingSubmit = false;
+    var resolvePromptApproved = false;
     var taskTableBody = document.querySelector('#ticket-task-table tbody');
     var addTaskRowBtn = document.getElementById('add-ticket-task-row');
     var commentTextarea = document.getElementById('comment_text');
@@ -2973,7 +2997,30 @@
           if (window.jQuery && $('#ticketSignatureModal').modal) {
             $('#ticketSignatureModal').modal('show');
           }
+          return;
         }
+        if (canPromptClientOnResolve && statusSelect && statusSelect.value === 'resolved' && !resolvePromptApproved) {
+          e.preventDefault();
+          if (window.jQuery && $('#resolveClientPromptModal').modal) {
+            $('#resolveClientPromptModal').modal('show');
+          }
+        }
+      });
+    }
+
+    if (confirmResolveClientPromptBtn && statusForm) {
+      confirmResolveClientPromptBtn.addEventListener('click', function() {
+        resolvePromptApproved = true;
+        if (window.jQuery && $('#resolveClientPromptModal').modal) {
+          $('#resolveClientPromptModal').modal('hide');
+        }
+        statusForm.submit();
+      });
+    }
+
+    if (statusSelect) {
+      statusSelect.addEventListener('change', function() {
+        resolvePromptApproved = false;
       });
     }
 

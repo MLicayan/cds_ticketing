@@ -370,6 +370,7 @@
           {% endfor %}
         {% endif %}
       </div>
+      {% if not is_task_list %}
       <div id="filter_instrument_ids_container">
         {% if selected_filters.instrument_ids %}
           {% for iid in selected_filters.instrument_ids %}
@@ -377,6 +378,7 @@
           {% endfor %}
         {% endif %}
       </div>
+      {% endif %}
       <div id="filter_app_ids_container">
         {% if selected_filters.app_ids %}
           {% for aid in selected_filters.app_ids %}
@@ -471,22 +473,12 @@
               </div>
 
               {% if current_user.role.value not in ['client', 'client_admin'] %}
-                <div class="col-md-3 mb-2">
-                  <label for="picker_instrument_id">Instrument</label>
-                  <select id="picker_instrument_id" class="form-control select2" multiple>
-                    {% for ins in instruments %}
-                    <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}" {% if selected_filters.instrument_ids and ins.id|string in selected_filters.instrument_ids %}selected{% endif %}>
-                      {{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}
-                    </option>
-                    {% endfor %}
-                  </select>
-                </div>
-
-                <div class="col-md-3 mb-2">
+                <div class="col-md-4 mb-2">
                   <label for="picker_app_id">App</label>
-                  <select id="picker_app_id" class="form-control select2" multiple>
+                  <select id="picker_app_id" class="form-control select2">
+                    <option value="">All</option>
                     {% for app in apps %}
-                    <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if selected_filters.app_ids and app.id|string in selected_filters.app_ids %}selected{% endif %}>
+                    <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if selected_filters.app_ids and app.id|string == selected_filters.app_ids[0] %}selected{% endif %}>
                       {{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}
                     </option>
                     {% endfor %}
@@ -508,11 +500,12 @@
                 </div>
                 #}
 
-                <div class="col-md-3 mb-2">
+                <div class="col-md-4 mb-2">
                   <label for="picker_reported_by_id">Reported By</label>
-                  <select id="picker_reported_by_id" class="form-control select2" multiple>
+                  <select id="picker_reported_by_id" class="form-control select2">
+                    <option value="">All</option>
                     {% for user in reporters %}
-                    <option value="{{ user.id }}" {% if selected_filters.reported_by_ids and user.id|string in selected_filters.reported_by_ids %}selected{% endif %}>
+                    <option value="{{ user.id }}" {% if selected_filters.reported_by_ids and user.id|string == selected_filters.reported_by_ids[0] %}selected{% endif %}>
                       {{ user.full_name or user.username }}{% if user.role %} ({{ user.role.value|capitalize }}){% endif %}
                     </option>
                     {% endfor %}
@@ -521,7 +514,7 @@
               {% endif %}
 
               {% if current_user.role.value not in ['client', 'client_admin'] %}
-                <div class="col-md-3 mb-2">
+                <div class="col-md-4 mb-2">
                   <label for="picker_priority">Priority</label>
                   <select id="picker_priority" class="form-control select2" multiple>
                     {% for p, label in [('NOT_SET', 'Not Set'), ('low', 'Low'), ('medium', 'Medium'), ('high', 'High'), ('critical', 'Critical')] %}
@@ -531,7 +524,7 @@
                 </div>
               {% endif %}
 
-              <div class="{{ 'col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-md-3' }} mb-2">
+              <div class="{{ 'col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-md-4' }} mb-2">
                 <label for="picker_status">Status</label>
                 <select id="picker_status" class="form-control select2" multiple>
                   {% for s, label in status_labels.items() %}
@@ -540,7 +533,7 @@
                 </select>
               </div>
 
-              <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-3' }} mb-2">
+              <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-4' }} mb-2">
                 <label for="picker_date_from">Date From</label>
                 <div class="input-group">
                   <div class="input-group-prepend">
@@ -550,7 +543,7 @@
                 </div>
               </div>
 
-              <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-3' }} mb-2">
+              <div class="{{ 'col-6 col-md-4' if current_user.role.value in ['client', 'client_admin'] else 'col-6 col-md-4' }} mb-2">
                 <label for="picker_date_to">Date To</label>
                 <div class="input-group">
                   <div class="input-group-prepend">
@@ -939,6 +932,7 @@ $(function() {
 
 (function() {
   var autoSubmitTimer = null;
+  var isTaskListView = {{ 'true' if is_task_list else 'false' }};
 
   function autoSubmitFilters() {
     clearTimeout(autoSubmitTimer);
@@ -1418,6 +1412,23 @@ $(function() {
   }
 
   function initAdvancedFilters() {
+    function clearSelect2SearchTerm(selector) {
+      if (!window.$ || !$(selector).length) return;
+
+      function clearSearch() {
+        var instance = $(selector).data('select2');
+        if (instance && instance.dropdown && instance.dropdown.$search) {
+          instance.dropdown.$search.val('');
+          instance.dropdown.$search.trigger('input');
+        }
+        $(selector).next('.select2-container').find('.select2-search__field').val('');
+      }
+
+      $(selector).on('select2:select', function() {
+        window.setTimeout(clearSearch, 0);
+      });
+    }
+
     bindMultiPicker('picker_instrument_id', 'filter_instrument_ids_container', 'instrument_id');
     bindMultiPicker('picker_app_id', 'filter_app_ids_container', 'app_id');
     bindPicker('picker_assignee_id', 'filter_assignee_id');
@@ -1431,6 +1442,7 @@ $(function() {
       $('#picker_client_id').select2({
         width: '100%',
         placeholder: 'All',
+        allowClear: false,
         closeOnSelect: false,
         minimumResultsForSearch: 0
       }).on('change', function() {
@@ -1446,6 +1458,7 @@ $(function() {
           searchField.focus();
         }
       });
+      clearSelect2SearchTerm('#picker_client_id');
     }
 
     if (window.$ && $('#prompt_client_ids').length) {
@@ -1505,27 +1518,29 @@ $(function() {
     if (window.$ && $('#picker_app_id').length) {
       $('#picker_app_id').select2({
         width: '100%',
-        placeholder: 'Select app(s)',
-        minimumResultsForSearch: Infinity
+        placeholder: 'All',
+        allowClear: true,
+        closeOnSelect: true,
+        minimumResultsForSearch: 0
       }).on('change', function() {
         syncMultiHiddenInputs('filter_app_ids_container', 'app_id', 'picker_app_id');
         updateFilterChips();
         autoSubmitFilters();
       });
-      lockSelect2InlineSearch('#picker_app_id');
     }
 
     if (window.$ && $('#picker_reported_by_id').length) {
       $('#picker_reported_by_id').select2({
         width: '100%',
-        placeholder: 'Select reporter(s)',
-        minimumResultsForSearch: Infinity
+        placeholder: 'All',
+        allowClear: true,
+        closeOnSelect: true,
+        minimumResultsForSearch: 0
       }).on('change', function() {
         syncMultiHiddenInputs('filter_reported_by_ids_container', 'reported_by_id', 'picker_reported_by_id');
         updateFilterChips();
         autoSubmitFilters();
       });
-      lockSelect2InlineSearch('#picker_reported_by_id');
     }
 
     filterInstruments();

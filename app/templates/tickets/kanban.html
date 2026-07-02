@@ -27,6 +27,45 @@
 
 {% block extra_js %}
 {{ super() }}
+<div class="modal fade" id="kanbanResolvePromptModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-check-circle mr-2 text-success"></i>Send Client Prompt</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        Move this ticket to Fix/Completed? A prompt will be sent to the client for confirmation.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="confirmKanbanResolvePromptBtn">Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="kanbanResolveSentModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fas fa-paper-plane mr-2 text-primary"></i>Client Prompt Sent</h5>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body">
+        The client has been prompted to confirm this Fix/Completed ticket.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="closeKanbanResolveSentBtn" data-dismiss="modal">OK</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
   var canDragKanban = {{ 'true' if current_user.role.value not in ['client', 'client_admin', 'sales'] else 'false' }};
@@ -112,6 +151,63 @@
   if (!canDragKanban) return;
 
   var draggedCard = null;
+  var willPromptClientOnResolve = {{ 'true' if not is_task_kanban and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) else 'false' }};
+  var resolvePromptModal = document.getElementById('kanbanResolvePromptModal');
+  var resolveSentModal = document.getElementById('kanbanResolveSentModal');
+  var confirmResolvePromptBtn = document.getElementById('confirmKanbanResolvePromptBtn');
+  var pendingKanbanDrop = null;
+
+  function completeKanbanDrop(dropData) {
+    if (!dropData) return;
+
+    var formData = new FormData();
+    formData.append('column', dropData.targetStatus);
+
+    fetch(dropData.updateUrl, {
+      method: 'POST',
+      body: formData,
+      credentials: 'same-origin'
+    })
+    .then(function(response) {
+      if (!response.ok) throw new Error('Kanban update failed');
+      return response.json();
+    })
+    .then(function(payload) {
+      if (!(payload && payload.ok)) {
+        window.location.reload();
+        return;
+      }
+      if (dropData.targetStatus === 'resolved' && willPromptClientOnResolve && payload.client_prompt_sent && window.jQuery && $('#kanbanResolveSentModal').modal) {
+        $('#kanbanResolveSentModal').modal('show');
+        return;
+      }
+      window.location.reload();
+    })
+    .catch(function() {});
+  }
+
+  if (confirmResolvePromptBtn) {
+    confirmResolvePromptBtn.addEventListener('click', function() {
+      var dropData = pendingKanbanDrop;
+      pendingKanbanDrop = null;
+      if (window.jQuery && $('#kanbanResolvePromptModal').modal) {
+        $('#kanbanResolvePromptModal').modal('hide');
+      }
+      completeKanbanDrop(dropData);
+    });
+  }
+
+  if (window.jQuery && $('#kanbanResolvePromptModal').modal) {
+    $('#kanbanResolvePromptModal').on('hidden.bs.modal', function() {
+      pendingKanbanDrop = null;
+    });
+  }
+
+  if (window.jQuery && $('#kanbanResolveSentModal').modal) {
+    $('#kanbanResolveSentModal').on('hidden.bs.modal', function() {
+      window.location.reload();
+    });
+  }
 
   document.querySelectorAll('.kanban-card[draggable="true"]').forEach(function(card) {
     card.addEventListener('dragstart', function() {
@@ -148,25 +244,20 @@
       var targetStatus = zone.getAttribute('data-status');
       if (!ticketId || !targetStatus || currentStatus === targetStatus) return;
 
-      var formData = new FormData();
-      formData.append('column', targetStatus);
-
       var updateUrl = draggedCard.getAttribute('data-update-url') || '{{ url_for("tickets.update_kanban_status", ticket_id=0) }}'.replace('0', ticketId);
-      fetch(updateUrl, {
-        method: 'POST',
-        body: formData,
-        credentials: 'same-origin'
-      })
-      .then(function(response) {
-        if (!response.ok) throw new Error('Kanban update failed');
-        return response.json();
-      })
-      .then(function(payload) {
-        if (payload && payload.ok) {
-          window.location.reload();
-        }
-      })
-      .catch(function() {});
+      if (targetStatus === 'resolved' && willPromptClientOnResolve && window.jQuery && $('#kanbanResolvePromptModal').modal) {
+        pendingKanbanDrop = {
+          updateUrl: updateUrl,
+          targetStatus: targetStatus
+        };
+        $('#kanbanResolvePromptModal').modal('show');
+        return;
+      }
+
+      completeKanbanDrop({
+        updateUrl: updateUrl,
+        targetStatus: targetStatus
+      });
     });
   });
 })();

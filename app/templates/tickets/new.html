@@ -174,7 +174,7 @@
             <option value="app" {% if default_ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
           </select>
         </div>
-        <div class="form-group col-md-4 ticket-target ticket-instrument">
+        <div class="form-group col-md-4 ticket-target ticket-instrument {% if default_ticket_for != 'instrument' %}d-none{% endif %}">
           <label for="instrument_id">Instrument</label>
           <select name="instrument_id" id="instrument_id" class="form-control">
             <option value="">-- select instrument --</option>
@@ -183,9 +183,9 @@
             {% endfor %}
           </select>
         </div>
-        <div class="form-group col-md-4 ticket-target ticket-app d-none">
+        <div class="form-group col-md-4 ticket-target ticket-app {% if default_ticket_for == 'instrument' %}d-none{% endif %}">
           <label for="app_id">CDS Application</label>
-          <select name="app_id" id="app_id" class="form-control">
+          <select name="app_id" id="app_id" class="form-control select2">
             <option value="">-- select application --</option>
             {% for app in apps %}
             <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}">{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
@@ -278,7 +278,6 @@
       var match = !cid || opt.getAttribute('data-client-id') === cid;
       opt.hidden = !match;
     });
-    // reset selection if hidden
     if (insSelect.selectedOptions.length && insSelect.selectedOptions[0].hidden) {
       insSelect.value = '';
     }
@@ -299,25 +298,28 @@
       appSelect.value = '';
     }
   }
-  
+
   function toggleTargets() {
     var ticketFor = document.getElementById('ticket_for');
-    var target = ticketFor ? ticketFor.value : 'instrument';
+    var target = ticketFor ? ticketFor.value : 'app';
     var instrumentGrp = document.querySelector('.ticket-instrument');
     var appGrp = document.querySelector('.ticket-app');
     if (instrumentGrp) instrumentGrp.classList.toggle('d-none', target !== 'instrument');
     if (appGrp) appGrp.classList.toggle('d-none', target !== 'app');
   }
+
   var clientSelect = document.getElementById('client_id');
   if (clientSelect) {
     var onClientChange = function() { filterInstruments(); filterApps(); };
     clientSelect.addEventListener('change', onClientChange);
     if (window.$) {
       $('#client_id').select2({ width: '100%', placeholder: '-- select client --' }).on('change', onClientChange);
+      $('#app_id').select2({ width: '100%', placeholder: '-- select application --' });
     }
     filterInstruments();
     filterApps();
   }
+
   var ticketFor = document.getElementById('ticket_for');
   if (ticketFor) ticketFor.addEventListener('change', toggleTargets);
   toggleTargets();

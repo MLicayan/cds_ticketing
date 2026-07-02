@@ -314,10 +314,9 @@
 
               <div class="col-md-4 mb-2">
                 <label for="task_client_id">Client</label>
-                <select id="task_client_id" name="client_id" class="form-control select2">
-                  <option value="">All</option>
+                <select id="task_client_id" name="client_id" class="form-control select2" multiple>
                   {% for c in clients %}
-                  <option value="{{ c.id }}" {% if selected_filters.client_ids and c.id|string == selected_filters.client_ids[0] %}selected{% endif %}>
+                  <option value="{{ c.id }}" {% if selected_filters.client_ids and c.id|string in selected_filters.client_ids %}selected{% endif %}>
                     {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
                   </option>
                   {% endfor %}
@@ -326,10 +325,10 @@
 
               <div class="col-md-4 mb-2">
                 <label for="task_app_id">App</label>
-                <select id="task_app_id" name="app_id" class="form-control select2" multiple>
-                  <option value=""></option>
+                <select id="task_app_id" name="app_id" class="form-control select2">
+                  <option value="">All</option>
                   {% for app in apps %}
-                  <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if selected_filters.app_ids and app.id|string in selected_filters.app_ids %}selected{% endif %}>
+                  <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if selected_filters.app_ids and app.id|string == selected_filters.app_ids[0] %}selected{% endif %}>
                     {{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}
                   </option>
                   {% endfor %}
@@ -564,16 +563,33 @@
     applyLock();
   }
 
+  function clearSelect2SearchTerm(selector) {
+    if (!window.$ || !$(selector).length) return;
+
+    function clearSearch() {
+      var instance = $(selector).data('select2');
+      if (instance && instance.dropdown && instance.dropdown.$search) {
+        instance.dropdown.$search.val('');
+        instance.dropdown.$search.trigger('input');
+      }
+      $(selector).next('.select2-container').find('.select2-search__field').val('');
+    }
+
+    $(selector).on('select2:select', function() {
+      window.setTimeout(clearSearch, 0);
+    });
+  }
+
   initDeveloperTasksTable();
 
   if (window.$ && $.fn.select2) {
-    $('#task_client_id').select2({ width: '100%', placeholder: 'All', allowClear: true, minimumResultsForSearch: 0 });
-    $('#task_app_id').select2({ width: '100%', placeholder: 'Select app(s)', minimumResultsForSearch: Infinity });
+    $('#task_client_id').select2({ width: '100%', placeholder: 'Select client(s)', minimumResultsForSearch: 0 });
+    $('#task_app_id').select2({ width: '100%', placeholder: 'All', allowClear: true, minimumResultsForSearch: 0 });
     $('#task_assignee_id').select2({ width: '100%', placeholder: 'Select IT user(s)' });
     $('#task_reported_by_id').select2({ width: '100%', placeholder: 'All', allowClear: true, minimumResultsForSearch: 0 });
     $('#task_priority').select2({ width: '100%', placeholder: 'Select priority', minimumResultsForSearch: Infinity });
     $('#task_status').select2({ width: '100%', placeholder: 'Select status', minimumResultsForSearch: Infinity });
-    lockSelect2InlineSearch('#task_app_id');
+    clearSelect2SearchTerm('#task_client_id');
     lockSelect2InlineSearch('#task_priority');
     lockSelect2InlineSearch('#task_status');
   }

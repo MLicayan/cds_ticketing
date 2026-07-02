@@ -806,6 +806,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     const workdayPromptStateUrl = {{ url_for('tickets.task_workday_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
     const workdayPromptPauseUrl = {{ url_for('tickets.task_workday_prompt_pause')|tojson if current_user.is_authenticated else 'null' }};
+    const resolutionPromptStateUrl = {{ url_for('tickets.ticket_resolution_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
     const workdayPromptModalEl = document.getElementById('workdayTaskPromptModal');
     const workdayPromptList = document.getElementById('workdayTaskPromptList');
     const workdayPromptEmpty = document.getElementById('workdayTaskPromptEmpty');
@@ -832,6 +833,7 @@
     let workdayPromptOpen = false;
     let workdayPromptDate = null;
     let activeDeveloperPrompt = null;
+    const resolutionPromptSeenKey = 'ticket-resolution-prompt-seen';
     const notificationSoundVolumeKey = 'notification-sound-volume';
     const canHearNewTicketSound = {{ 'true' if current_user.is_authenticated and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) else 'false' }};
 
@@ -1121,6 +1123,57 @@
       }
     }
 
+    function resolutionPromptSignature(payload) {
+      const tickets = Array.isArray(payload && payload.tickets) ? payload.tickets : [];
+      return tickets.map(function(ticket) {
+        return String(ticket.ticket_id || ticket.ticket_no || '');
+      }).filter(Boolean).join(',');
+    }
+
+    function shouldSkipResolutionPrompt(payload) {
+      const signature = resolutionPromptSignature(payload);
+      if (!signature) {
+        return true;
+      }
+      try {
+        return sessionStorage.getItem(resolutionPromptSeenKey) === signature;
+      } catch (err) {
+        return false;
+      }
+    }
+
+    function markResolutionPromptSeen(payload) {
+      const signature = resolutionPromptSignature(payload);
+      if (!signature) {
+        return;
+      }
+      try {
+        sessionStorage.setItem(resolutionPromptSeenKey, signature);
+      } catch (err) {
+      }
+    }
+
+    async function fetchResolutionPromptState() {
+      if (!resolutionPromptStateUrl || !resolutionPromptOpenLink) {
+        return;
+      }
+      try {
+        const response = await fetch(resolutionPromptStateUrl, {
+          headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (!response.ok) {
+          return;
+        }
+        const payload = await response.json();
+        if (!payload || !payload.count || shouldSkipResolutionPrompt(payload)) {
+          return;
+        }
+        markResolutionPromptSeen(payload);
+        showTicketResolutionPrompt(payload);
+      } catch (err) {
+      }
+    }
+
     function showDeveloperPrompt(payload) {
       if (!developerPromptModalEl || !payload || !payload.prompt) {
         return;
@@ -1213,6 +1266,12 @@
       fetchDeveloperPromptState();
       setTimeout(fetchDeveloperPromptState, 1500);
       setInterval(fetchDeveloperPromptState, 60000);
+    }
+
+    if (resolutionPromptOpenLink) {
+      fetchResolutionPromptState();
+      setTimeout(fetchResolutionPromptState, 1200);
+      setInterval(fetchResolutionPromptState, 60000);
     }
 
     const notificationRoot = document.getElementById('header-client-comment-notification');
@@ -1373,6 +1432,7 @@
       });
       notificationSocket.on('ticket_resolution_prompt', function(payload) {
         playNotificationSound('notification');
+        markResolutionPromptSeen(payload);
         showTicketResolutionPrompt(payload);
       });
       notificationSocket.on('developer_prompt', function(payload) {
