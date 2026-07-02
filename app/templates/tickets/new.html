@@ -149,6 +149,7 @@
 {% endblock %}
 {% block content %}
 <div class="card">
+  {% set form_ticket_for = request.form.get('ticket_for', default_ticket_for) %}
   <form method="post" enctype="multipart/form-data" id="create-ticket-form">
     <div class="card-body">
       <div class="form-row">
@@ -162,7 +163,7 @@
             <select name="client_id" id="client_id" class="form-control select2" required>
               <option value="">-- select client --</option>
               {% for c in clients %}
-              <option value="{{ c.id }}">{{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}</option>
+              <option value="{{ c.id }}" {% if request.form.get('client_id') == (c.id|string) %}selected{% endif %}>{{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}</option>
               {% endfor %}
             </select>
           {% endif %}
@@ -170,25 +171,25 @@
         <div class="form-group col-md-4">
           <label for="ticket_for">Ticket For</label>
           <select name="ticket_for" id="ticket_for" class="form-control">
-            <option value="instrument" {% if default_ticket_for == 'instrument' %}selected{% endif %}>Instrument</option>
-            <option value="app" {% if default_ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
+            <option value="instrument" {% if form_ticket_for == 'instrument' %}selected{% endif %}>Instrument</option>
+            <option value="app" {% if form_ticket_for == 'app' %}selected{% endif %}>CDS Application</option>
           </select>
         </div>
-        <div class="form-group col-md-4 ticket-target ticket-instrument {% if default_ticket_for != 'instrument' %}d-none{% endif %}">
+        <div class="form-group col-md-4 ticket-target ticket-instrument {% if form_ticket_for != 'instrument' %}d-none{% endif %}">
           <label for="instrument_id">Instrument</label>
           <select name="instrument_id" id="instrument_id" class="form-control">
             <option value="">-- select instrument --</option>
             {% for ins in instruments %}
-            <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}">{{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}</option>
+            <option value="{{ ins.id }}" data-client-id="{{ ins.client_id }}" {% if request.form.get('instrument_id') == (ins.id|string) %}selected{% endif %}>{{ ins.display_label() }}{% if ins.serial_number %} (SN: {{ ins.serial_number }}){% endif %}</option>
             {% endfor %}
           </select>
         </div>
-        <div class="form-group col-md-4 ticket-target ticket-app {% if default_ticket_for == 'instrument' %}d-none{% endif %}">
+        <div class="form-group col-md-4 ticket-target ticket-app {% if form_ticket_for == 'instrument' %}d-none{% endif %}">
           <label for="app_id">CDS Application</label>
           <select name="app_id" id="app_id" class="form-control select2">
             <option value="">-- select application --</option>
             {% for app in apps %}
-            <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}">{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
+            <option value="{{ app.id }}" data-client-ids="{{ app.clients | map(attribute='id') | list | join(',') }}" {% if request.form.get('app_id') == (app.id|string) %}selected{% endif %}>{{ app.name }}{% if app.code %} ({{ app.code }}){% endif %}</option>
             {% endfor %}
           </select>
         </div>
@@ -196,35 +197,35 @@
         <div class="form-group col-md-4">
           <label for="priority">Priority</label>
           <select name="priority" id="priority" class="form-control">
-            <option value="NOT_SET" selected>Not set yet</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-            <option value="critical">Critical</option>
+            <option value="NOT_SET" {% if request.form.get('priority', 'NOT_SET') == 'NOT_SET' %}selected{% endif %}>Not set yet</option>
+            <option value="low" {% if request.form.get('priority') == 'low' %}selected{% endif %}>Low</option>
+            <option value="medium" {% if request.form.get('priority') == 'medium' %}selected{% endif %}>Medium</option>
+            <option value="high" {% if request.form.get('priority') == 'high' %}selected{% endif %}>High</option>
+            <option value="critical" {% if request.form.get('priority') == 'critical' %}selected{% endif %}>Critical</option>
           </select>
         </div>
         {% endif %}
         {% if current_user.role.value == 'admin' %}
         <div class="form-group col-md-4">
           <label for="target_date">Target Schedule</label>
-          <input type="date" name="target_date" id="target_date" class="form-control">
+          <input type="date" name="target_date" id="target_date" class="form-control" value="{{ request.form.get('target_date', '') }}">
         </div>
         {% endif %}
         <div class="form-group col-md-4">
           <label for="date_needed">Date Needed</label>
-          <input type="date" name="date_needed" id="date_needed" class="form-control">
+          <input type="date" name="date_needed" id="date_needed" class="form-control" value="{{ request.form.get('date_needed', '') }}">
         </div>
       </div>
       <div class="form-group">
         <label for="subject">Complaint</label>
         <div class="subject-input-wrap">
-          <input name="subject" id="subject" class="form-control" required maxlength="255">
-          <span id="subject-char-remaining" class="subject-char-counter">100 left</span>
+          <input name="subject" id="subject" class="form-control" required maxlength="255" value="{{ request.form.get('subject', '') }}">
+          <span id="subject-char-remaining" class="subject-char-counter">255 left</span>
         </div>
       </div>
       <div class="form-group">
         <label for="description">Description</label>
-        <textarea name="description" id="description" class="form-control" rows="4"></textarea>
+        <textarea name="description" id="description" class="form-control" rows="4">{{ request.form.get('description', '') }}</textarea>
       </div>
       <div class="form-group">
         <label>Reported By</label>

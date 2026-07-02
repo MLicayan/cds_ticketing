@@ -2150,8 +2150,8 @@ def create():
                 default_ticket_for="app",
             )
 
-        if len(subject) > 100:
-            flash("Complaint must be 100 characters or fewer.", "danger")
+        if len(subject) > 255:
+            flash("Complaint must be 255 characters or fewer.", "danger")
             return render_template(
                 "tickets/new.html",
                 clients=clients,
@@ -5338,8 +5338,8 @@ def update_client_fields(ticket_id):
         flash("Complaint is required.", "danger")
         return redirect(url_for("tickets.detail", ticket_id=ticket.id))
 
-    if len(subject) > 100:
-        flash("Complaint must be 100 characters or fewer.", "danger")
+    if len(subject) > 255:
+        flash("Complaint must be 255 characters or fewer.", "danger")
         return redirect(url_for("tickets.detail", ticket_id=ticket.id))
 
     changed = False

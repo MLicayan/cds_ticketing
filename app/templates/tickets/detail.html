@@ -655,6 +655,26 @@
   padding: 16px 22px 20px;
 }
 
+#createTaskModal .modal-dialog {
+  max-width: min(1180px, calc(100vw - 2rem));
+}
+
+#createTaskModal select.form-control-sm,
+#createTaskModal input.form-control-sm,
+#createTaskModal textarea.form-control-sm {
+  height: 38px;
+}
+
+#createTaskModal textarea[name="task_subjects[]"] {
+  min-height: 38px;
+  resize: vertical;
+}
+
+#createTaskModal textarea[name="task_descriptions[]"] {
+  min-height: 38px;
+  resize: vertical;
+}
+
 .badge-working {
     background-color: #4CAF50;
     color: #fff;
@@ -1573,7 +1593,7 @@
                 name="subject"
                 id="client_subject"
                 class="form-control"
-                maxlength="100"
+                maxlength="255"
                 required
                 value="{{ ticket.subject }}">
             </div>
@@ -2855,7 +2875,7 @@
       var row = document.createElement('tr');
       row.innerHTML = `
         <td>
-          <input type="text" name="task_subjects[]" class="form-control form-control-sm" placeholder="Optional task subject override">
+          <textarea name="task_subjects[]" rows="1" class="form-control form-control-sm" placeholder="Optional task subject override"></textarea>
         </td>
         <td>
           <select name="task_engineer_ids[]" class="form-control form-control-sm" required>
