@@ -4709,8 +4709,8 @@ def update_task_info(task_id):
         if not subject:
             flash("Title is required.", "danger")
             return redirect(url_for("tickets.task_detail", task_id=task.id))
-        if len(subject) > 100:
-            flash("Title must be 100 characters or fewer.", "danger")
+        if len(subject) > 255:
+            flash("Title must be 255 characters or fewer.", "danger")
             return redirect(url_for("tickets.task_detail", task_id=task.id))
         if not client_id_raw:
             flash("Client is required.", "danger")
@@ -5244,8 +5244,8 @@ def update_ticket_info(ticket_id):
         if not subject:
             flash("Title is required.", "danger")
             return redirect(url_for("tickets.detail", ticket_id=ticket.id))
-        if len(subject) > 100:
-            flash("Title must be 100 characters or fewer.", "danger")
+        if len(subject) > 255:
+            flash("Title must be 255 characters or fewer.", "danger")
             return redirect(url_for("tickets.detail", ticket_id=ticket.id))
         if not client_id_raw:
             flash("Client is required.", "danger")
