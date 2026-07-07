@@ -478,6 +478,14 @@ def _emit_ticket_comment(ticket: Ticket, comment: TicketComment, attachments=Non
     _emit_ticket_changed(ticket, "commented")
 
 
+def _emit_task_comment(task: TicketTask, comment: TicketTaskComment, attachments=None) -> None:
+    if comment.is_internal:
+        _emit_ticket_changed(task, "commented")
+        return
+    socketio.emit("ticket_comment_added", _task_comment_payload(comment, attachments=attachments), room=f"ticket:{task.id}")
+    _emit_ticket_changed(task, "commented")
+
+
 def _ticket_comment_payload(comment: TicketComment, attachments=None) -> dict:
     parent = comment.parent_comment
     user_is_provider = bool(
@@ -3350,7 +3358,10 @@ def task_detail(task_id):
             db.session.commit()
             for recipient, notification in task_comment_notifications:
                 emit_header_notification_added(recipient, notification)
-            _emit_ticket_changed(task, "commented" if new_comment else "updated")
+            if new_comment:
+                _emit_task_comment(task, new_comment, attachments=added_attachments)
+            else:
+                _emit_ticket_changed(task, "updated")
             if wants_json and new_comment:
                 return jsonify({"ok": True, "comment": _task_comment_payload(new_comment, attachments=added_attachments)})
             if wants_json:

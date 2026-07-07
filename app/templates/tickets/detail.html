@@ -264,6 +264,14 @@
   box-shadow: inset 0 0 0 1px #e9ecef;
 }
 
+.ticket-chat-row.pending {
+  opacity: 0.72;
+}
+
+.ticket-chat-row.pending .ticket-chat-bubble {
+  box-shadow: inset 0 0 0 1px rgba(60, 141, 188, 0.2);
+}
+
 .reply-target {
   display: none;
   align-items: center;
@@ -1753,6 +1761,7 @@
     var commentSubmitLabel = document.getElementById('comment-submit-label');
     var attachmentInput = document.getElementById('attachment');
     var attachmentSelectedList = document.getElementById('attachment-selected-list');
+    var commentDraftKey = 'ticket-comment-draft-{{ "task" if is_task_ticket else "ticket" }}-{{ ticket.id }}';
     var taskEngineerOptions = `{% for eng in task_engineers %}<option value="{{ eng.id }}">{{ eng.full_name or eng.username }}</option>{% endfor %}`;
     var taskPriorityOptions = `
       <option value="NOT_SET" {% if not ticket.priority or ticket.priority.value == 'NOT_SET' %}selected{% endif %}>Not set yet</option>
@@ -1788,6 +1797,7 @@
     var suppressRealtimeReloadUntil = 0;
     var suppressRealtimeReloadAction = '';
     var pendingRealtimeReload = null;
+    var deferredRealtimeReloadPending = false;
     var activePreviewImage = null;
     var activePreviewImageWrap = null;
     var currentImageZoom = 1;
@@ -2009,6 +2019,50 @@
       clearReplyTarget();
       setCommentFormMode('create');
       renderAttachmentList();
+      clearCommentDraft();
+      if (deferredRealtimeReloadPending) {
+        scheduleRealtimePageRefresh(100);
+      }
+    }
+
+    function commentDraftValue() {
+      if (!commentTextarea) return '';
+      return (commentTextarea.value || '').trim();
+    }
+
+    function hasUnsavedCommentDraft() {
+      return !Boolean(commentEditInput && commentEditInput.value) && Boolean(commentDraftValue());
+    }
+
+    function persistCommentDraft() {
+      if (!commentTextarea) return;
+      var value = commentTextarea.value || '';
+      try {
+        if (value) {
+          localStorage.setItem(commentDraftKey, value);
+        } else {
+          localStorage.removeItem(commentDraftKey);
+        }
+      } catch (error) {
+      }
+    }
+
+    function restoreCommentDraft() {
+      if (!commentTextarea || (commentTextarea.value || '').trim()) return;
+      try {
+        var savedDraft = localStorage.getItem(commentDraftKey) || '';
+        if (savedDraft) {
+          commentTextarea.value = savedDraft;
+        }
+      } catch (error) {
+      }
+    }
+
+    function clearCommentDraft() {
+      try {
+        localStorage.removeItem(commentDraftKey);
+      } catch (error) {
+      }
     }
 
     function startCommentEdit(row) {
@@ -2049,6 +2103,13 @@
         window.clearTimeout(pendingRealtimeReload);
       }
       pendingRealtimeReload = window.setTimeout(function() {
+        pendingRealtimeReload = null;
+        persistCommentDraft();
+        if (hasUnsavedCommentDraft()) {
+          deferredRealtimeReloadPending = true;
+          return;
+        }
+        deferredRealtimeReloadPending = false;
         sessionStorage.setItem(commentScrollKey, '1');
         window.location.reload();
       }, delay || 500);
@@ -2531,6 +2592,69 @@
       }
     }
 
+    function removePendingCommentRow(pendingId) {
+      if (!pendingId) return;
+      var row = document.getElementById(pendingId);
+      if (row) {
+        row.remove();
+      }
+    }
+
+    function appendPendingComment(pendingId, text, parentComment, files) {
+      if (!pendingId || !commentsList || document.getElementById(pendingId)) return;
+
+      var empty = document.getElementById('ticket-no-comments');
+      if (empty) empty.remove();
+
+      var row = document.createElement('div');
+      row.className = 'ticket-chat-row mine pending';
+      row.id = pendingId;
+
+      var item = document.createElement('div');
+      item.className = 'ticket-chat-item';
+
+      var meta = document.createElement('div');
+      meta.className = 'ticket-chat-meta';
+      meta.appendChild(document.createTextNode('{{ current_user.full_name or current_user.username }}'));
+      var timestamp = document.createElement('span');
+      timestamp.className = 'ml-1';
+      timestamp.textContent = 'Sending...';
+      meta.appendChild(timestamp);
+      item.appendChild(meta);
+
+      var replyPreview = buildReplyPreview(parentComment);
+      if (replyPreview) {
+        item.appendChild(replyPreview);
+      }
+
+      var normalizedText = (text || '').trim();
+      if (normalizedText) {
+        var bubble = document.createElement('div');
+        bubble.className = 'ticket-chat-bubble';
+        bubble.textContent = normalizedText;
+        item.appendChild(bubble);
+      }
+
+      if (files && files.length) {
+        var pendingAttachments = document.createElement('div');
+        pendingAttachments.className = 'comment-attachments';
+        files.forEach(function(file) {
+          var attachmentItem = document.createElement('div');
+          attachmentItem.className = 'comment-attachment';
+          var label = document.createElement('div');
+          label.className = 'comment-attachment-link';
+          label.innerHTML = '<i class="fas fa-paperclip"></i><span>' + file.name + ' (uploading)</span>';
+          attachmentItem.appendChild(label);
+          pendingAttachments.appendChild(attachmentItem);
+        });
+        item.appendChild(pendingAttachments);
+      }
+
+      row.appendChild(item);
+      commentsList.appendChild(row);
+      scrollCommentsToBottom();
+    }
+
     function appendRealtimeComment(comment) {
       if (!comment || comment.ticket_id !== {{ ticket.id }}) return;
       var list = document.getElementById('ticket-comments-list');
@@ -2673,10 +2797,6 @@
         });
         realtimeSocket.on('ticket_comment_added', function(payload) {
           appendRealtimeComment(payload);
-          if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
-          if (Number(payload.user_id) !== {{ current_user.id }}) {
-            scheduleRealtimePageRefresh(600);
-          }
         });
         realtimeSocket.on('ticket_comment_reacted', function(payload) {
           if (!payload || payload.ticket_id !== {{ ticket.id }}) return;
@@ -2684,6 +2804,9 @@
         });
         realtimeSocket.on('ticket_changed', function(payload) {
           if (payload && (payload.id === {{ ticket.id }} || payload.parent_ticket_id === {{ ticket.id }})) {
+            if (payload.action === 'commented') {
+              return;
+            }
             if (
               Date.now() < suppressRealtimeReloadUntil &&
               (
@@ -3057,6 +3180,13 @@
     }
 
     if (commentTextarea) {
+      restoreCommentDraft();
+      commentTextarea.addEventListener('input', function() {
+        persistCommentDraft();
+        if (!hasUnsavedCommentDraft() && deferredRealtimeReloadPending) {
+          scheduleRealtimePageRefresh(100);
+        }
+      });
       commentTextarea.addEventListener('keydown', function(e) {
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
@@ -3085,6 +3215,9 @@
         var isEditMode = commentEditInput && commentEditInput.value;
         var hasFiles = !isEditMode && attachmentInput && attachmentInput.files && attachmentInput.files.length > 0;
         var commentTextValue = commentTextarea ? commentTextarea.value.trim() : '';
+        var pendingCommentId = '';
+        var pendingFiles = hasFiles ? Array.from(attachmentInput.files || []) : [];
+        var pendingParentComment = null;
 
         if (!hasFiles && !commentTextValue) {
           e.preventDefault();
@@ -3104,6 +3237,21 @@
         suppressRealtimeReload(isEditMode ? 'updated' : 'commented', 3000);
         e.preventDefault();
 
+        if (!isEditMode) {
+          pendingCommentId = 'pending-comment-' + Date.now();
+          if (parentCommentInput && parentCommentInput.value) {
+            var parentRow = document.querySelector('[data-comment-id="' + parentCommentInput.value + '"]');
+            if (parentRow) {
+              pendingParentComment = {
+                comment_id: parentCommentInput.value,
+                user: parentRow.getAttribute('data-comment-user') || 'User',
+                comment_text: parentRow.getAttribute('data-comment-text') || ''
+              };
+            }
+          }
+          appendPendingComment(pendingCommentId, commentTextValue, pendingParentComment, pendingFiles);
+        }
+
         var formData = new FormData(commentForm);
         var submitUrl = isEditMode
           ? editCommentUrlTemplate.replace('0', commentEditInput.value)
@@ -3122,11 +3270,13 @@
         })
         .then(function(payload) {
           if (!payload || !payload.ok) {
+            removePendingCommentRow(pendingCommentId);
             resetCommentSubmitButton();
             return;
           }
 
           if (payload.reload) {
+            removePendingCommentRow(pendingCommentId);
             sessionStorage.setItem(commentScrollKey, '1');
             window.location.reload();
             return;
@@ -3138,6 +3288,7 @@
               resetCommentForm();
             });
           } else if (payload.comment) {
+            removePendingCommentRow(pendingCommentId);
             appendRealtimeComment(payload.comment);
             resetCommentForm();
 
@@ -3151,6 +3302,7 @@
           resetCommentSubmitButton();
         })
         .catch(function() {
+          removePendingCommentRow(pendingCommentId);
           resetCommentSubmitButton();
 
           sessionStorage.setItem(commentScrollKey, '1');
