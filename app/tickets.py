@@ -394,6 +394,8 @@ def _emit_ticket_changed(ticket: Ticket, action: str = "updated") -> None:
     socketio.emit("ticket_changed", payload, room=f"ticket:{ticket.id}")
     if payload.get("parent_ticket_id"):
         socketio.emit("ticket_changed", payload, room=f"ticket:{payload['parent_ticket_id']}")
+    if isinstance(ticket, TicketTask) and ticket.assigned_engineer:
+        _emit_workday_prompt_state_for_user(ticket.assigned_engineer)
 
 
 def _ticket_attachment_payload(attachment: TicketAttachment) -> dict:
@@ -695,6 +697,61 @@ def _pending_developer_prompt_state_for_user(user: User) -> dict:
         "count": len(pending_rows),
         "prompt": _developer_prompt_payload_for_response(pending_rows[0]),
     }
+
+
+def _workday_prompt_state_for_user(user: User) -> dict:
+    if not user or user.role in READ_ONLY_ROLES:
+        return {"count": 0, "tasks": [], "prompt_date": None, "is_overdue": False}
+
+    now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
+    prompt_cutoff = _current_workday_prompt_cutoff(now)
+    active_session_task_ids = db.session.query(TicketTaskWorkSession.ticket_task_id).filter(
+        TicketTaskWorkSession.developer_id == user.id,
+        TicketTaskWorkSession.paused_at.is_(None),
+        TicketTaskWorkSession.ended_at.is_(None),
+    )
+    tasks = (
+        TicketTask.query.filter(
+            TicketTask.assigned_engineer_id == user.id,
+            db.or_(
+                TicketTask.is_working.is_(True),
+                TicketTask.id.in_(active_session_task_ids),
+            ),
+            TicketTask.status != TicketStatus.CLOSED,
+            TicketTask.status != TicketStatus.CANCELLED,
+        )
+        .order_by(TicketTask.updated_at.desc(), TicketTask.created_at.desc(), TicketTask.id.desc())
+        .all()
+    )
+    eligible_tasks = [
+        task
+        for task in tasks
+        if _task_is_eligible_for_workday_prompt(task, prompt_cutoff)
+    ][:5]
+    return {
+        "count": len(eligible_tasks),
+        "prompt_date": prompt_cutoff.date().strftime("%Y-%m-%d"),
+        "is_overdue": now < datetime.combine(now.date(), time(17, 30)),
+        "tasks": [
+            {
+                "id": task.id,
+                "task_no": task.task_no or generate_task_ticket_no(task.id),
+                "subject": task.subject or "Untitled task",
+                "url": url_for("tickets.task_detail", task_id=task.id),
+            }
+            for task in eligible_tasks
+        ],
+    }
+
+
+def _emit_workday_prompt_state_for_user(user: Optional[User]) -> None:
+    if not user:
+        return
+    socketio.emit(
+        "workday_prompt_state",
+        _workday_prompt_state_for_user(user),
+        room=f"user_notifications:{user.id}",
+    )
 
 
 def _create_developer_prompt(creator: User, title: str, message: str):
@@ -1144,6 +1201,7 @@ def _client_resolution_prompt_payload(
         "sender": sender_name,
         "count": len(ticket_payloads),
         "tickets": ticket_payloads,
+        "source": "support_prompt" if sender else "login_snapshot",
         "message": (
             f"{sender_name or 'Support'} asked you to review your Fix/Completed ticket"
             f"{'' if len(ticket_payloads) == 1 else 's'}. Please Accept or Deny "
@@ -1627,10 +1685,10 @@ def app_monitoring_data():
 @login_required
 def kanban():
     status_labels = {
-        TicketStatus.OPEN: "Open",
-        TicketStatus.IN_PROGRESS: "In-Process",
+        TicketStatus.OPEN: "New Ticket",
+        TicketStatus.IN_PROGRESS: "In Process",
         TicketStatus.RESOLVED: "Fix/Completed",
-        TicketStatus.REOPENED: "Re-Open",
+        TicketStatus.REOPENED: "Reopen",
         TicketStatus.CLOSED: "Closed",
         TicketStatus.ON_HOLD: "On Hold",
         TicketStatus.CANCELLED: "Cancelled",
@@ -1641,6 +1699,8 @@ def kanban():
     filter_by = request.args.get("filter_by", "").strip()
     filter_value = request.args.get("filter_value", "").strip()
     filter_user_type = request.args.get("filter_user_type", "").strip().upper()
+    created_from_raw = (request.args.get("created_from") or "").strip()
+    created_to_raw = (request.args.get("created_to") or "").strip()
 
     engineers = User.query.filter(User.role == UserRole.ENGINEER).order_by(User.full_name.asc()).all()
     clients = Client.query.order_by(Client.name.asc()).all()
@@ -1695,28 +1755,51 @@ def kanban():
             except ValueError:
                 pass
 
-    tickets = base_query.order_by(created_column.desc()).all()
+    created_from = None
+    created_to = None
+    if created_from_raw:
+        try:
+            created_from = datetime.strptime(created_from_raw, "%Y-%m-%d")
+        except ValueError:
+            created_from_raw = ""
+    if created_to_raw:
+        try:
+            created_to = datetime.strptime(created_to_raw, "%Y-%m-%d") + timedelta(days=1)
+        except ValueError:
+            created_to_raw = ""
 
-    priority_order = {
-        "critical": 0,
-        "high": 1,
-        "medium": 2,
-        "low": 3,
-    }
+    if created_from is not None:
+        base_query = base_query.filter(created_column >= created_from)
+    if created_to is not None:
+        base_query = base_query.filter(created_column < created_to)
+
+    tickets = base_query.order_by(created_column.desc()).all()
+    parent_ticket_ids_with_tasks = set()
+    if not is_task_kanban:
+        parent_ticket_ids_with_tasks = {
+            ticket_id
+            for (ticket_id,) in db.session.query(TicketTask.ticket_id)
+            .filter(TicketTask.ticket_id.isnot(None))
+            .distinct()
+            .all()
+        }
 
     def _sort_key(t):
-        pval = t.priority.value if t.priority else ""
-        created_ts = t.created_at.timestamp() if t.created_at else 0
-        return (priority_order.get(pval, 99), -created_ts)
+        ticket_no = (t.ticket_no or "").strip()
+        if "-" in ticket_no:
+            _, _, suffix = ticket_no.rpartition("-")
+        else:
+            suffix = ticket_no
+        try:
+            return int(suffix)
+        except (TypeError, ValueError):
+            return t.id or 0
 
-    tickets = sorted(tickets, key=_sort_key)
+    tickets = sorted(tickets, key=_sort_key, reverse=True)
 
     today = datetime.utcnow().date()
 
-    user_type = (current_user.user_type or "").lower()
-    is_it = user_type == "it"
-
-    backlog, currently_working, new_tickets, in_progress, completed, closed = [], [], [], [], [], []
+    new_tickets, new_tasks, backlog, in_process, completed, reopened, closed, cancelled = [], [], [], [], [], [], [], []
 
     for t in tickets:
         is_overdue = t.target_date and t.target_date < today and t.status not in (
@@ -1731,27 +1814,48 @@ def kanban():
             backlog.append(t)
             continue
 
-        if is_it and getattr(t, "is_working", False):
-            currently_working.append(t)
-
         if t.status == TicketStatus.OPEN:
-            new_tickets.append(t)
-        elif t.status in (TicketStatus.REOPENED, TicketStatus.IN_PROGRESS, TicketStatus.ON_HOLD):
-            in_progress.append(t)
+            if is_task_kanban:
+                new_tasks.append(t)
+            elif t.id in parent_ticket_ids_with_tasks:
+                new_tasks.append(t)
+            else:
+                new_tickets.append(t)
+        elif t.status in (TicketStatus.IN_PROGRESS, TicketStatus.ON_HOLD):
+            in_process.append(t)
         elif t.status == TicketStatus.RESOLVED:
             completed.append(t)
-        elif t.status in (TicketStatus.CLOSED, TicketStatus.CANCELLED):
+        elif t.status == TicketStatus.REOPENED:
+            reopened.append(t)
+        elif t.status == TicketStatus.CLOSED:
             closed.append(t)
+        elif t.status == TicketStatus.CANCELLED:
+            cancelled.append(t)
         else:
-            in_progress.append(t)
+            in_process.append(t)
 
-    columns = [("Backlog", backlog), ("New Task", new_tickets)]
-
-    columns.extend([
-        ("In-Progress", in_progress),
-        ("Completed", completed),
-        ("Closed", closed),
-    ])
+    if is_task_kanban:
+        status_labels[TicketStatus.OPEN] = "New Task"
+        columns = [
+            ("New Task", new_tasks),
+            ("Backlogs", backlog),
+            ("In Process", in_process),
+            ("Fix/Completed", completed),
+            ("Reopen", reopened),
+            ("Closed", closed),
+            ("Cancelled", cancelled),
+        ]
+    else:
+        columns = [
+            ("New Ticket", new_tickets),
+            ("New Task", new_tasks),
+            ("Backlogs", backlog),
+            ("In Process", in_process),
+            ("Fix/Completed", completed),
+            ("Reopen", reopened),
+            ("Closed", closed),
+            ("Cancelled", cancelled),
+        ]
 
     return render_template(
         "tickets/kanban.html",
@@ -1767,6 +1871,8 @@ def kanban():
             "filter_by": filter_by,
             "filter_value": filter_value,
             "filter_user_type": filter_user_type,
+            "created_from": created_from_raw,
+            "created_to": created_to_raw,
             "scope": scope,
         },
     )
@@ -2597,6 +2703,7 @@ def developer_tasks():
     query = TicketTask.query
 
     ticket_no_raw = (request.args.get("ticket_no") or "").strip()
+    parent_ticket_id_raw = (request.args.get("parent_ticket_id") or "").strip()
     client_ids = [cid.strip() for cid in request.args.getlist("client_id") if cid.strip()]
     app_ids = [aid.strip() for aid in request.args.getlist("app_id") if aid.strip()]
     assignee_ids = [aid.strip() for aid in request.args.getlist("assignee_id") if aid.strip()]
@@ -2608,6 +2715,12 @@ def developer_tasks():
 
     if ticket_no_raw:
         query = query.filter(db.func.lower(TicketTask.task_no).like(f"%{ticket_no_raw.lower()}%"))
+
+    if parent_ticket_id_raw:
+        try:
+            query = query.filter(TicketTask.ticket_id == int(parent_ticket_id_raw))
+        except ValueError:
+            pass
 
     if client_ids:
         try:
@@ -2693,6 +2806,7 @@ def developer_tasks():
         current_date=datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d"),
         selected_filters={
             "ticket_no": ticket_no_raw,
+            "parent_ticket_id": parent_ticket_id_raw,
             "client_ids": client_ids,
             "app_ids": app_ids,
             "assignee_ids": assignee_ids,
@@ -3910,7 +4024,7 @@ def update_kanban_status(ticket_id):
     if not column_key:
         column_key = (request.form.get("status") or "").strip().lower()
 
-    if column_key not in {"backlog", "open", "in_progress", "resolved", "currently_working"}:
+    if column_key not in {"backlog", "open", "in_progress", "resolved", "reopened", "closed", "cancelled", "currently_working"}:
         return jsonify({"error": "Invalid kanban status."}), 400
 
     actor_name = current_user.full_name or current_user.username
@@ -3952,12 +4066,38 @@ def update_kanban_status(ticket_id):
             changed = True
         if changed and not was_resolved and _can_prompt_client_resolution(current_user):
             should_prompt_client = True
+    elif column_key == "reopened":
+        changed = _update_ticket_status_value(ticket, TicketStatus.REOPENED, actor_name)
+        if ticket.is_working:
+            ticket.is_working = False
+            changed = True
+    elif column_key == "closed":
+        changed = _update_ticket_status_value(ticket, TicketStatus.CLOSED, actor_name)
+        if ticket.kanban_bucket:
+            ticket.kanban_bucket = None
+            changed = True
+        if ticket.is_working:
+            ticket.is_working = False
+            changed = True
+    elif column_key == "cancelled":
+        changed = _update_ticket_status_value(ticket, TicketStatus.CANCELLED, actor_name)
+        if ticket.kanban_bucket:
+            ticket.kanban_bucket = None
+            changed = True
+        if ticket.is_working:
+            ticket.is_working = False
+            changed = True
 
     if changed:
+        closed_child_tasks = []
+        if column_key == "closed":
+            closed_child_tasks = _close_child_tasks(ticket, actor_name)
         db.session.commit()
         if should_prompt_client:
             client_prompt_sent = _emit_client_resolution_prompt(ticket, sender=current_user)
         _emit_ticket_changed(ticket, "updated")
+        for child_task in closed_child_tasks:
+            _emit_ticket_changed(child_task, "updated")
 
     return jsonify(
         {
@@ -3987,11 +4127,12 @@ def update_task_kanban_status(task_id):
     if not column_key:
         column_key = (request.form.get("status") or "").strip().lower()
 
-    if column_key not in {"backlog", "open", "in_progress", "resolved", "currently_working"}:
+    if column_key not in {"backlog", "open", "in_progress", "resolved", "reopened", "closed", "cancelled", "currently_working"}:
         return jsonify({"error": "Invalid kanban status."}), 400
 
     actor_name = current_user.full_name or current_user.username
     changed = False
+    completion_notifications = []
 
     if column_key == "backlog":
         if task.kanban_bucket != "backlog":
@@ -4026,6 +4167,27 @@ def update_task_kanban_status(task_id):
             changed = True
         if changed:
             completion_notifications = queue_task_completed_notifications(task, actor=current_user)
+    elif column_key == "reopened":
+        changed = _update_task_status_value(task, TicketStatus.REOPENED, actor_name)
+        if task.is_working:
+            task.is_working = False
+            changed = True
+    elif column_key == "closed":
+        changed = _update_task_status_value(task, TicketStatus.CLOSED, actor_name)
+        if task.kanban_bucket:
+            task.kanban_bucket = None
+            changed = True
+        if task.is_working:
+            task.is_working = False
+            changed = True
+    elif column_key == "cancelled":
+        changed = _update_task_status_value(task, TicketStatus.CANCELLED, actor_name)
+        if task.kanban_bucket:
+            task.kanban_bucket = None
+            changed = True
+        if task.is_working:
+            task.is_working = False
+            changed = True
 
     if changed:
         db.session.commit()
@@ -4481,6 +4643,11 @@ def respond_developer_prompt(prompt_id):
         )
 
     next_state = _pending_developer_prompt_state_for_user(current_user)
+    socketio.emit(
+        "developer_prompt_snapshot",
+        next_state,
+        room=f"user_notifications:{current_user.id}",
+    )
     return jsonify(
         {
             "ok": True,
@@ -4957,32 +5124,7 @@ def resolve_task_decision(task_id):
 @tickets_bp.route("/tasks/workday_prompt_state")
 @login_required
 def task_workday_prompt_state():
-    if current_user.role in READ_ONLY_ROLES:
-        return jsonify({"count": 0, "tasks": [], "prompt_date": None, "is_overdue": False})
-
-    now = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-    prompt_cutoff = _current_workday_prompt_cutoff(now)
-    tasks = [
-        task
-        for task in _current_user_working_tasks_query().all()
-        if _task_is_eligible_for_workday_prompt(task, prompt_cutoff)
-    ][:5]
-    return jsonify(
-        {
-            "count": len(tasks),
-            "prompt_date": prompt_cutoff.date().strftime("%Y-%m-%d"),
-            "is_overdue": now < datetime.combine(now.date(), time(17, 30)),
-            "tasks": [
-                {
-                    "id": task.id,
-                    "task_no": task.task_no or generate_task_ticket_no(task.id),
-                    "subject": task.subject or "Untitled task",
-                    "url": url_for("tickets.task_detail", task_id=task.id),
-                }
-                for task in tasks
-            ],
-        }
-    )
+    return jsonify(_workday_prompt_state_for_user(current_user))
 
 
 @tickets_bp.route("/tasks/workday_prompt_pause", methods=["POST"])

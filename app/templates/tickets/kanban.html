@@ -1,547 +1,302 @@
 {% extends "base.html" %}
-{% block title %}{{ 'My Task Kanban' if is_task_kanban else 'Ticket Kanban' }} - Instrument Monitoring{% endblock %}
+
+{% set task_kanban_title = 'My Task Kanban' if kanban_scope == 'my_tasks' else 'All Task Kanban' %}
+
+{% block title %}
+  {{ task_kanban_title if is_task_kanban else 'Ticket Kanban' }}
+  - Instrument Monitoring
+{% endblock %}
+
+
 {% block page_header %}
 <div class="row mb-2">
   <div class="col-sm-6">
-    <h1 class="m-0 text-dark"><i class="fas fa-th-large text-primary mr-2"></i>{{ 'My Task Kanban' if is_task_kanban else 'Ticket Kanban' }}</h1>
-    <p class="text-muted small mb-0">BACKLOG > NEW TASK > IN-PROGRESS > COMPLETED > CLOSED.</p>
+    <h1 class="m-0 text-dark">
+      <i class="fas fa-th-large text-primary mr-2"></i>
+      {{ task_kanban_title if is_task_kanban else 'Ticket Kanban' }}
+    </h1>
+
+    <p class="text-muted small mb-0">
+      BACKLOG &gt; NEW TASK &gt; IN-PROGRESS &gt; COMPLETED &gt; CLOSED.
+    </p>
   </div>
+
   <div class="col-sm-6 text-right">
-    <a href="{{ url_for('tickets.my_tickets') if is_task_kanban else url_for('tickets.index') }}" class="btn btn-outline-secondary mr-2">
-      <i class="fas fa-list"></i> List View
+    <a
+      href="{{
+        url_for('tickets.my_tickets')
+        if is_task_kanban and kanban_scope == 'my_tasks'
+        else url_for('tickets.developer_tasks')
+        if is_task_kanban
+        else url_for('tickets.index')
+      }}"
+      class="btn btn-outline-secondary mr-2"
+    >
+      <i class="fas fa-list"></i>
+      List View
     </a>
-    <a href="{{ url_for('tickets.gantt_view', scope=kanban_scope) if is_task_kanban else url_for('tickets.gantt_view') }}" class="btn btn-outline-primary mr-2">
-      <i class="fas fa-project-diagram"></i> Gantt
+
+    <a
+      href="{{ url_for('tickets.gantt_view', scope=kanban_scope) if is_task_kanban else url_for('tickets.gantt_view') }}"
+      class="btn btn-outline-primary mr-2"
+    >
+      <i class="fas fa-project-diagram"></i>
+      Gantt
     </a>
-    <a href="{{ url_for('tickets.calendar_view', scope=kanban_scope) if is_task_kanban else url_for('tickets.calendar_view') }}" class="btn btn-outline-info mr-2">
-      <i class="fas fa-calendar-alt"></i> Calendar
+
+    <a
+      href="{{ url_for('tickets.calendar_view', scope=kanban_scope) if is_task_kanban else url_for('tickets.calendar_view') }}"
+      class="btn btn-outline-info mr-2"
+    >
+      <i class="fas fa-calendar-alt"></i>
+      Calendar
     </a>
+
     {% if not is_task_kanban %}
-    <a href="{{ url_for('tickets.create') }}" class="btn btn-primary">
-      <i class="fas fa-plus"></i> New Ticket
-    </a>
+      <a
+        href="{{ url_for('tickets.create') }}"
+        class="btn btn-primary"
+      >
+        <i class="fas fa-plus"></i>
+        New Ticket
+      </a>
     {% endif %}
   </div>
 </div>
 {% endblock %}
 
-{% block extra_js %}
-{{ super() }}
-<div class="modal fade" id="kanbanResolvePromptModal" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-check-circle mr-2 text-success"></i>Send Client Prompt</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body">
-        Move this ticket to Fix/Completed? A prompt will be sent to the client for confirmation.
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="confirmKanbanResolvePromptBtn">Continue</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="modal fade" id="kanbanResolveSentModal" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="fas fa-paper-plane mr-2 text-primary"></i>Client Prompt Sent</h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body">
-        The client has been prompted to confirm this Fix/Completed ticket.
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" id="closeKanbanResolveSentBtn" data-dismiss="modal">OK</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-(function() {
-  var canDragKanban = {{ 'true' if current_user.role.value not in ['client', 'client_admin', 'sales'] else 'false' }};
-  var filterBy = document.getElementById('filter_by');
-  var engGroup = document.getElementById('engineer_filter_group');
-  var engTypeGroup = document.getElementById('engineer_type_filter_group');
-  var clientGroup = document.getElementById('client_filter_group');
-
-  var engSelect = document.getElementById('filter_value_engineer');
-  var engTypeSelect = document.getElementById('filter_user_type');
-  var clientSelect = document.getElementById('filter_value_client');
-
-  function syncEngineerOptions() {
-    if (!engSelect || !engTypeSelect) return;
-
-    var selectedType = engTypeSelect.value;
-    var currentValue = engSelect.getAttribute('data-current') || engSelect.value || '';
-
-    Array.from(engSelect.options).forEach(function(option, index) {
-      if (index === 0 || option.value === 'unassigned') {
-        option.hidden = false;
-        return;
-      }
-
-      var optionType = option.getAttribute('data-user-type') || '';
-      option.hidden = selectedType !== '' && optionType !== selectedType;
-    });
-
-    var selectedOption = engSelect.options[engSelect.selectedIndex];
-    if (selectedOption && selectedOption.hidden) {
-      engSelect.value = '';
-    } else if (currentValue) {
-      var match = Array.from(engSelect.options).find(function(opt) {
-        return opt.value === currentValue && !opt.hidden;
-      });
-      if (match) {
-        engSelect.value = currentValue;
-      }
-    }
-  }
-
-  function syncFilterControls() {
-    var mode = filterBy ? filterBy.value : '';
-    if (!engGroup || !engTypeGroup || !clientGroup || !engSelect || !engTypeSelect || !clientSelect) return;
-
-    engGroup.style.display = mode === 'assigned' ? '' : 'none';
-    engTypeGroup.style.display = mode === 'assigned' ? '' : 'none';
-    clientGroup.style.display = mode === 'client' ? '' : 'none';
-
-    engSelect.disabled = mode !== 'assigned';
-    engTypeSelect.disabled = mode !== 'assigned';
-    clientSelect.disabled = mode !== 'client';
-
-    if (mode !== 'assigned') {
-      engSelect.value = '';
-      engTypeSelect.value = '';
-    }
-
-    if (mode !== 'client') {
-      clientSelect.value = '';
-    }
-
-    syncEngineerOptions();
-  }
-
-  if (engTypeSelect) {
-    engTypeSelect.addEventListener('change', function() {
-      if (engSelect) {
-        engSelect.value = '';
-        engSelect.setAttribute('data-current', '');
-      }
-      syncEngineerOptions();
-    });
-  }
-
-  if (filterBy) {
-    filterBy.addEventListener('change', syncFilterControls);
-    syncFilterControls();
-  } else {
-    syncEngineerOptions();
-  }
-
-  if (!canDragKanban) return;
-
-  var draggedCard = null;
-  var willPromptClientOnResolve = {{ 'true' if not is_task_kanban and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() in ['it', 'support'])) else 'false' }};
-  var resolvePromptModal = document.getElementById('kanbanResolvePromptModal');
-  var resolveSentModal = document.getElementById('kanbanResolveSentModal');
-  var confirmResolvePromptBtn = document.getElementById('confirmKanbanResolvePromptBtn');
-  var pendingKanbanDrop = null;
-
-  function completeKanbanDrop(dropData) {
-    if (!dropData) return;
-
-    var formData = new FormData();
-    formData.append('column', dropData.targetStatus);
-
-    fetch(dropData.updateUrl, {
-      method: 'POST',
-      body: formData,
-      credentials: 'same-origin'
-    })
-    .then(function(response) {
-      if (!response.ok) throw new Error('Kanban update failed');
-      return response.json();
-    })
-    .then(function(payload) {
-      if (!(payload && payload.ok)) {
-        window.location.reload();
-        return;
-      }
-      if (dropData.targetStatus === 'resolved' && willPromptClientOnResolve && payload.client_prompt_sent && window.jQuery && $('#kanbanResolveSentModal').modal) {
-        $('#kanbanResolveSentModal').modal('show');
-        return;
-      }
-      window.location.reload();
-    })
-    .catch(function() {});
-  }
-
-  if (confirmResolvePromptBtn) {
-    confirmResolvePromptBtn.addEventListener('click', function() {
-      var dropData = pendingKanbanDrop;
-      pendingKanbanDrop = null;
-      if (window.jQuery && $('#kanbanResolvePromptModal').modal) {
-        $('#kanbanResolvePromptModal').modal('hide');
-      }
-      completeKanbanDrop(dropData);
-    });
-  }
-
-  if (window.jQuery && $('#kanbanResolvePromptModal').modal) {
-    $('#kanbanResolvePromptModal').on('hidden.bs.modal', function() {
-      pendingKanbanDrop = null;
-    });
-  }
-
-  if (window.jQuery && $('#kanbanResolveSentModal').modal) {
-    $('#kanbanResolveSentModal').on('hidden.bs.modal', function() {
-      window.location.reload();
-    });
-  }
-
-  document.querySelectorAll('.kanban-card[draggable="true"]').forEach(function(card) {
-    card.addEventListener('dragstart', function() {
-      draggedCard = card;
-      card.classList.add('is-dragging');
-    });
-
-    card.addEventListener('dragend', function() {
-      card.classList.remove('is-dragging');
-      draggedCard = null;
-      document.querySelectorAll('.kanban-cards.is-drop-target').forEach(function(zone) {
-        zone.classList.remove('is-drop-target');
-      });
-    });
-  });
-
-  document.querySelectorAll('.kanban-cards[data-status]').forEach(function(zone) {
-    zone.addEventListener('dragover', function(event) {
-      event.preventDefault();
-      zone.classList.add('is-drop-target');
-    });
-
-    zone.addEventListener('dragleave', function() {
-      zone.classList.remove('is-drop-target');
-    });
-
-    zone.addEventListener('drop', function(event) {
-      event.preventDefault();
-      zone.classList.remove('is-drop-target');
-      if (!draggedCard) return;
-
-      var ticketId = draggedCard.getAttribute('data-ticket-id');
-      var currentStatus = draggedCard.getAttribute('data-status');
-      var targetStatus = zone.getAttribute('data-status');
-      if (!ticketId || !targetStatus || currentStatus === targetStatus) return;
-
-      var updateUrl = draggedCard.getAttribute('data-update-url') || '{{ url_for("tickets.update_kanban_status", ticket_id=0) }}'.replace('0', ticketId);
-      if (targetStatus === 'resolved' && willPromptClientOnResolve && window.jQuery && $('#kanbanResolvePromptModal').modal) {
-        pendingKanbanDrop = {
-          updateUrl: updateUrl,
-          targetStatus: targetStatus
-        };
-        $('#kanbanResolvePromptModal').modal('show');
-        return;
-      }
-
-      completeKanbanDrop({
-        updateUrl: updateUrl,
-        targetStatus: targetStatus
-      });
-    });
-  });
-})();
-
-(function() {
-  document.querySelectorAll('.kanban-card[data-href]').forEach(function(card) {
-    card.addEventListener('contextmenu', function(event) {
-      if (event.target.closest('a, button, input, select, textarea, label')) {
-        return;
-      }
-      if (card.classList.contains('is-dragging')) {
-        return;
-      }
-      var href = card.getAttribute('data-href');
-      if (href) {
-        event.preventDefault();
-        window.open(href, '_blank', 'noopener');
-      }
-    });
-
-    card.addEventListener('click', function(event) {
-      if (event.target.closest('a, button, input, select, textarea, label')) {
-        return;
-      }
-      if (card.classList.contains('is-dragging')) {
-        return;
-      }
-      var href = card.getAttribute('data-href');
-      if (href) {
-        window.location.href = href;
-      }
-    });
-
-    card.addEventListener('keydown', function(event) {
-      if (event.key !== 'Enter' && event.key !== ' ') {
-        return;
-      }
-      event.preventDefault();
-      var href = card.getAttribute('data-href');
-      if (href) {
-        window.location.href = href;
-      }
-    });
-  });
-})();
-</script>
-{% endblock %}
 
 {% block extra_css %}
 {{ super() }}
+
+<link
+  rel="stylesheet"
+  href="{{ url_for('static', filename='css/kanban.css') }}"
+>
 <style>
-.kanban-wrapper {
-  overflow-x: auto;
-  padding-bottom: 8px;
-}
-.kanban-board {
-  display: flex;
-  gap: 16px;
-  align-items: stretch;
-  min-width: 1100px;
-}
-.kanban-column {
-  background: var(--surface);
-  border: 1px solid var(--surface-border);
-  border-radius: 12px;
-  box-shadow: var(--surface-shadow);
-  flex: 0 0 260px;
-}
-.kanban-column header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--surface-border);
-  background-color: #5d9eff21;
-}
-.kanban-column header h5 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 700;
-}
-.kanban-count {
-  background: #ffffff;
-  color: var(--primary);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-weight: 600;
-  font-size: 13px;
-}
-.kanban-cards {
-  padding: 12px;
-  max-height: 70vh;
-  overflow-y: auto;
-  min-height: 120px;
-  transition: background-color 0.18s ease, box-shadow 0.18s ease;
-}
-.kanban-card {
-  border: 1px solid #e7ecf5;
-  border-radius: 10px;
-  padding: 10px 12px;
-  margin-bottom: 10px;
-  background: #fff;
-  box-shadow: 0 4px 12px rgba(15, 70, 140, 0.05);
-}
-.kanban-card.is-clickable {
-  cursor: pointer;
-}
-.kanban-card[draggable="true"] {
-  cursor: grab;
-}
-.kanban-card.is-dragging {
-  opacity: 0.55;
-  transform: rotate(1deg);
-}
-.kanban-cards.is-drop-target {
-  background: #eef6ff;
-  box-shadow: inset 0 0 0 2px #8bb8ff;
-  border-radius: 10px;
-}
-.kanban-card .title {
-  font-weight: 600;
-  font-size: 14px;
-  margin-bottom: 6px;
-}
-.kanban-card .meta {
-  font-size: 12px;
-  color: #6c757d;
-}
-.badge-light {
-  background: #f1f3f5;
-  color: #4b5563;
-}
-.overdue-badge {
-  background: #ffe8e6;
-  color: #c0392b;
-}
+  .kanban-task-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .kanban-task-list-empty {
+    margin: 0;
+    color: #6c757d;
+  }
+
+  .kanban-task-list-item {
+    display: block;
+    padding: 0.9rem 1rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.5rem;
+    color: inherit;
+    text-decoration: none;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .kanban-task-list-item:hover {
+    color: inherit;
+    text-decoration: none;
+    background: #f8f9fa;
+    border-color: #adb5bd;
+  }
+
+  .kanban-task-list-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.875rem;
+  }
+
+  .kanban-task-list-subject {
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .kanban-task-list-assignee {
+    margin-top: 0.35rem;
+    color: #6c757d;
+    font-size: 0.875rem;
+  }
 </style>
 {% endblock %}
+
 
 {% block content %}
 <div class="card">
   <div class="card-body">
-    <form method="get" class="form-inline mb-3 flex-wrap">
-      <label for="filter_by" class="mr-2 font-weight-bold">Filter By</label>
-      <select name="filter_by" id="filter_by" class="form-control mr-2 mb-2">
-        <option value="" {% if not selected_filter.filter_by %}selected{% endif %}>{{ 'All Tasks' if is_task_kanban else 'All Tickets' }}</option>
-        <option value="my" {% if selected_filter.filter_by == 'my' %}selected{% endif %}>{{ 'My Tasks' if is_task_kanban else 'My Tickets' }}</option>
-        <option value="assigned" {% if selected_filter.filter_by == 'assigned' %}selected{% endif %}>Assigned</option>
-        <option value="client" {% if selected_filter.filter_by == 'client' %}selected{% endif %}>Client</option>
-      </select>
-      {% if is_task_kanban %}
-      <input type="hidden" name="scope" value="{{ kanban_scope or 'my_tasks' }}">
-      {% endif %}
 
-      <div id="engineer_type_filter_group" class="mr-2 mb-2">
-        <select name="filter_user_type" id="filter_user_type" class="form-control">
-          <option value="">All User Types</option>
-          <option value="IT" {% if selected_filter.filter_user_type == 'IT' %}selected{% endif %}>IT</option>
-          <option value="ENGINEER" {% if selected_filter.filter_user_type == 'ENGINEER' %}selected{% endif %}>ENGINEER</option>
-        </select>
+    {% include "tickets/_kanban_filters.html" %}
+
+    {% include "tickets/_kanban_board.html" %}
+
+  </div>
+</div>
+
+
+<div
+  class="modal fade"
+  id="kanbanTicketTasksModal"
+  tabindex="-1"
+  role="dialog"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered modal-lg" role="document">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title" id="kanbanTicketTasksModalTitle">
+          <i class="fas fa-tasks mr-2 text-primary"></i>
+          Ticket Tasks
+        </h5>
+
+        <button
+          type="button"
+          class="close"
+          data-dismiss="modal"
+          aria-label="Close"
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
       </div>
 
-      <div id="engineer_filter_group" class="mr-2 mb-2">
-        <select name="filter_value" id="filter_value_engineer" class="form-control" data-current="{{ selected_filter.filter_value or '' }}">
-          <option value="">Select assigned user</option>
-          <option value="unassigned" {% if selected_filter.filter_by == 'assigned' and selected_filter.filter_value == 'unassigned' %}selected{% endif %}>Unassigned</option>
-          {% for eng in engineers %}
-            <option
-              value="{{ eng.id }}"
-              data-user-type="{{ (eng.user_type or '')|upper }}"
-              {% if selected_filter.filter_by == 'assigned' and selected_filter.filter_value == eng.id|string %}selected{% endif %}>
-              {{ eng.full_name or eng.username }}{% if eng.user_type %} - {{ eng.user_type|upper }}{% endif %}
-            </option>
-          {% endfor %}
-        </select>
+      <div class="modal-body">
+        <div id="kanbanTicketTasksModalBody" class="kanban-task-list"></div>
       </div>
 
-      <div id="client_filter_group" class="mr-2 mb-2">
-        <select name="filter_value" id="filter_value_client" class="form-control">
-          <option value="">Select client</option>
-          {% for c in clients %}
-            <option value="{{ c.id }}" {% if selected_filter.filter_by == 'client' and selected_filter.filter_value == c.id|string %}selected{% endif %}>
-              {{ c.name }}{% if c.client_code %} - {{ c.client_code }}{% endif %}
-            </option>
-          {% endfor %}
-        </select>
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          data-dismiss="modal"
+        >
+          Close
+        </button>
       </div>
 
-      <button type="submit" class="btn btn-primary mr-2 mb-2">
-        <i class="fas fa-filter"></i> Apply
-      </button>
-      <a href="{{ url_for('tickets.kanban', scope=kanban_scope) if is_task_kanban else url_for('tickets.kanban') }}" class="btn btn-secondary mb-2">Reset</a>
-    </form>
-
-    <div class="kanban-wrapper">
-      <div class="kanban-board">
-        {% for column_title, ticket_list in columns %}
-        {% set drop_status = 'backlog' if column_title == 'Backlog' else 'open' if column_title == 'New Task' else 'in_progress' if column_title == 'In-Progress' else 'resolved' if column_title == 'Completed' else '' %}
-        <div class="kanban-column">
-          <header>
-            <h5>{{ column_title }}</h5>
-            <span class="kanban-count">{{ ticket_list|length }}</span>
-          </header>
-          <div class="kanban-cards" {% if drop_status and current_user.role.value not in ['client', 'client_admin', 'sales'] %}data-status="{{ drop_status }}"{% endif %}>
-            {% for t in ticket_list %}
-          {% set status_value = t.status.value if t.status else '' %}
-          {% set badge = 'secondary' %}
-          {% if status_value in ['resolved'] %}
-            {% set badge = 'success' %}
-          {% elif status_value in ['closed'] %}
-            {% set badge = 'dark' %}
-          {% elif status_value in ['in_progress'] %}
-            {% set badge = 'primary' %}
-          {% elif status_value in ['reopened'] %}
-            {% set badge = 'warning' %}
-          {% endif %}
-          {% set is_overdue = t.target_date and t.target_date < today and t.status not in [TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.CANCELLED] %}
-          {% set priority_value = t.priority.value if t.priority else '' %}
-          {% set priority_badge = 'secondary' if priority_value == '' else 'danger' if priority_value == 'critical' else 'warning' if priority_value == 'high' else 'info' if priority_value == 'medium' else 'secondary' %}
-          {% set latest_log = (t.service_logs|sort(attribute='created_at'))[-1] if t.service_logs else None %}
-          <div class="kanban-card is-clickable" tabindex="0" role="button" aria-label="Open {{ t.ticket_no }}" data-href="{{ url_for('tickets.task_detail', task_id=t.id) if is_task_kanban else url_for('tickets.detail', ticket_id=t.id) }}" {% if current_user.role.value not in ['client', 'client_admin', 'sales'] and status_value != 'closed' %}draggable="true" data-ticket-id="{{ t.id }}" data-update-url="{{ url_for('tickets.update_task_kanban_status', task_id=t.id) if is_task_kanban else url_for('tickets.update_kanban_status', ticket_id=t.id) }}" data-status="{{ drop_status or status_value }}"{% endif %}>
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <div class="title">
-                {{ t.ticket_no }}
-              </div>
-              <span class="badge badge-{{ badge }}">
-                {{ status_labels.get(t.status, status_value.replace('_', ' ')|title) }}
-              </span>
-            </div>
-            <div class="meta">{{ t.subject or 'No subject' }}</div>
-            <div class="meta mt-1">
-              <i class="fas fa-building mr-1"></i>{{ t.client.name if t.client else 'No client' }}
-            </div>
-            {% if current_user.role.value not in ['client', 'client_admin'] %}
-            <div class="meta mt-1 d-flex justify-content-between">
-              {% if t.assigned_engineer or is_task_kanban %}
-              <span><i class="fas fa-user-cog mr-1"></i>{{ (t.assigned_engineer.full_name or t.assigned_engineer.username) if t.assigned_engineer else 'Unassigned' }}</span>
-              {% endif %}
-              {% if t.assigned_engineer and t.assigned_engineer.user_type %}
-                <span class="badge badge-light">{{ t.assigned_engineer.user_type|upper }}</span>
-              {% endif %}
-            </div>
-            {% endif %}
-            <div class="meta mt-1">
-              {% if t.ticket_for == 'app' %}
-                <i class="fas fa-laptop mr-1"></i>{{ t.app.code if t.app else 'No app' }}
-              {% else %}
-                <i class="fas fa-vials mr-1"></i>{{ t.instrument.code if t.instrument else 'No instrument' }}
-              {% endif %}
-            </div>
-            {% if latest_log and latest_log.service_type %}
-              <div class="meta mt-1">
-                <i class="fas fa-cogs mr-1"></i>{{ latest_log.service_type|capitalize }}
-              </div>
-            {% endif %}
-            <div class="d-flex justify-content-between align-items-center mt-2">
-              <span class="badge badge-{{ priority_badge }}">
-                {{ priority_value|upper if priority_value else 'N/A' }}
-              </span>
-              {% if t.target_date %}
-                <span class="badge {{ 'overdue-badge' if is_overdue else 'badge-light' }}">
-                  Target: {{ t.target_date.strftime('%Y-%m-%d') }}
-                </span>
-              {% else %}
-                <span class="text-muted small">No target date</span>
-              {% endif %}
-            </div>
-            <div class="meta mt-2 d-flex justify-content-between align-items-center">
-              <span><i class="fas fa-clock mr-1"></i>{{ local_naive_to_localtime(t.created_at).strftime('%Y-%m-%d') if t.created_at else '' }}</span>
-              {% if t.ticket_for == 'app' %}
-                <span class="badge badge-primary">CDS App</span>
-              {% else %}
-                <span class="badge badge-info">Instrument</span>
-              {% endif %}
-            </div>
-          </div>
-            {% else %}
-            <div class="text-muted small text-center">Nothing here yet.</div>
-            {% endfor %}
-          </div>
-        </div>
-        {% endfor %}
-      </div>
     </div>
   </div>
 </div>
+
+
+<div
+  class="modal fade"
+  id="kanbanResolvePromptModal"
+  tabindex="-1"
+  role="dialog"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="fas fa-check-circle mr-2 text-success"></i>
+          Send Client Prompt
+        </h5>
+
+        <button
+          type="button"
+          class="close"
+          data-dismiss="modal"
+          aria-label="Close"
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        Move this ticket to Fix/Completed?
+        A prompt will be sent to the client for confirmation.
+      </div>
+
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-outline-secondary"
+          data-dismiss="modal"
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="confirmKanbanResolvePromptBtn"
+        >
+          Continue
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<div
+  class="modal fade"
+  id="kanbanResolveSentModal"
+  tabindex="-1"
+  role="dialog"
+  aria-hidden="true"
+>
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="fas fa-paper-plane mr-2 text-primary"></i>
+          Client Prompt Sent
+        </h5>
+
+        <button
+          type="button"
+          class="close"
+          data-dismiss="modal"
+          aria-label="Close"
+        >
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        The client has been prompted to confirm this
+        Fix/Completed ticket.
+      </div>
+
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-primary"
+          id="closeKanbanResolveSentBtn"
+          data-dismiss="modal"
+        >
+          OK
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+
+{% block extra_js %}
+{{ super() }}
+
+<script>
+  window.KANBAN_CONFIG = {
+    canDrag: {{ 'true' if current_user.role.value not in ['client', 'client_admin', 'sales'] else 'false' }},
+    willPromptClientOnResolve: {{ 'true' if not is_task_kanban and (
+      current_user.role.value == 'admin'
+      or (
+        current_user.role.value == 'engineer'
+        and (current_user.user_type or '').lower() in ['it', 'support']
+      )
+    ) else 'false' }}
+  };
+</script>
+
+<script src="{{ url_for('static', filename='js/kanban.js') }}"></script>
 {% endblock %}

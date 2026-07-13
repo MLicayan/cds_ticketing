@@ -237,8 +237,8 @@
     <a href="{{ url_for('tickets.developer_workload') }}" class="btn btn-outline-primary mr-2">
       <i class="fas fa-chart-pie"></i> Workload
     </a>
-    <a href="{{ url_for('tickets.index') }}" class="btn btn-secondary">
-      <i class="fas fa-ticket-alt"></i> Tickets
+    <a href="{{ url_for('tickets.kanban', scope='tasks') }}" class="btn btn-secondary">
+      <i class="fas fa-th-large"></i> Kanban
     </a>
   </div>
 </div>

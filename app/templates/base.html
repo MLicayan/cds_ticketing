@@ -10,7 +10,6 @@
   <!-- AdminLTE & dependencies (CDN) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.4/css/all.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/overlayScrollbars/css/OverlayScrollbars.min.css">
   <link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/dataTables.bootstrap4.min.css">
 
   {% block extra_css %}{% endblock %}
@@ -790,7 +789,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.0/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/overlayScrollbars/js/jquery.overlayScrollbars.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/js/adminlte.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.8/js/dataTables.bootstrap4.min.js"></script>
@@ -804,9 +802,7 @@
 <script src="{{ url_for('static', filename='js/cerebro_socket.js') }}"></script>
 <script>
   document.addEventListener('DOMContentLoaded', function () {
-    const workdayPromptStateUrl = {{ url_for('tickets.task_workday_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
     const workdayPromptPauseUrl = {{ url_for('tickets.task_workday_prompt_pause')|tojson if current_user.is_authenticated else 'null' }};
-    const resolutionPromptStateUrl = {{ url_for('tickets.ticket_resolution_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
     const workdayPromptModalEl = document.getElementById('workdayTaskPromptModal');
     const workdayPromptList = document.getElementById('workdayTaskPromptList');
     const workdayPromptEmpty = document.getElementById('workdayTaskPromptEmpty');
@@ -819,7 +815,6 @@
     const resolutionPromptOpenLink = document.getElementById('ticketResolutionPromptOpenLink');
     const resolutionPromptList = document.getElementById('ticketResolutionPromptList');
     const resolutionPromptEmpty = document.getElementById('ticketResolutionPromptEmpty');
-    const developerPromptStateUrl = {{ url_for('tickets.developer_prompt_state')|tojson if current_user.is_authenticated else 'null' }};
     const developerPromptRespondUrlTemplate = {{ url_for('tickets.respond_developer_prompt', prompt_id=0)|tojson if current_user.is_authenticated else 'null' }};
     const developerPromptModalEl = document.getElementById('developerPromptResponseModal');
     const developerPromptTitle = document.getElementById('developerPromptTitle');
@@ -836,6 +831,38 @@
     const resolutionPromptSeenKey = 'ticket-resolution-prompt-seen';
     const notificationSoundVolumeKey = 'notification-sound-volume';
     const canHearNewTicketSound = {{ 'true' if current_user.is_authenticated and (current_user.role.value == 'admin' or (current_user.role.value == 'engineer' and (current_user.user_type or '').lower() == 'support')) else 'false' }};
+    const promptPollers = [];
+
+    function runVisiblePollers() {
+      if (document.hidden) {
+        return;
+      }
+      promptPollers.forEach(function(runPoller) {
+        runPoller();
+      });
+    }
+
+    function registerVisiblePoller(callback, intervalMs, immediateDelays) {
+      if (typeof callback !== 'function') {
+        return;
+      }
+
+      const runPoller = function() {
+        if (document.hidden) {
+          return;
+        }
+        callback();
+      };
+
+      promptPollers.push(runPoller);
+      runPoller();
+
+      (immediateDelays || []).forEach(function(delay) {
+        window.setTimeout(runPoller, delay);
+      });
+
+      window.setInterval(runPoller, intervalMs);
+    }
 
     function getNotificationSoundVolume() {
       try {
@@ -980,40 +1007,30 @@
       workdayPromptHelp.innerHTML = 'Choose <strong>Yes</strong> to keep working, or <strong>No</strong> to pause your active tasks.';
     }
 
-    async function maybeShowWorkdayPrompt() {
-      if (!workdayPromptStateUrl || !workdayPromptModalEl || workdayPromptOpen) {
+    function maybeShowWorkdayPrompt(payload) {
+      if (!workdayPromptModalEl || workdayPromptOpen) {
         return;
       }
 
+      if (!payload || !payload.count) {
+        return;
+      }
+      workdayPromptDate = payload.prompt_date || currentWorkdayPromptDate();
       try {
-        const response = await fetch(workdayPromptStateUrl, {
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        if (!response.ok) {
+        if (sessionStorage.getItem(workdayPromptStorageKey(workdayPromptDate))) {
           return;
-        }
-        const payload = await response.json();
-        if (!payload || !payload.count) {
-          return;
-        }
-        workdayPromptDate = payload.prompt_date || currentWorkdayPromptDate();
-        try {
-          if (sessionStorage.getItem(workdayPromptStorageKey(workdayPromptDate))) {
-            return;
-          }
-        } catch (err) {
-        }
-        renderWorkdayPromptTasks(payload.tasks || []);
-        updateWorkdayPromptCopy(Boolean(payload.is_overdue), workdayPromptDate);
-        workdayPromptOpen = true;
-        if (window.jQuery && $('#workdayTaskPromptModal').modal) {
-          $('#workdayTaskPromptModal').modal({
-            backdrop: 'static',
-            keyboard: false
-          });
-          $('#workdayTaskPromptModal').modal('show');
         }
       } catch (err) {
+      }
+      renderWorkdayPromptTasks(payload.tasks || []);
+      updateWorkdayPromptCopy(Boolean(payload.is_overdue), workdayPromptDate);
+      workdayPromptOpen = true;
+      if (window.jQuery && $('#workdayTaskPromptModal').modal) {
+        $('#workdayTaskPromptModal').modal({
+          backdrop: 'static',
+          keyboard: false
+        });
+        $('#workdayTaskPromptModal').modal('show');
       }
     }
 
@@ -1060,10 +1077,6 @@
       workdayPromptModalEl.addEventListener('hidden.bs.modal', function() {
         workdayPromptOpen = false;
       });
-      maybeShowWorkdayPrompt();
-      setTimeout(maybeShowWorkdayPrompt, 1000);
-      setTimeout(maybeShowWorkdayPrompt, 3000);
-      setInterval(maybeShowWorkdayPrompt, 60000);
     }
 
     function showTicketResolutionPrompt(payload) {
@@ -1130,18 +1143,6 @@
       }).filter(Boolean).join(',');
     }
 
-    function shouldSkipResolutionPrompt(payload) {
-      const signature = resolutionPromptSignature(payload);
-      if (!signature) {
-        return true;
-      }
-      try {
-        return sessionStorage.getItem(resolutionPromptSeenKey) === signature;
-      } catch (err) {
-        return false;
-      }
-    }
-
     function markResolutionPromptSeen(payload) {
       const signature = resolutionPromptSignature(payload);
       if (!signature) {
@@ -1153,24 +1154,18 @@
       }
     }
 
-    async function fetchResolutionPromptState() {
-      if (!resolutionPromptStateUrl || !resolutionPromptOpenLink) {
-        return;
+    function shouldSkipResolutionPrompt(payload) {
+      if (payload && payload.source === 'support_prompt') {
+        return false;
+      }
+      const signature = resolutionPromptSignature(payload);
+      if (!signature) {
+        return true;
       }
       try {
-        const response = await fetch(resolutionPromptStateUrl, {
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        if (!response.ok) {
-          return;
-        }
-        const payload = await response.json();
-        if (!payload || !payload.count || shouldSkipResolutionPrompt(payload)) {
-          return;
-        }
-        markResolutionPromptSeen(payload);
-        showTicketResolutionPrompt(payload);
+        return sessionStorage.getItem(resolutionPromptSeenKey) === signature;
       } catch (err) {
+        return false;
       }
     }
 
@@ -1196,25 +1191,6 @@
       }
       if (window.jQuery && $('#developerPromptResponseModal').modal) {
         $('#developerPromptResponseModal').modal('show');
-      }
-    }
-
-    async function fetchDeveloperPromptState() {
-      if (!developerPromptStateUrl || !developerPromptModalEl) {
-        return;
-      }
-      try {
-        const response = await fetch(developerPromptStateUrl, {
-          headers: { 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        if (!response.ok) {
-          return;
-        }
-        const payload = await response.json();
-        if (payload && payload.prompt) {
-          showDeveloperPrompt(payload);
-        }
-      } catch (err) {
       }
     }
 
@@ -1262,17 +1238,9 @@
       });
     }
 
-    if (developerPromptModalEl) {
-      fetchDeveloperPromptState();
-      setTimeout(fetchDeveloperPromptState, 1500);
-      setInterval(fetchDeveloperPromptState, 60000);
-    }
-
-    if (resolutionPromptOpenLink) {
-      fetchResolutionPromptState();
-      setTimeout(fetchResolutionPromptState, 1200);
-      setInterval(fetchResolutionPromptState, 60000);
-    }
+    document.addEventListener('visibilitychange', function() {
+      runVisiblePollers();
+    });
 
     const notificationRoot = document.getElementById('header-client-comment-notification');
     if (notificationRoot && window.io) {
@@ -1431,6 +1399,9 @@
         renderNotificationSnapshot(payload);
       });
       notificationSocket.on('ticket_resolution_prompt', function(payload) {
+        if (shouldSkipResolutionPrompt(payload)) {
+          return;
+        }
         playNotificationSound('notification');
         markResolutionPromptSeen(payload);
         showTicketResolutionPrompt(payload);
@@ -1438,6 +1409,14 @@
       notificationSocket.on('developer_prompt', function(payload) {
         playNotificationSound('notification');
         showDeveloperPrompt(payload);
+      });
+      notificationSocket.on('developer_prompt_snapshot', function(payload) {
+        if (payload && payload.prompt) {
+          showDeveloperPrompt(payload);
+        }
+      });
+      notificationSocket.on('workday_prompt_state', function(payload) {
+        maybeShowWorkdayPrompt(payload);
       });
       notificationSocket.on('ticket_changed', function(payload) {
         if (canHearNewTicketSound && payload && payload.action === 'created' && !payload.parent_ticket_id) {

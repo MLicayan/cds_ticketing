@@ -1,0 +1,178 @@
+<form method="get" class="form-inline mb-3 flex-wrap">
+  <label for="filter_by" class="mr-2 font-weight-bold">
+    Filter By
+  </label>
+
+  <select
+    name="filter_by"
+    id="filter_by"
+    class="form-control mr-2 mb-2"
+  >
+    <option
+      value=""
+      {% if not selected_filter.filter_by %}selected{% endif %}
+    >
+      {{ 'All Tasks' if is_task_kanban else 'All Tickets' }}
+    </option>
+
+    <option
+      value="my"
+      {% if selected_filter.filter_by == 'my' %}selected{% endif %}
+    >
+      {{ 'My Tasks' if is_task_kanban else 'My Tickets' }}
+    </option>
+
+    <option
+      value="assigned"
+      {% if selected_filter.filter_by == 'assigned' %}selected{% endif %}
+    >
+      Assigned
+    </option>
+
+    <option
+      value="client"
+      {% if selected_filter.filter_by == 'client' %}selected{% endif %}
+    >
+      Client
+    </option>
+  </select>
+
+  {% if is_task_kanban %}
+    <input
+      type="hidden"
+      name="scope"
+      value="{{ kanban_scope or 'my_tasks' }}"
+    >
+  {% endif %}
+
+  <div id="engineer_type_filter_group" class="mr-2 mb-2">
+    <select
+      name="filter_user_type"
+      id="filter_user_type"
+      class="form-control"
+    >
+      <option value="">All User Types</option>
+
+      <option
+        value="IT"
+        {% if selected_filter.filter_user_type == 'IT' %}selected{% endif %}
+      >
+        IT
+      </option>
+
+      <option
+        value="ENGINEER"
+        {% if selected_filter.filter_user_type == 'ENGINEER' %}selected{% endif %}
+      >
+        ENGINEER
+      </option>
+    </select>
+  </div>
+
+  <div id="engineer_filter_group" class="mr-2 mb-2">
+    <select
+      name="filter_value"
+      id="filter_value_engineer"
+      class="form-control"
+      data-current="{{ selected_filter.filter_value or '' }}"
+    >
+      <option value="">Select assigned user</option>
+
+      <option
+        value="unassigned"
+        {% if selected_filter.filter_by == 'assigned'
+          and selected_filter.filter_value == 'unassigned' %}
+          selected
+        {% endif %}
+      >
+        Unassigned
+      </option>
+
+      {% for eng in engineers %}
+        <option
+          value="{{ eng.id }}"
+          data-user-type="{{ (eng.user_type or '')|upper }}"
+          {% if selected_filter.filter_by == 'assigned'
+            and selected_filter.filter_value == eng.id|string %}
+            selected
+          {% endif %}
+        >
+          {{ eng.full_name or eng.username }}
+
+          {% if eng.user_type %}
+            - {{ eng.user_type|upper }}
+          {% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div id="client_filter_group" class="mr-2 mb-2">
+    <select
+      name="filter_value"
+      id="filter_value_client"
+      class="form-control"
+    >
+      <option value="">Select client</option>
+
+      {% for c in clients %}
+        <option
+          value="{{ c.id }}"
+          {% if selected_filter.filter_by == 'client'
+            and selected_filter.filter_value == c.id|string %}
+            selected
+          {% endif %}
+        >
+          {{ c.name }}
+
+          {% if c.client_code %}
+            - {{ c.client_code }}
+          {% endif %}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="mr-2 mb-2">
+    <input
+      type="date"
+      name="created_from"
+      id="created_from"
+      class="form-control"
+      value="{{ selected_filter.created_from or '' }}"
+      title="Created from"
+      placeholder="Created from"
+    >
+  </div>
+
+  <div class="mr-2 mb-2">
+    <input
+      type="date"
+      name="created_to"
+      id="created_to"
+      class="form-control"
+      value="{{ selected_filter.created_to or '' }}"
+      title="Created to"
+      placeholder="Created to"
+    >
+  </div>
+
+  <button
+    type="submit"
+    class="btn btn-primary mr-2 mb-2"
+  >
+    <i class="fas fa-filter"></i>
+    Apply
+  </button>
+
+  <a
+    href="{{
+      url_for('tickets.kanban', scope=kanban_scope)
+      if is_task_kanban
+      else url_for('tickets.kanban')
+    }}"
+    class="btn btn-secondary mb-2"
+  >
+    Reset
+  </a>
+</form>

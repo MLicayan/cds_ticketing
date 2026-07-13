@@ -44,3 +44,24 @@ def join_ticket_detail(data):
 def join_header_notifications():
     if current_user.is_authenticated:
         join_room(f"user_notifications:{current_user.id}")
+        from .tickets import (
+            _pending_client_resolution_prompt_state_for_user,
+            _emit_workday_prompt_state_for_user,
+            _pending_developer_prompt_state_for_user,
+        )
+
+        resolution_prompt_payload = _pending_client_resolution_prompt_state_for_user(current_user)
+        if resolution_prompt_payload.get("count"):
+            resolution_prompt_payload["source"] = "login_snapshot"
+            socketio.emit(
+                "ticket_resolution_prompt",
+                resolution_prompt_payload,
+                room=f"user_notifications:{current_user.id}",
+            )
+
+        socketio.emit(
+            "developer_prompt_snapshot",
+            _pending_developer_prompt_state_for_user(current_user),
+            room=f"user_notifications:{current_user.id}",
+        )
+        _emit_workday_prompt_state_for_user(current_user)

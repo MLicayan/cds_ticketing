@@ -38,7 +38,7 @@
           </div>
           <div class="form-group mb-0">
             <label for="contact_number">Contact Number</label>
-            <input id="contact_number" name="contact_number" class="form-control" value="{{ current_user.contact_number or '' }}" required>
+            <input id="contact_number" name="contact_number" class="form-control" value="{{ current_user.contact_number or '' }}" required maxlength="11" pattern="\d{11}" inputmode="numeric" title="Enter exactly 11 digits">
           </div>
         </div>
         <div class="card-footer">
@@ -148,7 +148,7 @@
               </div>
               <div class="form-group">
                 <label>Contact Number</label>
-                <input name="contact_number" class="form-control" value="{{ client.contact_number or '' }}">
+                <input name="contact_number" class="form-control" value="{{ client.contact_number or '' }}" maxlength="11" pattern="\d{11}" inputmode="numeric" title="Enter exactly 11 digits">
               </div>
               <div class="form-group">
                 <label>Email</label>
@@ -233,7 +233,7 @@
           <input name="full_name" class="form-control" placeholder="Full name" required>
         </div>
         <div class="form-group col-md-2">
-          <input name="contact_number" class="form-control" placeholder="Contact number" required>
+          <input name="contact_number" class="form-control" placeholder="Contact number" required maxlength="11" pattern="\d{11}" inputmode="numeric" title="Enter exactly 11 digits">
         </div>
         <div class="form-group col-md-2">
           <input type="password" name="password" class="form-control" placeholder="Password" required>
@@ -263,12 +263,12 @@
             <form method="post" action="{{ url_for('profile.update_user', user_id=u.id) }}">
               <td><input name="full_name" class="form-control form-control-sm" value="{{ u.full_name or '' }}"></td>
               <td><input name="username" class="form-control form-control-sm" value="{{ u.username }}" required></td>
-              <td><input name="contact_number" class="form-control form-control-sm" value="{{ u.contact_number or '' }}"></td>
+              <td><input name="contact_number" class="form-control form-control-sm" value="{{ u.contact_number or '' }}" required maxlength="11" pattern="\d{11}" inputmode="numeric" title="Enter exactly 11 digits"></td>
               <td><input type="password" name="password" class="form-control form-control-sm" placeholder="New password (optional)"></td>
               <td class="text-right">
                 <div class="d-flex">
                   <button type="submit" class="btn btn-sm btn-outline-primary mr-1">Save</button>
-                  <button type="submit" formaction="{{ url_for('profile.delete_user', user_id=u.id) }}" formmethod="post" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this user?');">
+                  <button type="submit" formaction="{{ url_for('profile.delete_user', user_id=u.id) }}" formmethod="post" formnovalidate class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this user?');">
                     Delete
                   </button>
                 </div>

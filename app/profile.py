@@ -8,6 +8,11 @@ from .models import Client, Instrument, User, UserRole
 profile_bp = Blueprint("profile", __name__, template_folder="templates")
 
 
+def _is_valid_contact_number(value: str) -> bool:
+    value = (value or "").strip()
+    return len(value) == 11 and value.isdigit()
+
+
 def client_admin_required():
     if not current_user.is_authenticated or current_user.role != UserRole.CLIENT_ADMIN:
         abort(403)
@@ -32,7 +37,7 @@ def index():
         client.client_code = request.form.get("client_code")
         client.address = request.form.get("address")
         client.contact_person = request.form.get("contact_person")
-        client.contact_number = request.form.get("contact_number")
+        client_contact_number = (request.form.get("contact_number") or "").strip()
         client.email = request.form.get("email")
 
         if not client.name:
@@ -44,6 +49,17 @@ def index():
                 apps=apps,
                 instruments=instruments,
             )
+        if client_contact_number and not _is_valid_contact_number(client_contact_number):
+            flash("Contact number must be exactly 11 digits.", "danger")
+            return render_template(
+                "profile/index.html",
+                client=client,
+                client_users=[u for u in client.users if u.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN)],
+                apps=apps,
+                instruments=instruments,
+            )
+
+        client.contact_number = client_contact_number
 
         db.session.commit()
         flash("Profile updated.", "success")
@@ -68,6 +84,9 @@ def update_account():
         return redirect(url_for("profile.index"))
     if not contact_number:
         flash("Contact number is required.", "danger")
+        return redirect(url_for("profile.index"))
+    if not _is_valid_contact_number(contact_number):
+        flash("Contact number must be exactly 11 digits.", "danger")
         return redirect(url_for("profile.index"))
 
     current_user.full_name = full_name
@@ -112,6 +131,10 @@ def add_user():
         errors.append("Password is required.")
     if username and User.query.filter_by(username=username).first():
         errors.append("Username already exists.")
+    if not contact_number:
+        errors.append("Contact number is required.")
+    elif not _is_valid_contact_number(contact_number):
+        errors.append("Contact number must be exactly 11 digits.")
 
     if errors:
         for msg in errors:
@@ -152,6 +175,10 @@ def update_user(user_id):
     existing = User.query.filter(User.username == username, User.id != user.id).first()
     if existing:
         errors.append("Username already exists.")
+    if not contact_number:
+        errors.append("Contact number is required.")
+    elif not _is_valid_contact_number(contact_number):
+        errors.append("Contact number must be exactly 11 digits.")
 
     if errors:
         for msg in errors:

@@ -4,8 +4,8 @@
     if (!window.cerebroSocket) {
       const options = window.CEREBRO_SOCKET_OPTIONS || {};
       const socket = io({
-        transports: options.transports || ["polling"],
-        upgrade: options.upgrade === undefined ? false : Boolean(options.upgrade),
+        transports: options.transports || ["polling", "websocket"],
+        upgrade: options.upgrade === undefined ? true : Boolean(options.upgrade),
       });
       window.cerebroSocket = socket;
     }
