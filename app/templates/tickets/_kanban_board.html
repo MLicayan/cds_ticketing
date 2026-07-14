@@ -76,12 +76,18 @@
             {% if is_task_kanban %}
               {% set task_summary = t %}
             {% elif t.tasks %}
-              {% set task_summary = (t.tasks|sort(attribute='created_at', reverse=true))[0] %}
+              {% set resolved_tasks = t.tasks|selectattr('status', 'equalto', TicketStatus.RESOLVED)|list %}
+              {% if resolved_tasks %}
+                {% set task_summary = (resolved_tasks|sort(attribute='created_at', reverse=true))[0] %}
+              {% endif %}
             {% endif %}
             {% set task_summary_status =
               render_status_label(task_summary)
               if task_summary
               else 'No Task'
+            %}
+            {% set task_summary_is_resolved =
+              task_summary and task_summary.status == TicketStatus.RESOLVED
             %}
             {% set application_name = 'N/A' %}
             {% if t.ticket_for == 'app' %}
@@ -196,11 +202,11 @@
 
               <div class="kanban-card-row">
                 <span class="kanban-card-label">Task Number - Task Status</span>
-                <span class="kanban-card-value">
+                <span class="kanban-card-value {% if task_summary_is_resolved %}text-success font-weight-bold{% endif %}">
                   {% if task_summary %}
                     {{ task_summary.ticket_no }} - {{ task_summary_status }}
                   {% else %}
-                    N/A - No Task
+                    
                   {% endif %}
                 </span>
               </div>
@@ -219,7 +225,7 @@
 
               {% if not is_task_kanban %}
                 <div class="d-none kanban-ticket-tasks-source" aria-hidden="true">
-                  {% for task in t.tasks|sort(attribute='created_at', reverse=true) %}
+                  {% for task in t.tasks|rejectattr('status', 'equalto', TicketStatus.CANCELLED)|sort(attribute='created_at', reverse=true) %}
                     <div
                       class="kanban-ticket-task-item"
                       data-task-no="{{ task.task_no or task.ticket_no or 'N/A' }}"

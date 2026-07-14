@@ -253,6 +253,12 @@ document.addEventListener("DOMContentLoaded", function () {
         const taskLink = document.createElement("a");
         taskLink.className = "kanban-task-list-item";
         taskLink.href = task.url || "#";
+        const normalizedStatus = (
+          task.status || ""
+        ).toLowerCase();
+        if (normalizedStatus === "fix/completed") {
+          taskLink.classList.add("is-resolved");
+        }
 
         const meta = document.createElement("div");
         meta.className = "kanban-task-list-meta";
@@ -261,7 +267,11 @@ document.addEventListener("DOMContentLoaded", function () {
         number.textContent = task.taskNo || "N/A";
 
         const status = document.createElement("span");
-        status.className = "badge badge-light";
+        status.className =
+          "badge " +
+          (normalizedStatus === "fix/completed"
+            ? "kanban-task-status-resolved"
+            : "badge-light");
         status.textContent = task.status || "No status";
 
         meta.appendChild(number);

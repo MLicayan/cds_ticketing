@@ -1166,14 +1166,14 @@
           class="btn btn-tool left mr-2"
           data-toggle="collapse"
           data-target="#ticketTimelineCollapse"
-          aria-expanded="true"
+          aria-expanded="false"
           aria-controls="ticketTimelineCollapse"
           title="Toggle timeline">
-          <i class="fas fa-minus" id="ticketTimelineToggleIcon"></i>
+          <i class="fas fa-plus" id="ticketTimelineToggleIcon"></i>
         </button>
         <h3 class="card-title mb-0 left"><i class="fas fa-stream metric-icon"></i>Tickets Update Timeline</h3>
       </div>
-      <div class="collapse show" id="ticketTimelineCollapse">
+      <div class="collapse" id="ticketTimelineCollapse">
       <div class="card-body">
         {% if timeline_events %}
           <div class="timeline">
@@ -1784,8 +1784,6 @@
     var attachmentZoomValue = document.getElementById('attachmentZoomValue');
     var attachmentsList = document.getElementById('ticket-attachments-list');
     var noAttachmentsMessage = document.getElementById('ticket-no-attachments');
-    var ticketTimelineCollapse = document.getElementById('ticketTimelineCollapse');
-    var ticketTimelineToggleIcon = document.getElementById('ticketTimelineToggleIcon');
     var ticketAttachmentsCollapse = document.getElementById('ticketAttachmentsCollapse');
     var ticketAttachmentsToggleIcon = document.getElementById('ticketAttachmentsToggleIcon');
     var startWorkForm = document.querySelector('[data-start-work-form]');
@@ -1804,6 +1802,8 @@
     var currentImageOffsetX = 0;
     var currentImageOffsetY = 0;
     var isDraggingPreviewImage = false;
+    var ticketTimelineCollapse = document.getElementById('ticketTimelineCollapse');
+    var ticketTimelineToggleIcon = document.getElementById('ticketTimelineToggleIcon');
 
     if (engineerSelect && window.$ && $.fn.select2) {
       $('#engineer_id').select2({

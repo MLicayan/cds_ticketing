@@ -763,23 +763,23 @@
   </div>
 </div>
 
-<div class="modal fade" id="developerPromptResponseModal" tabindex="-1" role="dialog" aria-hidden="true">
+<div class="modal fade" id="developerPromptResponseModal" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static" data-keyboard="false">
   <div class="modal-dialog modal-dialog-centered" role="document">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title"><i class="fas fa-bullhorn mr-2 text-warning"></i><span id="developerPromptTitle">Developer Prompt</span></h5>
-        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
       </div>
       <div class="modal-body">
         <div class="small text-muted mb-2" id="developerPromptMeta"></div>
         <div class="border rounded p-3 bg-light" id="developerPromptMessage" style="white-space: pre-wrap;"></div>
+        <div class="border rounded p-3 mt-3 d-none" id="developerPromptTaskCard">
+          <div class="small text-muted mb-2">Attached Tasks</div>
+          <div id="developerPromptTaskList"></div>
+        </div>
         <div class="small text-muted mt-3" id="developerPromptPendingCount"></div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Later</button>
-        <button type="button" class="btn btn-danger" id="developerPromptDenyBtn">Deny</button>
         <button type="button" class="btn btn-success" id="developerPromptConfirmBtn">Confirm</button>
       </div>
     </div>
@@ -820,9 +820,10 @@
     const developerPromptTitle = document.getElementById('developerPromptTitle');
     const developerPromptMeta = document.getElementById('developerPromptMeta');
     const developerPromptMessage = document.getElementById('developerPromptMessage');
+    const developerPromptTaskCard = document.getElementById('developerPromptTaskCard');
+    const developerPromptTaskList = document.getElementById('developerPromptTaskList');
     const developerPromptPendingCount = document.getElementById('developerPromptPendingCount');
     const developerPromptConfirmBtn = document.getElementById('developerPromptConfirmBtn');
-    const developerPromptDenyBtn = document.getElementById('developerPromptDenyBtn');
     const soundVolumeSlider = document.querySelector('[data-sound-volume-slider]');
     const soundVolumeValue = document.querySelector('[data-sound-volume-value]');
     let workdayPromptOpen = false;
@@ -1183,6 +1184,27 @@
       if (developerPromptMessage) {
         developerPromptMessage.textContent = payload.prompt.message || '';
       }
+      if (developerPromptTaskCard) {
+        var promptTasks = Array.isArray(payload.prompt.tasks) ? payload.prompt.tasks : [];
+        if (promptTasks.length) {
+          developerPromptTaskCard.classList.remove('d-none');
+          if (developerPromptTaskList) {
+            developerPromptTaskList.innerHTML = '';
+            promptTasks.forEach(function(promptTask) {
+              var item = document.createElement('div');
+              item.className = 'mb-2';
+              item.innerHTML =
+                '<div class="font-weight-bold">' + (promptTask.task_no || 'Task') + ' - ' + (promptTask.subject || 'Untitled task') + '</div>' +
+                '<div class="small text-muted mb-1">Assigned to: ' + (promptTask.assigned_to || 'Unassigned') + ' | Status: ' + (promptTask.status || 'N/A') + ' | Priority: ' + (promptTask.priority || 'N/A') + '</div>' +
+                '<a class="small" href="' + (promptTask.url || '#') + '">Open task</a>';
+              developerPromptTaskList.appendChild(item);
+            });
+          }
+        } else {
+          developerPromptTaskCard.classList.add('d-none');
+          if (developerPromptTaskList) developerPromptTaskList.innerHTML = '';
+        }
+      }
       if (developerPromptPendingCount) {
         var count = Number(payload.count || 0);
         developerPromptPendingCount.textContent = count > 1
@@ -1190,6 +1212,10 @@
           : 'This is your last pending developer prompt.';
       }
       if (window.jQuery && $('#developerPromptResponseModal').modal) {
+        $('#developerPromptResponseModal').modal({
+          backdrop: 'static',
+          keyboard: false
+        });
         $('#developerPromptResponseModal').modal('show');
       }
     }
@@ -1199,7 +1225,6 @@
         return;
       }
       if (developerPromptConfirmBtn) developerPromptConfirmBtn.disabled = true;
-      if (developerPromptDenyBtn) developerPromptDenyBtn.disabled = true;
       try {
         const response = await fetch(developerPromptRespondUrlTemplate.replace('0', String(activeDeveloperPrompt.prompt_id)), {
           method: 'POST',
@@ -1222,19 +1247,12 @@
       } catch (err) {
       } finally {
         if (developerPromptConfirmBtn) developerPromptConfirmBtn.disabled = false;
-        if (developerPromptDenyBtn) developerPromptDenyBtn.disabled = false;
       }
     }
 
     if (developerPromptConfirmBtn) {
       developerPromptConfirmBtn.addEventListener('click', function() {
         submitDeveloperPromptResponse('confirm');
-      });
-    }
-
-    if (developerPromptDenyBtn) {
-      developerPromptDenyBtn.addEventListener('click', function() {
-        submitDeveloperPromptResponse('deny');
       });
     }
 

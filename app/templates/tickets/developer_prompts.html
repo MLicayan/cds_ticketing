@@ -38,16 +38,48 @@
           {% for row in prompt_rows %}
           {% set prompt = row.prompt %}
           {% set counts = row.counts %}
-          <tr>
+          <tr
+            data-toggle="collapse"
+            data-target="#promptDetails{{ prompt.id }}"
+            aria-expanded="false"
+            aria-controls="promptDetails{{ prompt.id }}"
+            style="cursor: pointer;">
             <td>{{ prompt.created_at|localtime if prompt.created_at else '' }}</td>
             <td class="font-weight-bold">{{ prompt.title }}</td>
             <td style="min-width: 280px; white-space: pre-wrap;">{{ prompt.message }}</td>
             <td><span class="badge badge-secondary">{{ counts.pending }}</span></td>
             <td><span class="badge badge-success">{{ counts.confirmed }}</span></td>
             <td><span class="badge badge-danger">{{ counts.denied }}</span></td>
-            <td style="min-width: 320px;">
-              {% if row.responses %}
-              <div class="small">
+            <td class="text-muted small">Click to view</td>
+          </tr>
+          <tr class="collapse bg-light" id="promptDetails{{ prompt.id }}">
+            <td colspan="7">
+              <div class="p-3">
+                <div class="mb-3">
+                  <div class="small text-muted text-uppercase">Message</div>
+                  <div style="white-space: pre-wrap;">{{ prompt.message }}</div>
+                </div>
+                {% if prompt.tasks %}
+                <div class="mb-3">
+                  <div class="small text-muted text-uppercase mb-2">Attached Tasks</div>
+                  {% for task in prompt.tasks %}
+                  <div class="py-1{% if not loop.last %} border-bottom{% endif %}">
+                    <div class="font-weight-bold small">
+                      <a href="{{ url_for('tickets.task_detail', task_id=task.id) }}">{{ task.task_no or ('TT-%06d'|format(task.id)) }} - {{ task.subject }}</a>
+                    </div>
+                    <div class="small text-muted mb-0">
+                      Assigned to: {{ task.assigned_engineer.full_name or task.assigned_engineer.username if task.assigned_engineer else 'Unassigned' }}
+                      | Status: {{ task.status.value.replace('_', ' ')|title if task.status else 'N/A' }}
+                      | Priority: {{ task.priority.value.replace('_', ' ')|title if task.priority else 'N/A' }}
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+                {% endif %}
+                <div>
+                  <div class="small text-muted text-uppercase mb-2">Responses</div>
+                  {% if row.responses %}
+                  <div class="small">
                 {% for response in row.responses %}
                 <div class="border rounded p-2 mb-2">
                   <div class="d-flex justify-content-between align-items-center">
@@ -65,10 +97,12 @@
                   </div>
                 </div>
                 {% endfor %}
+                  </div>
+                  {% else %}
+                  <span class="text-muted">No recipients.</span>
+                  {% endif %}
+                </div>
               </div>
-              {% else %}
-              <span class="text-muted">No recipients.</span>
-              {% endif %}
             </td>
           </tr>
           {% endfor %}

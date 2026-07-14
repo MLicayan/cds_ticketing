@@ -633,7 +633,7 @@ def _can_create_tasks(user: User) -> bool:
     return bool(user and (user.role == UserRole.ADMIN or user.role == UserRole.ENGINEER))
 
 
-def _developer_prompt_recipients(exclude_user_id: Optional[int] = None):
+def _developer_prompt_recipients(exclude_user_id: Optional[int] = None, recipient_ids: Optional[list] = None):
     query = User.query.filter(
         User.is_active_user.is_(True),
         User.role == UserRole.ENGINEER,
@@ -641,7 +641,39 @@ def _developer_prompt_recipients(exclude_user_id: Optional[int] = None):
 
     if exclude_user_id:
         query = query.filter(User.id != exclude_user_id)
+    if recipient_ids:
+        query = query.filter(User.id.in_(recipient_ids))
     return query.all()
+
+
+def _developer_prompt_candidate_tasks_by_recipient(recipients: list) -> dict:
+    recipient_ids = [user.id for user in recipients if getattr(user, "id", None)]
+    if not recipient_ids:
+        return {}
+
+    tasks = (
+        TicketTask.query.filter(
+            TicketTask.assigned_engineer_id.in_(recipient_ids),
+            TicketTask.status != TicketStatus.RESOLVED,
+            TicketTask.status != TicketStatus.CLOSED,
+            TicketTask.status != TicketStatus.CANCELLED,
+        )
+        .order_by(TicketTask.assigned_engineer_id.asc(), TicketTask.created_at.desc(), TicketTask.id.desc())
+        .all()
+    )
+
+    payload = {str(user_id): [] for user_id in recipient_ids}
+    for task in tasks:
+        key = str(task.assigned_engineer_id or "")
+        if not key:
+            continue
+        payload.setdefault(key, []).append(
+            {
+                "id": task.id,
+                "label": f"{task.task_no or generate_task_ticket_no(task.id)} - {task.subject or 'Untitled task'}",
+            }
+        )
+    return payload
 
 
 def _build_developer_prompt_title(message: str, raw_title: str = "") -> str:
@@ -655,6 +687,25 @@ def _build_developer_prompt_title(message: str, raw_title: str = "") -> str:
     if len(normalized) <= 80:
         return normalized
     return normalized[:77].rstrip() + "..."
+
+
+def _developer_prompt_task_payload(task: Optional[TicketTask]) -> Optional[dict]:
+    if not task:
+        return None
+
+    assigned_to = ""
+    if task.assigned_engineer:
+        assigned_to = task.assigned_engineer.full_name or task.assigned_engineer.username or ""
+
+    return {
+        "id": task.id,
+        "task_no": task.task_no or generate_task_ticket_no(task.id),
+        "subject": task.subject or "Untitled task",
+        "assigned_to": assigned_to or "Unassigned",
+        "status": _enum_label(task.status),
+        "priority": _enum_label(task.priority),
+        "url": url_for("tickets.task_detail", task_id=task.id),
+    }
 
 
 def _developer_prompt_payload_for_response(response: DeveloperPromptResponse) -> Optional[dict]:
@@ -673,6 +724,7 @@ def _developer_prompt_payload_for_response(response: DeveloperPromptResponse) ->
         "message": prompt.message,
         "created_at": to_localtime(prompt.created_at).strftime("%Y-%m-%d %H:%M") if prompt.created_at else "",
         "created_by": creator_name or "System",
+        "tasks": [_developer_prompt_task_payload(task) for task in (prompt.tasks or []) if task],
         "response_status": (response.response_status or "pending").strip().lower(),
     }
 
@@ -754,8 +806,17 @@ def _emit_workday_prompt_state_for_user(user: Optional[User]) -> None:
     )
 
 
-def _create_developer_prompt(creator: User, title: str, message: str):
-    recipients = _developer_prompt_recipients(exclude_user_id=getattr(creator, "id", None))
+def _create_developer_prompt(
+    creator: User,
+    title: str,
+    message: str,
+    recipient_id: int,
+    tasks: Optional[list] = None,
+):
+    recipients = _developer_prompt_recipients(
+        exclude_user_id=getattr(creator, "id", None),
+        recipient_ids=[recipient_id],
+    )
     if not recipients:
         return None, 0
 
@@ -767,6 +828,7 @@ def _create_developer_prompt(creator: User, title: str, message: str):
     )
     db.session.add(prompt)
     db.session.flush()
+    prompt.tasks = tasks or []
 
     for recipient in recipients:
         db.session.add(
@@ -2792,6 +2854,8 @@ def developer_tasks():
             task_states=task_states,
         )
 
+    developer_prompt_recipients = _developer_prompt_recipients(exclude_user_id=getattr(current_user, "id", None))
+
     return render_template(
         "tickets/tasks.html",
         tasks=tasks,
@@ -2802,6 +2866,8 @@ def developer_tasks():
         apps=apps,
         reporters=reporters,
         assignees=assignees,
+        developer_prompt_recipients=developer_prompt_recipients,
+        developer_prompt_tasks_by_recipient=_developer_prompt_candidate_tasks_by_recipient(developer_prompt_recipients),
         can_manage_developer_prompts=_can_manage_developer_prompts(current_user),
         current_date=datetime.now(APP_TIMEZONE).strftime("%Y-%m-%d"),
         selected_filters={
@@ -4574,13 +4640,55 @@ def create_developer_prompt():
 
     title = (request.form.get("title") or "").strip()
     message = (request.form.get("message") or "").strip()
+    recipient_id_raw = (request.form.get("recipient_id") or "").strip()
+    task_ids = []
+    for task_id_raw in request.form.getlist("task_ids"):
+        task_id_raw = (task_id_raw or "").strip()
+        if not task_id_raw:
+            continue
+        try:
+            task_ids.append(int(task_id_raw))
+        except ValueError:
+            continue
+    task_ids = list(dict.fromkeys(task_ids))
+
     if not message:
         flash("Prompt message is required.", "warning")
         return redirect(url_for("tickets.developer_tasks"))
 
-    prompt, recipient_count = _create_developer_prompt(current_user, title, message)
+    if not recipient_id_raw:
+        flash("Recipient is required.", "warning")
+        return redirect(url_for("tickets.developer_tasks"))
+
+    try:
+        recipient_id = int(recipient_id_raw)
+    except ValueError:
+        flash("Invalid recipient selection.", "warning")
+        return redirect(url_for("tickets.developer_tasks"))
+
+    prompt_tasks = []
+    if task_ids:
+        prompt_tasks = (
+            TicketTask.query.filter(
+                TicketTask.id.in_(task_ids),
+                TicketTask.assigned_engineer_id == recipient_id,
+            )
+            .order_by(TicketTask.created_at.desc(), TicketTask.id.desc())
+            .all()
+        )
+        if len(prompt_tasks) != len(task_ids):
+            flash("One or more selected tasks do not belong to the chosen recipient.", "warning")
+            return redirect(url_for("tickets.developer_tasks"))
+
+    prompt, recipient_count = _create_developer_prompt(
+        current_user,
+        title,
+        message,
+        recipient_id=recipient_id,
+        tasks=prompt_tasks,
+    )
     if not prompt or not recipient_count:
-        flash("No active developer accounts found for this prompt.", "warning")
+        flash("No matching active developer accounts found for this prompt.", "warning")
         return redirect(url_for("tickets.developer_tasks"))
 
     db.session.commit()

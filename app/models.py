@@ -404,6 +404,11 @@ class DeveloperPrompt(db.Model):
     created_at = db.Column(db.DateTime, default=_local_now_naive, nullable=False)
 
     created_by = db.relationship("User", foreign_keys=[created_by_id])
+    tasks = db.relationship(
+        "TicketTask",
+        secondary="developer_prompt_tasks",
+        lazy="joined",
+    )
     responses = db.relationship(
         "DeveloperPromptResponse",
         backref="prompt",
@@ -437,6 +442,13 @@ class DeveloperPromptResponse(db.Model):
 
     def __repr__(self):
         return f"<DeveloperPromptResponse prompt={self.prompt_id} user={self.user_id} status={self.response_status}>"
+
+
+developer_prompt_tasks = db.Table(
+    "developer_prompt_tasks",
+    db.Column("prompt_id", db.Integer, db.ForeignKey("developer_prompts.id"), primary_key=True),
+    db.Column("task_id", db.Integer, db.ForeignKey("ticket_tasks.id"), primary_key=True),
+)
 
 
 class TicketComment(db.Model):
