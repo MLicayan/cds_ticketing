@@ -5,7 +5,7 @@
         <thead>
           <tr>
             <th>Task Ticket</th>
-            <th>Task</th>
+            <th class="task-column">Task</th>
             <th>Parent Ticket</th>
             <th>Assigned IT</th>
             <th>Status</th>
@@ -33,7 +33,7 @@
             {% endif %}
             <tr onclick="window.location='{{ url_for('tickets.task_detail', task_id=task.id) }}'" style="cursor:pointer;">
               <td>{{ task.ticket_no }}</td>
-              <td>{{ task.subject }}</td>
+              <td class="task-column" title="{{ task.subject }}">{{ task.subject }}</td>
               <td>
                 {% if parent %}
                   <a href="{{ url_for('tickets.detail', ticket_id=parent.id) }}" onclick="event.stopPropagation();">{{ parent.ticket_no }}</a>

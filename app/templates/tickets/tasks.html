@@ -198,6 +198,19 @@
     box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
   }
 
+  .task-table-shell .task-column {
+    width: 420px;
+    min-width: 300px;
+    max-width: 420px;
+  }
+
+  .task-table-shell tbody td.task-column {
+    white-space: normal !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
+  }
+
   .badge.badge-working {
     background-color: #4CAF50 !important;
     color: #fff !important;
@@ -545,6 +558,10 @@
       pageLength: 10,
       order: [[8, 'desc']],
       searching: true,
+      autoWidth: false,
+      columnDefs: [
+        { targets: 1, width: '420px' }
+      ],
       language: {
         emptyTable: 'No developer tasks found.'
       }
