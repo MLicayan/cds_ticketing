@@ -396,6 +396,13 @@
           <div class="monitor-title">{{ monitor_title or 'CDS Application Monitoring' }}</div>
           <div class="monitor-subtitle">{{ monitor_subtitle or 'Realtime ticket status summary per CDS Application' }}</div>
           <div class="monitor-controls">
+            <div class="monitor-control-group">
+              <label class="monitor-filter-label" for="monitor-display-select">Display</label>
+              <select class="monitor-filter-select" id="monitor-display-select" aria-label="Monitoring display type">
+                <option value="tickets" {% if monitor_display == 'tickets' %}selected{% endif %}>Tickets</option>
+                <option value="tickettask" {% if monitor_display == 'tickettask' %}selected{% endif %}>Ticket Task</option>
+              </select>
+            </div>
             {% if enable_date_range %}
             <div class="monitor-control-group">
               <label class="monitor-filter-label" for="monitor-date-from">Date Range</label>
@@ -467,10 +474,10 @@
               <td><strong>{{ row.total }}</strong></td>
             </tr>
             {% else %}
-            <tr class="empty-row">
-              <td colspan="6">No CDS Application tickets found.</td>
-            </tr>
-            {% endfor %}
+              <tr class="empty-row">
+                <td colspan="6">No CDS Application {{ (monitor_display_label or 'tickets') | lower }} found.</td>
+              </tr>
+              {% endfor %}
           </tbody>
         </table>
       </div>
@@ -499,6 +506,7 @@
       var syncLabel = document.getElementById('monitor-sync');
       var dateLabel = document.getElementById('monitor-date');
       var timeLabel = document.getElementById('monitor-time');
+      var displayFilter = document.getElementById('monitor-display-select');
       var dateFromFilter = document.getElementById('monitor-date-from');
       var dateToFilter = document.getElementById('monitor-date-to');
       var dateApplyButton = document.getElementById('monitor-date-apply');
@@ -511,6 +519,9 @@
 
       function monitoringDataUrl() {
         var url = new URL('{{ url_for(monitor_data_url or "monitoring.apps_data") }}', window.location.origin);
+        if (displayFilter && displayFilter.value) {
+          url.searchParams.set('display', displayFilter.value);
+        }
         if (dateFromFilter && dateFromFilter.value) {
           url.searchParams.set('date_from', dateFromFilter.value);
         }
@@ -624,7 +635,8 @@
 
         tableBody.innerHTML = '';
         if (!rows || !rows.length) {
-          tableBody.innerHTML = '<tr class="empty-row"><td colspan="6">No CDS Application tickets found.</td></tr>';
+          var displayLabel = displayFilter && displayFilter.value === 'tickettask' ? 'ticket task' : 'tickets';
+          tableBody.innerHTML = '<tr class="empty-row"><td colspan="6">No CDS Application ' + displayLabel + ' found.</td></tr>';
           document.getElementById('summary-open').textContent = '0';
           document.getElementById('summary-in-progress').textContent = '0';
           document.getElementById('summary-resolved').textContent = '0';
@@ -711,7 +723,11 @@
 
       function syncFiltersInLocation() {
         var url = new URL(window.location.href);
-        url.searchParams.delete('display');
+        if (displayFilter && displayFilter.value) {
+          url.searchParams.set('display', displayFilter.value);
+        } else {
+          url.searchParams.delete('display');
+        }
         if (dateFromFilter && dateFromFilter.value) {
           url.searchParams.set('date_from', dateFromFilter.value);
         } else {
@@ -732,6 +748,13 @@
 
       if (dateApplyButton) {
         dateApplyButton.addEventListener('click', function() {
+          syncFiltersInLocation();
+          refreshMonitoring();
+        });
+      }
+
+      if (displayFilter) {
+        displayFilter.addEventListener('change', function() {
           syncFiltersInLocation();
           refreshMonitoring();
         });

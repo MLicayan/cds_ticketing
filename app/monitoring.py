@@ -4,13 +4,14 @@ from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from . import APP_TIMEZONE, db, to_localtime
-from .models import Ticket, TicketStatus, UserRole
+from .models import Ticket, TicketStatus, TicketTask, UserRole
 
 monitoring_bp = Blueprint("monitoring", __name__, template_folder="templates")
 
 TASK_CATEGORY_PREFIX = "task:"
 CLIENT_SCOPED_ROLES = (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
 DISPLAY_TICKETS = "tickets"
+DISPLAY_TICKET_TASK = "tickettask"
 
 
 def _exclude_task_tickets(query):
@@ -18,6 +19,9 @@ def _exclude_task_tickets(query):
 
 
 def _monitor_display_mode() -> str:
+    requested_display = (request.args.get("display") or "").strip().lower()
+    if requested_display == DISPLAY_TICKET_TASK:
+        return DISPLAY_TICKET_TASK
     return DISPLAY_TICKETS
 
 
@@ -65,9 +69,10 @@ def _app_records(
     date_from: datetime = None,
     date_to: datetime = None,
 ):
-    model = Ticket
-    query = _scoped_query(Ticket)
-    query = _exclude_task_tickets(query)
+    model = TicketTask if display == DISPLAY_TICKET_TASK else Ticket
+    query = _scoped_query(model)
+    if model is Ticket:
+        query = _exclude_task_tickets(query)
     query = query.filter(model.status != TicketStatus.CANCELLED)
     if date_from is not None:
         query = query.filter(model.created_at >= date_from)
@@ -222,6 +227,7 @@ def apps():
         monitor_subtitle="Realtime ticket status summary per CDS Application",
         monitor_data_url="monitoring.apps_data",
         monitor_display=display,
+        monitor_display_label="Ticket Task" if display == DISPLAY_TICKET_TASK else "Tickets",
         monitor_date_from=date_range["date_from_raw"],
         monitor_date_to=date_range["date_to_raw"],
         enable_date_range=True,
@@ -297,6 +303,7 @@ def apps_daily():
         monitor_subtitle="",
         monitor_data_url="monitoring.apps_daily_data",
         monitor_display=display,
+        monitor_display_label="Ticket Task" if display == DISPLAY_TICKET_TASK else "Tickets",
         monitor_date_from="",
         monitor_date_to="",
         enable_date_range=False,
