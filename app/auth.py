@@ -10,17 +10,19 @@ auth_bp = Blueprint("auth", __name__, template_folder="templates")
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
+        username = (request.form.get("username") or "").strip()
+        password = request.form.get("password") or ""
 
         user = User.query.filter_by(username=username).first()
-        if user and user.check_password(password):
+        if user and not user.is_active_user:
+            flash("Your account is inactive. Please contact an administrator.", "danger")
+        elif user and user.check_password(password):
             login_user(user)
             flash("Welcome back!", "success")
             next_page = request.args.get("next") or url_for("main.dashboard")
             return redirect(next_page)
-
-        flash("Invalid username or password", "danger")
+        else:
+            flash("Invalid username or password", "danger")
 
     return render_template("auth/login.html")
 

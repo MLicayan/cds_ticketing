@@ -169,6 +169,10 @@ class User(UserMixin, db.Model):
         return self.role in (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
 
     @property
+    def is_active(self) -> bool:
+        return bool(self.is_active_user)
+
+    @property
     def is_client_admin(self) -> bool:
         return self.role == UserRole.CLIENT_ADMIN
 

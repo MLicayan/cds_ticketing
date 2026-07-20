@@ -524,6 +524,7 @@ def engineers_create():
         password = request.form.get("password")
         client_id = request.form.get("client_id") or None
         user_type = request.form.get("user_type") or "Engineer"
+        is_active_user = request.form.get("is_active_user") == "1"
 
         if not (username and password):
             flash("Username and password are required.", "danger")
@@ -539,6 +540,7 @@ def engineers_create():
             full_name=full_name,
             role=UserRole.ENGINEER,
             client_id=client_id,
+            is_active_user=is_active_user,
             user_type=user_type,
         )
         user.set_nav_permissions(_nav_access_from_form())
@@ -566,6 +568,7 @@ def engineers_edit(user_id):
         user.client_id = client_id
         new_password = request.form.get("password")
         user.user_type = request.form.get("user_type") or "Engineer"
+        user.is_active_user = request.form.get("is_active_user") == "1"
 
         if new_password:
             user.set_password(new_password)
