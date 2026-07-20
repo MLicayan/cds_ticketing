@@ -396,13 +396,6 @@
           <div class="monitor-title">{{ monitor_title or 'CDS Application Monitoring' }}</div>
           <div class="monitor-subtitle">{{ monitor_subtitle or 'Realtime ticket status summary per CDS Application' }}</div>
           <div class="monitor-controls">
-            <div class="monitor-control-group">
-              <label class="monitor-filter-label" for="monitor-display-filter">Display</label>
-              <select class="monitor-filter-select" id="monitor-display-filter" aria-label="Select monitoring display">
-                <option value="tickets" {% if (monitor_display or 'tickets') == 'tickets' %}selected{% endif %}>Tickets</option>
-                <option value="tasks" {% if monitor_display == 'tasks' %}selected{% endif %}>Tasks</option>
-              </select>
-            </div>
             {% if enable_date_range %}
             <div class="monitor-control-group">
               <label class="monitor-filter-label" for="monitor-date-from">Date Range</label>
@@ -506,7 +499,6 @@
       var syncLabel = document.getElementById('monitor-sync');
       var dateLabel = document.getElementById('monitor-date');
       var timeLabel = document.getElementById('monitor-time');
-      var displayFilter = document.getElementById('monitor-display-filter');
       var dateFromFilter = document.getElementById('monitor-date-from');
       var dateToFilter = document.getElementById('monitor-date-to');
       var dateApplyButton = document.getElementById('monitor-date-apply');
@@ -517,14 +509,8 @@
       var previousHospitalRanks = {};
       var previousAppRanks = {};
 
-      function currentDisplayMode() {
-        if (!displayFilter) return 'tickets';
-        return displayFilter.value === 'tasks' ? 'tasks' : 'tickets';
-      }
-
       function monitoringDataUrl() {
         var url = new URL('{{ url_for(monitor_data_url or "monitoring.apps_data") }}', window.location.origin);
-        url.searchParams.set('display', currentDisplayMode());
         if (dateFromFilter && dateFromFilter.value) {
           url.searchParams.set('date_from', dateFromFilter.value);
         }
@@ -725,7 +711,7 @@
 
       function syncFiltersInLocation() {
         var url = new URL(window.location.href);
-        url.searchParams.set('display', currentDisplayMode());
+        url.searchParams.delete('display');
         if (dateFromFilter && dateFromFilter.value) {
           url.searchParams.set('date_from', dateFromFilter.value);
         } else {
@@ -743,13 +729,6 @@
       window.setInterval(updateClock, 1000);
       renderHospitalLeaderboard({% if hospital_rows %}{{ hospital_rows|tojson }}{% else %}[]{% endif %});
       trackHospitalChanges({% if hospital_rows %}{{ hospital_rows|tojson }}{% else %}[]{% endif %});
-
-      if (displayFilter) {
-        displayFilter.addEventListener('change', function() {
-          syncFiltersInLocation();
-          refreshMonitoring();
-        });
-      }
 
       if (dateApplyButton) {
         dateApplyButton.addEventListener('click', function() {

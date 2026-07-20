@@ -4,15 +4,13 @@ from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from . import APP_TIMEZONE, db, to_localtime
-from .models import Ticket, TicketStatus, TicketTask, UserRole
+from .models import Ticket, TicketStatus, UserRole
 
 monitoring_bp = Blueprint("monitoring", __name__, template_folder="templates")
 
 TASK_CATEGORY_PREFIX = "task:"
 CLIENT_SCOPED_ROLES = (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
 DISPLAY_TICKETS = "tickets"
-DISPLAY_TASKS = "tasks"
-DISPLAY_OPTIONS = (DISPLAY_TICKETS, DISPLAY_TASKS)
 
 
 def _exclude_task_tickets(query):
@@ -20,8 +18,7 @@ def _exclude_task_tickets(query):
 
 
 def _monitor_display_mode() -> str:
-    display = (request.args.get("display") or DISPLAY_TICKETS).strip().lower()
-    return display if display in DISPLAY_OPTIONS else DISPLAY_TICKETS
+    return DISPLAY_TICKETS
 
 
 def _monitor_date_range():
@@ -68,13 +65,10 @@ def _app_records(
     date_from: datetime = None,
     date_to: datetime = None,
 ):
-    if display == DISPLAY_TASKS:
-        model = TicketTask
-        query = _scoped_query(TicketTask)
-    else:
-        model = Ticket
-        query = _scoped_query(Ticket)
-        query = _exclude_task_tickets(query)
+    model = Ticket
+    query = _scoped_query(Ticket)
+    query = _exclude_task_tickets(query)
+    query = query.filter(model.status != TicketStatus.CANCELLED)
     if date_from is not None:
         query = query.filter(model.created_at >= date_from)
     if date_to is not None:
