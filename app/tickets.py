@@ -6,6 +6,7 @@ import io
 import calendar
 import base64
 import json
+import re
 from typing import Optional
 from collections import defaultdict
 from datetime import datetime, date, timedelta, time
@@ -619,6 +620,55 @@ def _is_it_or_support_user(user: User) -> bool:
         and user.role == UserRole.ENGINEER
         and (user.user_type or "").strip().lower() in {"it", "support"}
     )
+
+
+def _mentionable_support_users_for_comments(exclude_user_id: Optional[int] = None):
+    query = User.query.filter(
+        User.is_active_user.is_(True),
+        User.role.in_((UserRole.ADMIN, UserRole.ENGINEER)),
+    )
+
+    if exclude_user_id:
+        query = query.filter(User.id != exclude_user_id)
+
+    users = query.all()
+
+    def _mention_priority(user: User):
+        role_priority = 0 if user.role == UserRole.ENGINEER else 1
+        user_type = (user.user_type or "").strip().lower()
+        if user_type == "support":
+            type_priority = 0
+        elif user_type == "it":
+            type_priority = 1
+        else:
+            type_priority = 2
+        display_name = (user.full_name or user.username or "").strip().lower()
+        return (role_priority, type_priority, display_name)
+
+    users.sort(key=_mention_priority)
+    return users
+
+
+def _mentioned_support_users(comment_text: str, candidates: list):
+    if not comment_text or not candidates:
+        return []
+
+    mentioned_usernames = {
+        match.group(1).strip().lower()
+        for match in re.finditer(r"(?<!\w)@([A-Za-z0-9._-]+)", comment_text or "")
+    }
+    if not mentioned_usernames:
+        return []
+
+    matched_users = []
+    seen_ids = set()
+    for user in candidates:
+        username = (getattr(user, "username", "") or "").strip().lower()
+        if not username or username not in mentioned_usernames or user.id in seen_ids:
+            continue
+        seen_ids.add(user.id)
+        matched_users.append(user)
+    return matched_users
 
 
 def _can_prompt_client_resolution(user: User) -> bool:
@@ -3454,6 +3504,7 @@ def detail(ticket_id):
         editable_apps=editable_apps,
         support_can_edit_core_fields=support_can_edit_core_fields,
         comment_templates=comment_templates,
+        mentionable_support_users=[],
     )
 
 
@@ -3534,7 +3585,15 @@ def task_detail(task_id):
             task.updated_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
             task_comment_notifications = []
             if new_comment and not new_comment.is_internal:
-                task_comment_notifications = queue_task_comment_notifications(task, actor=current_user)
+                mention_candidates = _mentionable_support_users_for_comments(exclude_user_id=current_user.id)
+                mentioned_users = _mentioned_support_users(comment_text, mention_candidates)
+                preview_text = (comment_text or "").strip() or "Attachment added"
+                task_comment_notifications = queue_task_comment_notifications(
+                    task,
+                    actor=current_user,
+                    additional_recipients=mentioned_users,
+                    preview=preview_text,
+                )
             db.session.commit()
             for recipient, notification in task_comment_notifications:
                 emit_header_notification_added(recipient, notification)
@@ -3664,6 +3723,15 @@ def task_detail(task_id):
     editable_clients = Client.query.order_by(Client.name.asc()).all() if support_can_edit_core_fields else []
     editable_apps = App.query.order_by(App.name.asc()).all() if support_can_edit_core_fields else []
     comment_templates = _comment_templates_for_user(current_user)
+    mentionable_support_users = [
+        {
+            "id": user.id,
+            "username": user.username or "",
+            "full_name": user.full_name or user.username or "",
+            "user_type": (user.user_type or "").strip(),
+        }
+        for user in _mentionable_support_users_for_comments(exclude_user_id=current_user.id)
+    ]
 
     return render_template(
         "tickets/detail.html",
@@ -3691,6 +3759,7 @@ def task_detail(task_id):
         editable_apps=editable_apps,
         support_can_edit_core_fields=support_can_edit_core_fields,
         comment_templates=comment_templates,
+        mentionable_support_users=mentionable_support_users,
     )
 
 

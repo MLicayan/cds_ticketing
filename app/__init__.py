@@ -353,7 +353,7 @@ def queue_ticket_comment_notifications(ticket, comment):
     return queued_recipients
 
 
-def queue_task_comment_notifications(task, actor=None):
+def queue_task_comment_notifications(task, actor=None, additional_recipients=None, preview=None):
     if not task or not actor:
         return []
 
@@ -378,10 +378,13 @@ def queue_task_comment_notifications(task, actor=None):
         if task.assigned_by_id and task.assigned_by_id != actor.id:
             recipients.append(task.assigned_by)
 
+    if additional_recipients:
+        recipients.extend(additional_recipients)
+
     queued_recipients = []
     seen_recipient_ids = set()
     created_at = datetime.now(APP_TIMEZONE).replace(tzinfo=None)
-    preview = "New comment from {}.".format(actor.full_name or actor.username or "System")
+    preview = (preview or "").strip() or "New comment from {}.".format(actor.full_name or actor.username or "System")
 
     for recipient in recipients:
         if (

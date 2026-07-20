@@ -177,6 +177,14 @@
   word-break: break-word;
 }
 
+.ticket-chat-bubble mark {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 3px;
+  padding: 0;
+  font-weight: 700;
+}
+
 .ticket-chat-row.mine .ticket-chat-bubble {
   background: #d8ecff;
   color: #16324f;
@@ -445,6 +453,110 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+}
+
+.comment-mention-help {
+  margin-top: 8px;
+  position: relative;
+}
+
+.comment-input-wrap {
+  position: relative;
+}
+
+.comment-highlight-layer,
+.comment-input-wrap textarea.form-control {
+  width: 100%;
+  min-height: 84px;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.25rem;
+  font: inherit;
+  line-height: 1.5;
+  letter-spacing: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comment-highlight-layer {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #ced4da;
+  background: #fff;
+  color: #212529;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.comment-input-wrap textarea.form-control {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  color: transparent;
+  caret-color: #212529;
+  resize: vertical;
+}
+
+.comment-input-wrap textarea.form-control::selection {
+  background: rgba(59, 130, 246, 0.25);
+}
+
+.comment-highlight-layer mark {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 3px;
+  padding: 0;
+  font-weight: 700;
+}
+
+.comment-mention-help small {
+  display: block;
+  color: #6c757d;
+}
+
+.comment-mention-suggestions {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  border: 1px solid #dfe3e8;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 20;
+}
+
+.comment-mention-suggestion {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 10px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.comment-mention-suggestion + .comment-mention-suggestion {
+  border-top: 1px solid #eef2f7;
+}
+
+.comment-mention-suggestion:hover,
+.comment-mention-suggestion.active {
+  background: #eef5ff;
+}
+
+.comment-mention-name {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.comment-mention-meta {
+  font-size: 12px;
+  color: #6c757d;
+  white-space: nowrap;
 }
 
 .comment-attachments {
@@ -1123,7 +1235,16 @@
           </div>
           <div class="form-group">
             <label for="comment_text">Add Comment</label>
-            <textarea id="comment_text" name="comment_text" rows="3" class="form-control"></textarea>
+            <div class="comment-input-wrap">
+              <div class="comment-highlight-layer" id="comment-highlight-layer" aria-hidden="true"></div>
+              <textarea id="comment_text" name="comment_text" rows="3" class="form-control"></textarea>
+            </div>
+            {% if is_task_ticket %}
+            <div class="comment-mention-help">
+              <small>Type `@` to mention a support user and send them a notification.</small>
+              <div class="comment-mention-suggestions d-none" id="comment-mention-suggestions"></div>
+            </div>
+            {% endif %}
           </div>
           <div class="d-none mb-2" id="edit-comment-banner">
             <small class="text-muted">Editing your comment.</small>
@@ -1736,7 +1857,25 @@
     var taskTableBody = document.querySelector('#ticket-task-table tbody');
     var addTaskRowBtn = document.getElementById('add-ticket-task-row');
     var commentTextarea = document.getElementById('comment_text');
+    var commentHighlightLayer = document.getElementById('comment-highlight-layer');
     var commentTemplateSelect = document.getElementById('comment_template_select');
+    var commentMentionSuggestions = document.getElementById('comment-mention-suggestions');
+    var mentionableSupportUsers = {{ mentionable_support_users|tojson }};
+    var mentionableUsernameMap = {};
+    var currentUserUsername = '{{ current_user.username or "" }}';
+    var activeMentionSuggestions = [];
+    var activeMentionIndex = -1;
+    var activeMentionState = null;
+
+    (mentionableSupportUsers || []).forEach(function(user) {
+      var username = (user.username || '').trim().toLowerCase();
+      if (username) {
+        mentionableUsernameMap[username] = true;
+      }
+    });
+    if ((currentUserUsername || '').trim()) {
+      mentionableUsernameMap[currentUserUsername.trim().toLowerCase()] = true;
+    }
 
     if (commentTemplateSelect && commentTextarea) {
       commentTemplateSelect.addEventListener('change', function () {
@@ -1748,6 +1887,7 @@
 
         commentTextarea.value = selectedTemplate;
         commentTextarea.focus();
+        renderMentionSuggestions();
       });
     }
     var parentCommentInput = document.getElementById('parent_comment_id');
@@ -1972,6 +2112,184 @@
       return text || 'Attachment';
     }
 
+    function escapeCommentHtml(text) {
+      return (text || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function renderCommentHighlight() {
+      if (!commentHighlightLayer || !commentTextarea) return;
+      var text = commentTextarea.value || '';
+      if (!text) {
+        commentHighlightLayer.innerHTML = '<br>';
+        return;
+      }
+
+      var htmlParts = [];
+      var lastIndex = 0;
+      var mentionRegex = /(^|\s)(@([A-Za-z0-9._-]+))/g;
+      var match;
+
+      while ((match = mentionRegex.exec(text)) !== null) {
+        var prefix = match[1] || '';
+        var token = match[2] || '';
+        var username = (match[3] || '').toLowerCase();
+        var tokenIndex = match.index + prefix.length;
+        var leadingText = text.slice(lastIndex, match.index);
+
+        htmlParts.push(escapeCommentHtml(leadingText));
+        htmlParts.push(escapeCommentHtml(prefix));
+        if (mentionableUsernameMap[username]) {
+          htmlParts.push('<mark>' + escapeCommentHtml(token) + '</mark>');
+        } else {
+          htmlParts.push(escapeCommentHtml(token));
+        }
+        lastIndex = tokenIndex + token.length;
+      }
+
+      htmlParts.push(escapeCommentHtml(text.slice(lastIndex)));
+      commentHighlightLayer.innerHTML = htmlParts.join('');
+    }
+
+    function formatCommentMentionsHtml(text) {
+      var rawText = text || '';
+      if (!rawText) return '';
+
+      var htmlParts = [];
+      var lastIndex = 0;
+      var mentionRegex = /(^|\s)(@([A-Za-z0-9._-]+))/g;
+      var match;
+
+      while ((match = mentionRegex.exec(rawText)) !== null) {
+        var prefix = match[1] || '';
+        var token = match[2] || '';
+        var username = (match[3] || '').toLowerCase();
+        var leadingText = rawText.slice(lastIndex, match.index);
+
+        htmlParts.push(escapeCommentHtml(leadingText));
+        htmlParts.push(escapeCommentHtml(prefix));
+        if (mentionableUsernameMap[username]) {
+          htmlParts.push('<mark>' + escapeCommentHtml(token) + '</mark>');
+        } else {
+          htmlParts.push(escapeCommentHtml(token));
+        }
+        lastIndex = match.index + prefix.length + token.length;
+      }
+
+      htmlParts.push(escapeCommentHtml(rawText.slice(lastIndex)));
+      return htmlParts.join('');
+    }
+
+    function renderCommentBubbleMentions(bubble, text) {
+      if (!bubble) return;
+      bubble.innerHTML = formatCommentMentionsHtml(text || '');
+    }
+
+    function syncCommentHighlightScroll() {
+      if (!commentHighlightLayer || !commentTextarea) return;
+      commentHighlightLayer.scrollTop = commentTextarea.scrollTop;
+      commentHighlightLayer.scrollLeft = commentTextarea.scrollLeft;
+    }
+
+    function closeMentionSuggestions() {
+      activeMentionSuggestions = [];
+      activeMentionIndex = -1;
+      activeMentionState = null;
+      if (commentMentionSuggestions) {
+        commentMentionSuggestions.classList.add('d-none');
+        commentMentionSuggestions.innerHTML = '';
+      }
+    }
+
+    function mentionQueryState() {
+      if (!commentTextarea) return null;
+      var value = commentTextarea.value || '';
+      var cursor = typeof commentTextarea.selectionStart === 'number' ? commentTextarea.selectionStart : value.length;
+      var beforeCursor = value.slice(0, cursor);
+      var match = beforeCursor.match(/(^|\s)@([A-Za-z0-9._-]*)$/);
+      if (!match) return null;
+      return {
+        query: (match[2] || '').toLowerCase(),
+        cursor: cursor,
+        replaceStart: cursor - match[2].length - 1
+      };
+    }
+
+    function filteredMentionUsers(query) {
+      var normalized = (query || '').toLowerCase();
+      return (mentionableSupportUsers || []).filter(function(user) {
+        var username = (user.username || '').toLowerCase();
+        var fullName = (user.full_name || '').toLowerCase();
+        return !normalized || username.indexOf(normalized) !== -1 || fullName.indexOf(normalized) !== -1;
+      }).slice(0, 6);
+    }
+
+    function insertMention(user) {
+      if (!commentTextarea || !user || !activeMentionState) return;
+      var value = commentTextarea.value || '';
+      var before = value.slice(0, activeMentionState.replaceStart);
+      var after = value.slice(activeMentionState.cursor).replace(/^\s*/, '');
+      var inserted = '@' + (user.username || '') + ' ';
+      commentTextarea.value = before + inserted + after;
+      var nextCursor = before.length + inserted.length;
+      commentTextarea.setSelectionRange(nextCursor, nextCursor);
+      closeMentionSuggestions();
+      renderCommentHighlight();
+      syncCommentHighlightScroll();
+      persistCommentDraft();
+      focusWithoutScroll(commentTextarea);
+    }
+
+    function renderMentionSuggestions() {
+      if (!commentMentionSuggestions) return;
+      var state = mentionQueryState();
+      if (!state) {
+        closeMentionSuggestions();
+        return;
+      }
+
+      var matches = filteredMentionUsers(state.query);
+      if (!matches.length) {
+        closeMentionSuggestions();
+        return;
+      }
+
+      activeMentionState = state;
+      activeMentionSuggestions = matches;
+      if (activeMentionIndex < 0 || activeMentionIndex >= matches.length) {
+        activeMentionIndex = 0;
+      }
+
+      commentMentionSuggestions.innerHTML = '';
+      matches.forEach(function(user, index) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'comment-mention-suggestion' + (index === activeMentionIndex ? ' active' : '');
+        button.setAttribute('data-mention-username', user.username || '');
+
+        var name = document.createElement('span');
+        name.className = 'comment-mention-name';
+        name.textContent = '@' + (user.username || '');
+
+        var meta = document.createElement('span');
+        meta.className = 'comment-mention-meta';
+        meta.textContent = (user.full_name || user.username || '') + ((user.user_type || '') ? ' • ' + user.user_type : '');
+
+        button.appendChild(name);
+        button.appendChild(meta);
+        button.addEventListener('mousedown', function(event) {
+          event.preventDefault();
+          insertMention(user);
+        });
+        commentMentionSuggestions.appendChild(button);
+      });
+      commentMentionSuggestions.classList.remove('d-none');
+    }
+
     function setReplyTargetFromRow(row) {
       if (!row || !parentCommentInput || !replyTarget) return;
       var commentId = row.getAttribute('data-comment-id') || '';
@@ -2018,8 +2336,11 @@
       }
       clearReplyTarget();
       setCommentFormMode('create');
+      renderCommentHighlight();
+      syncCommentHighlightScroll();
       renderAttachmentList();
       clearCommentDraft();
+      closeMentionSuggestions();
       if (deferredRealtimeReloadPending) {
         scheduleRealtimePageRefresh(100);
       }
@@ -2056,6 +2377,8 @@
         }
       } catch (error) {
       }
+      renderCommentHighlight();
+      syncCommentHighlightScroll();
     }
 
     function clearCommentDraft() {
@@ -2074,9 +2397,12 @@
       commentTextarea.value = text;
       clearReplyTarget();
       setCommentFormMode('edit');
+      renderCommentHighlight();
+      syncCommentHighlightScroll();
       renderAttachmentList();
       focusWithoutScroll(commentTextarea);
       commentTextarea.setSelectionRange(commentTextarea.value.length, commentTextarea.value.length);
+      renderMentionSuggestions();
     }
 
     function buildReplyPreview(parentComment) {
@@ -2574,7 +2900,7 @@
           row.querySelector('.ticket-chat-item').appendChild(bubble);
         }
       }
-      bubble.textContent = comment.comment_text || '';
+      renderCommentBubbleMentions(bubble, comment.comment_text || '');
 
       if (comment.deleted) {
         row.querySelectorAll('.comment-attachments').forEach(function(block) {
@@ -2631,7 +2957,7 @@
       if (normalizedText) {
         var bubble = document.createElement('div');
         bubble.className = 'ticket-chat-bubble';
-        bubble.textContent = normalizedText;
+        renderCommentBubbleMentions(bubble, normalizedText);
         item.appendChild(bubble);
       }
 
@@ -2713,7 +3039,7 @@
       if (comment.comment_text) {
         var bubble = document.createElement('div');
         bubble.className = 'ticket-chat-bubble';
-        bubble.textContent = comment.comment_text || '';
+        renderCommentBubbleMentions(bubble, comment.comment_text || '');
         item.appendChild(bubble);
       }
 
@@ -3181,13 +3507,50 @@
 
     if (commentTextarea) {
       restoreCommentDraft();
+      renderCommentHighlight();
+      syncCommentHighlightScroll();
       commentTextarea.addEventListener('input', function() {
         persistCommentDraft();
+        renderCommentHighlight();
+        syncCommentHighlightScroll();
+        renderMentionSuggestions();
         if (!hasUnsavedCommentDraft() && deferredRealtimeReloadPending) {
           scheduleRealtimePageRefresh(100);
         }
       });
+      commentTextarea.addEventListener('scroll', syncCommentHighlightScroll);
+      commentTextarea.addEventListener('click', renderMentionSuggestions);
+      commentTextarea.addEventListener('keyup', function(e) {
+        if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].indexOf(e.key) !== -1) {
+          return;
+        }
+        renderMentionSuggestions();
+      });
       commentTextarea.addEventListener('keydown', function(e) {
+        if (activeMentionSuggestions.length) {
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeMentionIndex = (activeMentionIndex + 1) % activeMentionSuggestions.length;
+            renderMentionSuggestions();
+            return;
+          }
+          if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeMentionIndex = (activeMentionIndex - 1 + activeMentionSuggestions.length) % activeMentionSuggestions.length;
+            renderMentionSuggestions();
+            return;
+          }
+          if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
+            insertMention(activeMentionSuggestions[activeMentionIndex] || activeMentionSuggestions[0]);
+            return;
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            closeMentionSuggestions();
+            return;
+          }
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
           if (commentTextarea.form) {
@@ -3195,7 +3558,14 @@
           }
         }
       });
+      commentTextarea.addEventListener('blur', function() {
+        window.setTimeout(closeMentionSuggestions, 150);
+      });
     }
+
+    document.querySelectorAll('.ticket-chat-bubble').forEach(function(bubble) {
+      renderCommentBubbleMentions(bubble, bubble.textContent || '');
+    });
 
     function resetCommentSubmitButton() {
       if (!commentSubmitButton) return;
