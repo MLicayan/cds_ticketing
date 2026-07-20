@@ -76,6 +76,73 @@
       white-space: nowrap;
     }
 
+    .monitor-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .monitor-control-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .monitor-filter-label {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .monitor-filter-select {
+      min-width: 160px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 8px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      outline: none;
+    }
+
+    .monitor-filter-select option {
+      color: #111827;
+    }
+
+    .monitor-filter-date {
+      min-width: 150px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,0.06);
+      color: var(--text);
+      padding: 8px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      outline: none;
+      color-scheme: dark;
+    }
+
+    .monitor-filter-button {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: rgba(59, 130, 246, 0.22);
+      color: var(--text);
+      padding: 8px 16px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .monitor-filter-button:hover {
+      background: rgba(59, 130, 246, 0.32);
+    }
+
     .monitor-date {
       font-size: 17px;
       font-weight: 700;
@@ -311,6 +378,7 @@
       .monitor-shell { padding: 16px; }
       .monitor-header { flex-direction: column; align-items: flex-start; }
       .monitor-datetime { text-align: left; }
+      .monitor-controls { justify-content: flex-start; }
       .summary-grid { grid-template-columns: 1fr; }
       .monitor-title { font-size: 24px; }
       .monitor-time { font-size: 22px; }
@@ -327,6 +395,23 @@
         <div class="monitor-brand-text">
           <div class="monitor-title">{{ monitor_title or 'CDS Application Monitoring' }}</div>
           <div class="monitor-subtitle">{{ monitor_subtitle or 'Realtime ticket status summary per CDS Application' }}</div>
+          <div class="monitor-controls">
+            <div class="monitor-control-group">
+              <label class="monitor-filter-label" for="monitor-display-filter">Display</label>
+              <select class="monitor-filter-select" id="monitor-display-filter" aria-label="Select monitoring display">
+                <option value="tickets" {% if (monitor_display or 'tickets') == 'tickets' %}selected{% endif %}>Tickets</option>
+                <option value="tasks" {% if monitor_display == 'tasks' %}selected{% endif %}>Tasks</option>
+              </select>
+            </div>
+            {% if enable_date_range %}
+            <div class="monitor-control-group">
+              <label class="monitor-filter-label" for="monitor-date-from">Date Range</label>
+              <input class="monitor-filter-date" type="date" id="monitor-date-from" value="{{ monitor_date_from or '' }}" aria-label="Monitoring date from">
+              <input class="monitor-filter-date" type="date" id="monitor-date-to" value="{{ monitor_date_to or '' }}" aria-label="Monitoring date to">
+              <button class="monitor-filter-button" type="button" id="monitor-date-apply">Apply</button>
+            </div>
+            {% endif %}
+          </div>
         </div>
       </div>
       <div class="monitor-datetime">
@@ -421,12 +506,33 @@
       var syncLabel = document.getElementById('monitor-sync');
       var dateLabel = document.getElementById('monitor-date');
       var timeLabel = document.getElementById('monitor-time');
+      var displayFilter = document.getElementById('monitor-display-filter');
+      var dateFromFilter = document.getElementById('monitor-date-from');
+      var dateToFilter = document.getElementById('monitor-date-to');
+      var dateApplyButton = document.getElementById('monitor-date-apply');
       var socket = window.getCerebroSocket ? window.getCerebroSocket() : null;
       var previousHospitalTotals = {};
       var leaderboardRows = {};
       var leaderboardRowHeight = 54;
       var previousHospitalRanks = {};
       var previousAppRanks = {};
+
+      function currentDisplayMode() {
+        if (!displayFilter) return 'tickets';
+        return displayFilter.value === 'tasks' ? 'tasks' : 'tickets';
+      }
+
+      function monitoringDataUrl() {
+        var url = new URL('{{ url_for(monitor_data_url or "monitoring.apps_data") }}', window.location.origin);
+        url.searchParams.set('display', currentDisplayMode());
+        if (dateFromFilter && dateFromFilter.value) {
+          url.searchParams.set('date_from', dateFromFilter.value);
+        }
+        if (dateToFilter && dateToFilter.value) {
+          url.searchParams.set('date_to', dateToFilter.value);
+        }
+        return url.toString();
+      }
 
       function updateClock() {
         var now = new Date();
@@ -603,7 +709,7 @@
       }
 
       function refreshMonitoring() {
-        fetch('{{ url_for(monitor_data_url or "monitoring.apps_data") }}', { credentials: 'same-origin' })
+        fetch(monitoringDataUrl(), { credentials: 'same-origin' })
           .then(function(response) { return response.json(); })
           .then(function(payload) {
             renderAppRows(payload.rows || []);
@@ -617,10 +723,40 @@
           .catch(function() {});
       }
 
+      function syncFiltersInLocation() {
+        var url = new URL(window.location.href);
+        url.searchParams.set('display', currentDisplayMode());
+        if (dateFromFilter && dateFromFilter.value) {
+          url.searchParams.set('date_from', dateFromFilter.value);
+        } else {
+          url.searchParams.delete('date_from');
+        }
+        if (dateToFilter && dateToFilter.value) {
+          url.searchParams.set('date_to', dateToFilter.value);
+        } else {
+          url.searchParams.delete('date_to');
+        }
+        window.history.replaceState({}, '', url.toString());
+      }
+
       updateClock();
       window.setInterval(updateClock, 1000);
       renderHospitalLeaderboard({% if hospital_rows %}{{ hospital_rows|tojson }}{% else %}[]{% endif %});
       trackHospitalChanges({% if hospital_rows %}{{ hospital_rows|tojson }}{% else %}[]{% endif %});
+
+      if (displayFilter) {
+        displayFilter.addEventListener('change', function() {
+          syncFiltersInLocation();
+          refreshMonitoring();
+        });
+      }
+
+      if (dateApplyButton) {
+        dateApplyButton.addEventListener('click', function() {
+          syncFiltersInLocation();
+          refreshMonitoring();
+        });
+      }
 
       if (socket) {
         if (!window.__cerebroMonitoringSocketBound) {

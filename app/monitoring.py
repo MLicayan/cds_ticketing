@@ -1,46 +1,111 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, abort, jsonify, render_template, request
 from flask_login import current_user, login_required
 
 from . import APP_TIMEZONE, db, to_localtime
-from .models import Ticket, TicketStatus, UserRole
+from .models import Ticket, TicketStatus, TicketTask, UserRole
 
 monitoring_bp = Blueprint("monitoring", __name__, template_folder="templates")
 
 TASK_CATEGORY_PREFIX = "task:"
 CLIENT_SCOPED_ROLES = (UserRole.CLIENT, UserRole.CLIENT_ADMIN)
+DISPLAY_TICKETS = "tickets"
+DISPLAY_TASKS = "tasks"
+DISPLAY_OPTIONS = (DISPLAY_TICKETS, DISPLAY_TASKS)
 
 
 def _exclude_task_tickets(query):
     return query.filter(db.or_(Ticket.category.is_(None), ~Ticket.category.like(f"{TASK_CATEGORY_PREFIX}%")))
 
 
-def _scoped_ticket_query():
-    query = _exclude_task_tickets(Ticket.query)
+def _monitor_display_mode() -> str:
+    display = (request.args.get("display") or DISPLAY_TICKETS).strip().lower()
+    return display if display in DISPLAY_OPTIONS else DISPLAY_TICKETS
+
+
+def _monitor_date_range():
+    date_from_raw = (request.args.get("date_from") or "").strip()
+    date_to_raw = (request.args.get("date_to") or "").strip()
+    date_from = None
+    date_to = None
+
+    if date_from_raw:
+        try:
+            date_from = datetime.strptime(date_from_raw, "%Y-%m-%d")
+        except ValueError:
+            date_from_raw = ""
+
+    if date_to_raw:
+        try:
+            date_to = datetime.strptime(date_to_raw, "%Y-%m-%d")
+        except ValueError:
+            date_to_raw = ""
+
+    if date_from and date_to and date_from > date_to:
+        date_from, date_to = date_to, date_from
+        date_from_raw = date_from.strftime("%Y-%m-%d")
+        date_to_raw = date_to.strftime("%Y-%m-%d")
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "date_from_raw": date_from_raw,
+        "date_to_raw": date_to_raw,
+    }
+
+
+def _scoped_query(model):
+    query = model.query
     if current_user.role in CLIENT_SCOPED_ROLES:
-        query = query.filter(Ticket.client_id == current_user.client_id)
+        query = query.filter(model.client_id == current_user.client_id)
     return query
 
 
-def _app_tickets(daily_only: bool = False):
-    tickets = (
-        _scoped_ticket_query()
-        .filter(Ticket.ticket_for == "app")
-        .order_by(Ticket.created_at.desc(), Ticket.id.desc())
+def _app_records(
+    daily_only: bool = False,
+    display: str = DISPLAY_TICKETS,
+    date_from: datetime = None,
+    date_to: datetime = None,
+):
+    if display == DISPLAY_TASKS:
+        model = TicketTask
+        query = _scoped_query(TicketTask)
+    else:
+        model = Ticket
+        query = _scoped_query(Ticket)
+        query = _exclude_task_tickets(query)
+    if date_from is not None:
+        query = query.filter(model.created_at >= date_from)
+    if date_to is not None:
+        query = query.filter(model.created_at < (date_to + timedelta(days=1)))
+    records = (
+        query
+        .filter(model.ticket_for == "app")
+        .order_by(model.created_at.desc(), model.id.desc())
         .all()
     )
     if not daily_only:
-        return tickets
+        return records
     today_local = datetime.now(APP_TIMEZONE).date()
-    return [ticket for ticket in tickets if ticket.created_at and to_localtime(ticket.created_at).date() == today_local]
+    return [record for record in records if record.created_at and to_localtime(record.created_at).date() == today_local]
 
 
-def _app_monitoring_rows(daily_only: bool = False):
+def _app_monitoring_rows(
+    daily_only: bool = False,
+    display: str = DISPLAY_TICKETS,
+    date_from: datetime = None,
+    date_to: datetime = None,
+):
     grouped = {}
-    tickets = _app_tickets(daily_only=daily_only)
+    records = _app_records(
+        daily_only=daily_only,
+        display=display,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
-    for ticket in tickets:
+    for ticket in records:
         app_id = ticket.app_id or 0
         if app_id not in grouped:
             grouped[app_id] = {
@@ -75,11 +140,21 @@ def _app_monitoring_rows(daily_only: bool = False):
     return rows
 
 
-def _hospital_monitoring_rows(daily_only: bool = False):
+def _hospital_monitoring_rows(
+    daily_only: bool = False,
+    display: str = DISPLAY_TICKETS,
+    date_from: datetime = None,
+    date_to: datetime = None,
+):
     grouped = {}
-    tickets = _app_tickets(daily_only=daily_only)
+    records = _app_records(
+        daily_only=daily_only,
+        display=display,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
-    for ticket in tickets:
+    for ticket in records:
         client_id = ticket.client_id or 0
         if client_id not in grouped:
             grouped[client_id] = {
@@ -134,22 +209,42 @@ def require_monitoring_access():
 @monitoring_bp.route("/apps")
 @login_required
 def apps():
+    display = _monitor_display_mode()
+    date_range = _monitor_date_range()
     return render_template(
         "monitoring/apps.html",
-        rows=_app_monitoring_rows(),
-        hospital_rows=_hospital_monitoring_rows(),
+        rows=_app_monitoring_rows(
+            display=display,
+            date_from=date_range["date_from"],
+            date_to=date_range["date_to"],
+        ),
+        hospital_rows=_hospital_monitoring_rows(
+            display=display,
+            date_from=date_range["date_from"],
+            date_to=date_range["date_to"],
+        ),
         now=datetime.utcnow(),
         monitor_title="CDS Application Monitoring",
         monitor_subtitle="Realtime ticket status summary per CDS Application",
         monitor_data_url="monitoring.apps_data",
+        monitor_display=display,
+        monitor_date_from=date_range["date_from_raw"],
+        monitor_date_to=date_range["date_to_raw"],
+        enable_date_range=True,
     )
 
 
 @monitoring_bp.route("/apps/data")
 @login_required
 def apps_data():
+    display = _monitor_display_mode()
+    date_range = _monitor_date_range()
     app_payload = []
-    for row in _app_monitoring_rows():
+    for row in _app_monitoring_rows(
+        display=display,
+        date_from=date_range["date_from"],
+        date_to=date_range["date_to"],
+    ):
         app_payload.append(
             {
                 "app_id": row["app_id"],
@@ -165,7 +260,11 @@ def apps_data():
             }
         )
     hospital_payload = []
-    for row in _hospital_monitoring_rows():
+    for row in _hospital_monitoring_rows(
+        display=display,
+        date_from=date_range["date_from"],
+        date_to=date_range["date_to"],
+    ):
         hospital_payload.append(
             {
                 "client_id": row["client_id"],
@@ -180,28 +279,42 @@ def apps_data():
                 else "",
             }
         )
-    return jsonify({"rows": app_payload, "hospital_rows": hospital_payload})
+    return jsonify(
+        {
+            "rows": app_payload,
+            "hospital_rows": hospital_payload,
+            "display": display,
+            "date_from": date_range["date_from_raw"],
+            "date_to": date_range["date_to_raw"],
+        }
+    )
 
 
 @monitoring_bp.route("/apps-daily")
 @login_required
 def apps_daily():
+    display = _monitor_display_mode()
     return render_template(
         "monitoring/apps.html",
-        rows=_app_monitoring_rows(daily_only=True),
-        hospital_rows=_hospital_monitoring_rows(daily_only=True),
+        rows=_app_monitoring_rows(daily_only=True, display=display),
+        hospital_rows=_hospital_monitoring_rows(daily_only=True, display=display),
         now=datetime.utcnow(),
         monitor_title="CDS Daily Monitoring",
-        monitor_subtitle="Tickets created today from 12:00 AM to 11:59 PM",
+        monitor_subtitle="",
         monitor_data_url="monitoring.apps_daily_data",
+        monitor_display=display,
+        monitor_date_from="",
+        monitor_date_to="",
+        enable_date_range=False,
     )
 
 
 @monitoring_bp.route("/apps-daily/data")
 @login_required
 def apps_daily_data():
+    display = _monitor_display_mode()
     app_payload = []
-    for row in _app_monitoring_rows(daily_only=True):
+    for row in _app_monitoring_rows(daily_only=True, display=display):
         app_payload.append(
             {
                 "app_id": row["app_id"],
@@ -214,7 +327,7 @@ def apps_daily_data():
             }
         )
     hospital_payload = []
-    for row in _hospital_monitoring_rows(daily_only=True):
+    for row in _hospital_monitoring_rows(daily_only=True, display=display):
         hospital_payload.append(
             {
                 "client_id": row["client_id"],
@@ -222,4 +335,4 @@ def apps_daily_data():
                 "total": row["total"],
             }
         )
-    return jsonify({"rows": app_payload, "hospital_rows": hospital_payload})
+    return jsonify({"rows": app_payload, "hospital_rows": hospital_payload, "display": display})
