@@ -723,6 +723,12 @@ def _developer_prompt_candidate_tasks_by_recipient(recipients: list) -> dict:
                 "label": f"{task.task_no or generate_task_ticket_no(task.id)} - {task.subject or 'Untitled task'}",
             }
         )
+    payload["all"] = [
+        item
+        for user_id in sorted(payload.keys(), key=lambda value: (value != "all", value))
+        if user_id != "all"
+        for item in payload.get(user_id, [])
+    ]
     return payload
 
 
@@ -860,12 +866,12 @@ def _create_developer_prompt(
     creator: User,
     title: str,
     message: str,
-    recipient_id: int,
+    recipient_ids: Optional[list] = None,
     tasks: Optional[list] = None,
 ):
     recipients = _developer_prompt_recipients(
         exclude_user_id=getattr(creator, "id", None),
-        recipient_ids=[recipient_id],
+        recipient_ids=recipient_ids,
     )
     if not recipients:
         return None, 0
@@ -4725,35 +4731,41 @@ def create_developer_prompt():
         flash("Prompt message is required.", "warning")
         return redirect(url_for("tickets.developer_tasks"))
 
-    if not recipient_id_raw:
-        flash("Recipient is required.", "warning")
-        return redirect(url_for("tickets.developer_tasks"))
-
-    try:
-        recipient_id = int(recipient_id_raw)
-    except ValueError:
-        flash("Invalid recipient selection.", "warning")
-        return redirect(url_for("tickets.developer_tasks"))
+    send_to_all = not recipient_id_raw or recipient_id_raw == "all"
+    recipient_ids = None
+    recipient_id = None
+    if not send_to_all:
+        try:
+            recipient_id = int(recipient_id_raw)
+        except ValueError:
+            flash("Invalid recipient selection.", "warning")
+            return redirect(url_for("tickets.developer_tasks"))
+        recipient_ids = [recipient_id]
 
     prompt_tasks = []
     if task_ids:
+        task_filters = [
+            TicketTask.id.in_(task_ids),
+        ]
+        if recipient_id is not None:
+            task_filters.append(TicketTask.assigned_engineer_id == recipient_id)
         prompt_tasks = (
-            TicketTask.query.filter(
-                TicketTask.id.in_(task_ids),
-                TicketTask.assigned_engineer_id == recipient_id,
-            )
+            TicketTask.query.filter(*task_filters)
             .order_by(TicketTask.created_at.desc(), TicketTask.id.desc())
             .all()
         )
         if len(prompt_tasks) != len(task_ids):
-            flash("One or more selected tasks do not belong to the chosen recipient.", "warning")
+            flash(
+                "One or more selected tasks do not belong to the selected recipient scope.",
+                "warning",
+            )
             return redirect(url_for("tickets.developer_tasks"))
 
     prompt, recipient_count = _create_developer_prompt(
         current_user,
         title,
         message,
-        recipient_id=recipient_id,
+        recipient_ids=recipient_ids,
         tasks=prompt_tasks,
     )
     if not prompt or not recipient_count:

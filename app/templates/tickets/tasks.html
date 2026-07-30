@@ -309,14 +309,13 @@
             id="developer_prompt_recipient_id"
             name="recipient_id"
             class="custom-select"
-            required
             >
-            <option value=""></option>
+            <option value="all">All Developers</option>
             {% for user in developer_prompt_recipients %}
             <option value="{{ user.id }}">{{ user.full_name or user.username }}</option>
             {% endfor %}
           </select>
-          <small class="text-muted">Choose one developer first. Task options will load based on that recipient.</small>
+          <small class="text-muted">Leave this on All Developers to notify everyone, or choose one developer to target a specific recipient.</small>
         </div>
         <div class="form-group">
           <label for="developer_prompt_task_ids">Attach Task</label>
@@ -333,7 +332,7 @@
         <div class="form-group mb-0">
           <label for="developer_prompt_message">Message</label>
           <textarea id="developer_prompt_message" name="message" class="form-control" rows="5" required placeholder="Write the message developers need to confirm or deny."></textarea>
-          <small class="text-muted">This prompt will be sent only to the selected recipient.</small>
+          <small class="text-muted">This prompt will be sent to the selected developer or to all developers when All Developers is selected.</small>
         </div>
       </div>
       <div class="modal-footer">
@@ -690,8 +689,7 @@
       taskSelect.appendChild(option);
     });
 
-    taskSelect.disabled = !recipientId;
-    taskSelect.disabled = !recipientId;
+    taskSelect.disabled = items.length === 0;
   }
 
   var developerPromptRecipient = document.getElementById('developer_prompt_recipient_id');
